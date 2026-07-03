@@ -1,0 +1,14 @@
+{
+  "name": "test-case-manager",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "shared",
+    "extension"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w extension",
+    "build": "npm run build -w extension",
+    "typecheck": "npm run typecheck -w shared && npm run typecheck -w extension"
+  }
+}

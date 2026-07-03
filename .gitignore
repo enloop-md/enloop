@@ -1,0 +1,11 @@
+node_modules/
+dist/
+dist-*/
+.DS_Store
+*.log
+
+# Local test-case/run data (a connected File System Access folder) — not source.
+/private/
+
+# Claude Code machine-local settings.
+.claude/settings.local.json
