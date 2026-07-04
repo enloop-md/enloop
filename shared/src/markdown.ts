@@ -1,6 +1,8 @@
 import { VARIABLE_GENERATORS } from "./schemas.js";
 import type {
+  NoteType,
   RunFile,
+  RunStepState,
   Step,
   StepType,
   TestCaseVariable,
@@ -348,6 +350,13 @@ const STATUS_ICON: Record<string, string> = {
   pending: "⬜",
 };
 
+export const NOTE_TYPE_LABELS: Record<NoteType, string> = {
+  note: "note",
+  feature: "feature request",
+  bug: "bugfix required",
+  docs: "docs update required",
+};
+
 /** Human-readable summary of a finished (or in-progress) run — meant to be
  * shared outside the extension, e.g. emailed. Written as `report.md`
  * alongside `run.json` whenever a run finishes. */
@@ -376,7 +385,7 @@ export function renderRunReport(doc: TestCaseVersion, run: RunFile): string {
     if (state?.notes.length) {
       lines.push("");
       lines.push("Notes:");
-      for (const note of state.notes) lines.push(`- ${note}`);
+      for (const note of state.notes) lines.push(`- [${NOTE_TYPE_LABELS[note.type]}] ${note.text}`);
     }
     if (state?.tasks.length) {
       lines.push("");
@@ -394,6 +403,107 @@ export function renderRunReport(doc: TestCaseVersion, run: RunFile): string {
     }
     lines.push("");
   });
+
+  return lines.join("\n");
+}
+
+function hasStepSignal(state: RunStepState): boolean {
+  return (
+    state.status === "failed" ||
+    state.status === "warning" ||
+    state.comment.trim().length > 0 ||
+    state.notes.length > 0 ||
+    !!state.automatedResult?.error
+  );
+}
+
+/**
+ * Human-in-the-loop handoff artifact addressed to the LLM that built the
+ * feature: what a human tester found while verifying it. Written as
+ * `feedback.md` alongside `report.md` whenever a run finishes — but only
+ * when there's something to act on. A clean silent pass returns `null` so
+ * callers skip the write rather than producing empty-handoff noise.
+ */
+export function renderRunFeedback(doc: TestCaseVersion, run: RunFile): string | null {
+  const byId = new Map(run.steps.map((s) => [s.stepId, s]));
+  const signalSteps = doc.steps
+    .map((step, index) => ({ step, index, state: byId.get(step.id) }))
+    .filter(
+      (s): s is { step: Step; index: number; state: RunStepState } => !!s.state && hasStepSignal(s.state),
+    );
+
+  if (signalSteps.length === 0) return null;
+
+  const failedCount = run.steps.filter((s) => s.status === "failed").length;
+  const warningCount = run.steps.filter((s) => s.status === "warning").length;
+  const noteCount = run.steps.reduce((n, s) => n + s.notes.length, 0);
+
+  const bugItems: string[] = [];
+  const featureItems: string[] = [];
+  const docsItems: string[] = [];
+  const failedItems: string[] = [];
+
+  for (const { step, index, state } of signalSteps) {
+    const stepNum = index + 1;
+    const hasBugNote = state.notes.some((n) => n.type === "bug");
+    for (const note of state.notes) {
+      if (note.type === "bug") {
+        bugItems.push(`- **${step.title}** (step ${stepNum}, ${state.status}): ${note.text}`);
+      } else if (note.type === "feature") {
+        featureItems.push(`- **${step.title}** (step ${stepNum}): ${note.text}`);
+      } else if (note.type === "docs") {
+        docsItems.push(`- **${step.title}** (step ${stepNum}): ${note.text}`);
+      }
+    }
+    if (state.status === "failed" && !hasBugNote) {
+      const detail = [state.comment.trim(), state.automatedResult?.error]
+        .filter((s): s is string => !!s)
+        .join(" — ");
+      failedItems.push(`- **${step.title}** (step ${stepNum})${detail ? `: ${detail}` : ""}`);
+    }
+  }
+
+  const lines: string[] = [];
+  lines.push(`# Feedback: ${doc.title} (v${run.testCaseVersion}, run ${run.id})`);
+  lines.push("");
+  lines.push(`Human verification run finished ${run.finishedAt ?? "—"} with status **${run.status}**.`);
+  lines.push(`${failedCount} failed, ${warningCount} warnings, ${noteCount} feedback notes.`);
+  lines.push("");
+  lines.push(
+    "This file was written by a human tester reviewing the feature. Address the " +
+      "action items below. Step-by-step detail follows for context.",
+  );
+  lines.push("");
+  lines.push("## Action items");
+
+  const actionSections: Array<[string, string[]]> = [
+    ["Bugfix required", bugItems],
+    ["Feature requests", featureItems],
+    ["Docs updates", docsItems],
+    ["Failed steps", failedItems],
+  ];
+  for (const [heading, items] of actionSections) {
+    if (items.length === 0) continue;
+    lines.push("");
+    lines.push(`### ${heading}`);
+    lines.push(...items);
+  }
+
+  lines.push("");
+  lines.push("## Step detail");
+
+  for (const { step, index, state } of signalSteps) {
+    lines.push("");
+    lines.push(`### ${STATUS_ICON[state.status] ?? ""} ${index + 1}. ${step.title} (${state.status})`);
+    if (step.expected) lines.push(`Expected: ${step.expected}`);
+    if (state.comment) lines.push(`Comment: ${state.comment}`);
+    if (state.notes.length > 0) {
+      lines.push("Notes:");
+      for (const note of state.notes) lines.push(`- [${NOTE_TYPE_LABELS[note.type]}] ${note.text}`);
+    }
+    if (state.automatedResult?.error) lines.push(`Automated error: ${state.automatedResult.error}`);
+  }
+  lines.push("");
 
   return lines.join("\n");
 }

@@ -7,6 +7,8 @@ import type {
   testCaseVersionSchema,
   caseBookkeepingSchema,
   testCaseMetaSchema,
+  noteTypeSchema,
+  runNoteSchema,
   runStepStatusSchema,
   runTaskSchema,
   automatedResultSchema,
@@ -40,6 +42,10 @@ export type CaseBookkeeping = z.infer<typeof caseBookkeepingSchema>;
 
 /** Composed view: bookkeeping + the current version's parsed content. */
 export type TestCaseMeta = z.infer<typeof testCaseMetaSchema>;
+
+export type NoteType = z.infer<typeof noteTypeSchema>;
+/** One typed feedback note on a run step. */
+export type RunNote = z.infer<typeof runNoteSchema>;
 
 export type RunStepStatus = z.infer<typeof runStepStatusSchema>;
 export type RunTask = z.infer<typeof runTaskSchema>;

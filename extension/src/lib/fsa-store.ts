@@ -3,6 +3,7 @@ import {
   newRunId,
   newTestCaseId,
   parseCaseDocument,
+  renderRunFeedback,
   renderRunReport,
   resolveVariableValues,
   runFileSchema,
@@ -37,6 +38,7 @@ const META_FILE = "meta.json";
 const CASE_FILE = "case.md";
 const RUN_FILE = "run.json";
 const REPORT_FILE = "report.md";
+const FEEDBACK_FILE = "feedback.md";
 
 function versionFile(version: number): string {
   return `v${version}.md`;
@@ -364,6 +366,9 @@ export class FsaDataStore implements DataStore {
     // Human-readable artifact for sharing outside the extension (e.g. email)
     // — run.json stays the JSON source of truth the UI actually reads back.
     await writeTextFile(runDir, REPORT_FILE, renderRunReport(doc, updated));
+
+    const feedback = renderRunFeedback(doc, updated);
+    if (feedback) await writeTextFile(runDir, FEEDBACK_FILE, feedback);
 
     return composeRun(doc, updated);
   }

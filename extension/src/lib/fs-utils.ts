@@ -45,10 +45,14 @@ export async function listFileNames(dir: FileSystemDirectoryHandle): Promise<str
   return names;
 }
 
+// `ZodType<T, any, any>` (not the default `ZodType<T>`, which pins Input to
+// T too): schemas with an internal `.transform()` — e.g. runFileSchema's
+// legacy-string-note upgrade — have Input != Output, and pinning Input to T
+// makes TS infer T as a union of both instead of just the Output type.
 export async function readJson<T>(
   dir: FileSystemDirectoryHandle,
   filename: string,
-  schema: ZodType<T>,
+  schema: ZodType<T, any, any>,
 ): Promise<T> {
   const { text } = await readTextFile(dir, filename);
   return schema.parse(JSON.parse(text));
@@ -57,7 +61,7 @@ export async function readJson<T>(
 export async function tryReadJson<T>(
   dir: FileSystemDirectoryHandle,
   filename: string,
-  schema: ZodType<T>,
+  schema: ZodType<T, any, any>,
 ): Promise<T | null> {
   try {
     return await readJson(dir, filename, schema);

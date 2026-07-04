@@ -25,3 +25,7 @@ export function newRunId(): string {
 export function newTaskId(): string {
   return `task-${shortId()}`;
 }
+
+export function newNoteId(): string {
+  return `note-${shortId()}`;
+}

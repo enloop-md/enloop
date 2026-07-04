@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { newTaskId, type Run, type RunStep } from "@tcm/shared";
+import {
+  newNoteId,
+  newTaskId,
+  NOTE_TYPE_LABELS,
+  NOTE_TYPES,
+  type NoteType,
+  type Run,
+  type RunStep,
+} from "@tcm/shared";
 import { Header } from "../../components/Header.js";
 import { Markdown } from "../../components/Markdown.js";
 import { RunStatusBadge, StepStatusBadge } from "../../components/StatusBadge.js";
@@ -114,6 +122,14 @@ export function RunScreen({
 
   const passCount = run.steps.filter((s) => s.status === "success").length;
   const failCount = run.steps.filter((s) => s.status === "failed").length;
+  const hasFeedbackSignal = run.steps.some(
+    (s) =>
+      s.status === "failed" ||
+      s.status === "warning" ||
+      s.comment.trim().length > 0 ||
+      s.notes.length > 0 ||
+      !!s.automatedResult?.error,
+  );
 
   return (
     <div className="flex h-full flex-col">
@@ -128,6 +144,11 @@ export function RunScreen({
         {failCount > 0 && <span className="text-red-600"> · {failCount} failed</span>}
       </div>
       {error && <p className="px-3 pt-2 text-sm text-red-600">{error}</p>}
+      {readOnly && hasFeedbackSignal && (
+        <p className="border-b border-violet-100 bg-violet-50 px-3 py-2 text-xs text-violet-700">
+          Feedback saved to feedback.md in this run's folder — point Claude Code at it.
+        </p>
+      )}
 
       <div className="flex-1 overflow-y-auto">
         {run.steps.map((step, index) => (
@@ -168,6 +189,13 @@ export function RunScreen({
   );
 }
 
+const NOTE_TYPE_STYLES: Record<NoteType, string> = {
+  note: "bg-slate-100 text-slate-600",
+  feature: "bg-violet-100 text-violet-700",
+  bug: "bg-red-100 text-red-700",
+  docs: "bg-sky-100 text-sky-700",
+};
+
 function StepRow({
   index,
   step,
@@ -191,6 +219,7 @@ function StepRow({
 }) {
   const [commentDraft, setCommentDraft] = useState(step.comment);
   const [noteDraft, setNoteDraft] = useState("");
+  const [noteTypeDraft, setNoteTypeDraft] = useState<NoteType>("note");
   const [taskDraft, setTaskDraft] = useState("");
   const [highlightState, setHighlightState] = useState<"idle" | "highlighting" | "not-found">(
     "idle",
@@ -343,15 +372,40 @@ function StepRow({
 
           <div className="space-y-1">
             <label className="text-[10px] font-medium text-slate-400">Notes</label>
-            <ul className="space-y-0.5">
-              {step.notes.map((n, i) => (
-                <li key={i} className="text-xs text-slate-600">
-                  • {n}
+            <ul className="space-y-1">
+              {step.notes.map((n) => (
+                <li key={n.id} className="flex items-center gap-1.5 text-xs text-slate-600">
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] ${NOTE_TYPE_STYLES[n.type]}`}>
+                    {NOTE_TYPE_LABELS[n.type]}
+                  </span>
+                  <span className="flex-1">{n.text}</span>
+                  {!readOnly && (
+                    <button
+                      onClick={() =>
+                        onUpdateFields({ notes: step.notes.filter((nn) => nn.id !== n.id) })
+                      }
+                      className="text-slate-400 hover:text-red-600"
+                      aria-label="Remove note"
+                    >
+                      ×
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
             {!readOnly && (
               <div className="flex gap-1">
+                <select
+                  value={noteTypeDraft}
+                  onChange={(e) => setNoteTypeDraft(e.target.value as NoteType)}
+                  className="rounded border border-slate-300 px-1 py-1 text-xs"
+                >
+                  {NOTE_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {NOTE_TYPE_LABELS[t]}
+                    </option>
+                  ))}
+                </select>
                 <input
                   value={noteDraft}
                   onChange={(e) => setNoteDraft(e.target.value)}
@@ -361,7 +415,9 @@ function StepRow({
                 <button
                   onClick={() => {
                     if (!noteDraft.trim()) return;
-                    onUpdateFields({ notes: [...step.notes, noteDraft.trim()] });
+                    onUpdateFields({
+                      notes: [...step.notes, { id: newNoteId(), type: noteTypeDraft, text: noteDraft.trim() }],
+                    });
                     setNoteDraft("");
                   }}
                   className="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"

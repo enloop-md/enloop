@@ -84,6 +84,29 @@ export const testCaseMetaSchema = z.object({
   archived: z.boolean(),
 });
 
+export const NOTE_TYPES = ["note", "feature", "bug", "docs"] as const;
+export const noteTypeSchema = z.enum(NOTE_TYPES);
+
+/** One typed feedback note on a run step. Legacy run.json files stored
+ * plain strings; the union below upgrades those to type "note" on read,
+ * and the next write persists the normalized shape. */
+export const runNoteSchema = z.object({
+  id: z.string(),
+  type: noteTypeSchema,
+  text: z.string(),
+});
+
+const runNoteOrLegacySchema = z.union([
+  runNoteSchema,
+  z.string().transform(
+    (text): z.infer<typeof runNoteSchema> => ({
+      id: `note-${crypto.randomUUID().slice(0, 8)}`,
+      type: "note",
+      text,
+    }),
+  ),
+]);
+
 export const runStepStatusSchema = z.enum([
   "pending",
   "running",
@@ -113,7 +136,7 @@ export const runStepStateSchema = z.object({
   stepId: z.string(),
   status: runStepStatusSchema,
   comment: z.string(),
-  notes: z.array(z.string()),
+  notes: z.array(runNoteOrLegacySchema),
   tasks: z.array(runTaskSchema),
   automatedResult: automatedResultSchema.nullable(),
   startedAt: z.string().nullable(),
@@ -142,7 +165,7 @@ export const runStepSchema = stepSchema.omit({ id: true }).extend({
   stepId: z.string(),
   status: runStepStatusSchema,
   comment: z.string(),
-  notes: z.array(z.string()),
+  notes: z.array(runNoteOrLegacySchema),
   tasks: z.array(runTaskSchema),
   automatedResult: automatedResultSchema.nullable(),
   startedAt: z.string().nullable(),
@@ -167,7 +190,7 @@ export const runSchema = z.object({
 export const stepPatchSchema = z.object({
   status: runStepStatusSchema.optional(),
   comment: z.string().optional(),
-  notes: z.array(z.string()).optional(),
+  notes: z.array(runNoteSchema).optional(),
   tasks: z.array(runTaskSchema).optional(),
   automatedResult: automatedResultSchema.nullable().optional(),
   startedAt: z.string().nullable().optional(),
