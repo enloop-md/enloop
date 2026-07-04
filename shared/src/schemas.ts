@@ -186,6 +186,15 @@ export const runSchema = z.object({
   steps: z.array(runStepSchema),
 });
 
+/** On-disk `free-run.json` — metadata only; the captured text lives in
+ * `notes.md` next to it. `finishedAt: null` means the session is still open. */
+export const freeRunFileSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  startedAt: z.string(),
+  finishedAt: z.string().nullable(),
+});
+
 /** All fields optional by design — a partial update applied to one run step. */
 export const stepPatchSchema = z.object({
   status: runStepStatusSchema.optional(),

@@ -1,8 +1,11 @@
 import {
   caseBookkeepingSchema,
+  freeRunFileSchema,
+  newFreeRunId,
   newRunId,
   newTestCaseId,
   parseCaseDocument,
+  renderFreeRunFeedback,
   renderRunFeedback,
   renderRunReport,
   resolveVariableValues,
@@ -10,6 +13,8 @@ import {
   substituteVariables,
   type CaseBookkeeping,
   type DataStore,
+  type FreeRun,
+  type FreeRunFile,
   type Run,
   type RunFile,
   type RunStatus,
@@ -29,16 +34,20 @@ import {
   writeJson,
   writeTextFile,
   tryReadJson,
+  tryReadTextFile,
   NotFoundError,
 } from "./fs-utils.js";
 
 const TEST_CASES_DIR = "test-cases";
 const RUNS_DIR = "runs";
+const FREE_RUNS_DIR = "free-runs";
 const META_FILE = "meta.json";
 const CASE_FILE = "case.md";
 const RUN_FILE = "run.json";
 const REPORT_FILE = "report.md";
 const FEEDBACK_FILE = "feedback.md";
+const FREE_RUN_FILE = "free-run.json";
+const NOTES_FILE = "notes.md";
 
 function versionFile(version: number): string {
   return `v${version}.md`;
@@ -116,6 +125,10 @@ export class FsaDataStore implements DataStore {
 
   private async runsDir(create = false): Promise<FileSystemDirectoryHandle> {
     return getDir(this.root, RUNS_DIR, { create });
+  }
+
+  private async freeRunsDir(create = false): Promise<FileSystemDirectoryHandle> {
+    return getDir(this.root, FREE_RUNS_DIR, { create });
   }
 
   // ---- TestCaseStore ----
@@ -380,5 +393,66 @@ export class FsaDataStore implements DataStore {
     const runsDir = await this.runsDir(true);
     const tcRunsDir = await getDir(runsDir, testCaseId);
     return getDir(tcRunsDir, runId);
+  }
+
+  // ---- FreeRunStore ----
+
+  async listFreeRuns(): Promise<FreeRunFile[]> {
+    const dir = await this.freeRunsDir(true);
+    const ids = await listDirNames(dir);
+    const files: FreeRunFile[] = [];
+    for (const id of ids) {
+      const freeRunDir = await getDir(dir, id);
+      const file = await tryReadJson(freeRunDir, FREE_RUN_FILE, freeRunFileSchema);
+      if (file) files.push(file);
+    }
+    files.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+    return files;
+  }
+
+  async getFreeRun(id: string): Promise<FreeRun> {
+    const dir = await getDir(await this.freeRunsDir(true), id);
+    const [file, notesFile] = await Promise.all([
+      readJson(dir, FREE_RUN_FILE, freeRunFileSchema),
+      tryReadTextFile(dir, NOTES_FILE),
+    ]);
+    return { ...file, notes: notesFile?.text ?? "" };
+  }
+
+  async createFreeRun(title: string): Promise<FreeRun> {
+    const id = newFreeRunId();
+    const dir = await getDir(await this.freeRunsDir(true), id, { create: true });
+    const file: FreeRunFile = { id, title, startedAt: nowIso(), finishedAt: null };
+    await writeJson(dir, FREE_RUN_FILE, file);
+    await writeTextFile(dir, NOTES_FILE, "");
+    await writeTextFile(dir, FEEDBACK_FILE, renderFreeRunFeedback(file, ""));
+    return { ...file, notes: "" };
+  }
+
+  async updateFreeRun(id: string, patch: { title?: string; notes?: string }): Promise<FreeRun> {
+    const dir = await getDir(await this.freeRunsDir(true), id);
+    const [file, existingNotes] = await Promise.all([
+      readJson(dir, FREE_RUN_FILE, freeRunFileSchema),
+      tryReadTextFile(dir, NOTES_FILE),
+    ]);
+    const updated: FreeRunFile = { ...file, title: patch.title ?? file.title };
+    const notes = patch.notes ?? existingNotes?.text ?? "";
+    await writeJson(dir, FREE_RUN_FILE, updated);
+    await writeTextFile(dir, NOTES_FILE, notes);
+    await writeTextFile(dir, FEEDBACK_FILE, renderFreeRunFeedback(updated, notes));
+    return { ...updated, notes };
+  }
+
+  async finishFreeRun(id: string): Promise<FreeRun> {
+    const dir = await getDir(await this.freeRunsDir(true), id);
+    const [file, notesFile] = await Promise.all([
+      readJson(dir, FREE_RUN_FILE, freeRunFileSchema),
+      tryReadTextFile(dir, NOTES_FILE),
+    ]);
+    const notes = notesFile?.text ?? "";
+    const updated: FreeRunFile = { ...file, finishedAt: nowIso() };
+    await writeJson(dir, FREE_RUN_FILE, updated);
+    await writeTextFile(dir, FEEDBACK_FILE, renderFreeRunFeedback(updated, notes));
+    return { ...updated, notes };
   }
 }

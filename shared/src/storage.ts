@@ -1,4 +1,6 @@
 import type {
+  FreeRun,
+  FreeRunFile,
   Run,
   RunStatus,
   RunSummary,
@@ -48,4 +50,14 @@ export interface RunStore {
   finishRun(testCaseId: string, runId: string, status: RunStatus): Promise<Run>;
 }
 
-export interface DataStore extends TestCaseStore, RunStore {}
+/** Everything that reads/writes free runs — unscripted verification
+ * sessions with no test case or steps. Same swap-later story as TestCaseStore. */
+export interface FreeRunStore {
+  listFreeRuns(): Promise<FreeRunFile[]>;
+  getFreeRun(id: string): Promise<FreeRun>;
+  createFreeRun(title: string): Promise<FreeRun>;
+  updateFreeRun(id: string, patch: { title?: string; notes?: string }): Promise<FreeRun>;
+  finishFreeRun(id: string): Promise<FreeRun>;
+}
+
+export interface DataStore extends TestCaseStore, RunStore, FreeRunStore {}

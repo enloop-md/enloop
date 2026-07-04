@@ -1,5 +1,6 @@
 import { VARIABLE_GENERATORS } from "./schemas.js";
 import type {
+  FreeRunFile,
   NoteType,
   RunFile,
   RunStepState,
@@ -506,4 +507,10 @@ export function renderRunFeedback(doc: TestCaseVersion, run: RunFile): string | 
   lines.push("");
 
   return lines.join("\n");
+}
+
+/** Derives the `feedback.md` handoff artifact for a free run from its raw
+ * `notes.md` textarea content — regenerated in full on every save. */
+export function renderFreeRunFeedback(freeRun: FreeRunFile, notes: string): string {
+  return `# Free run feedback: ${freeRun.title}\n\nSession started ${freeRun.startedAt}, captured live (demo/unscripted testing).\n\n${notes}`;
 }

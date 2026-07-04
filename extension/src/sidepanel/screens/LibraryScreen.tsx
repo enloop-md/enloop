@@ -6,11 +6,13 @@ import { useReadyStore } from "../store/DataStoreProvider.js";
 export function LibraryScreen({
   onOpenCase,
   onNewCase,
+  onNewFreeRun,
   onSettings,
   onHistory,
 }: {
   onOpenCase: (id: string) => void;
   onNewCase: () => void;
+  onNewFreeRun: (freeRunId: string) => void;
   onSettings: () => void;
   onHistory: () => void;
 }) {
@@ -19,6 +21,20 @@ export function LibraryScreen({
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function startFreeRun() {
+    setBusy(true);
+    setError(null);
+    try {
+      const freeRun = await store.createFreeRun(`Free run ${new Date().toLocaleDateString()}`);
+      onNewFreeRun(freeRun.id);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -76,12 +92,21 @@ export function LibraryScreen({
             />
             Show archived
           </label>
-          <button
-            onClick={onNewCase}
-            className="rounded bg-slate-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-700"
-          >
-            + New test case
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={startFreeRun}
+              disabled={busy}
+              className="rounded border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Free run
+            </button>
+            <button
+              onClick={onNewCase}
+              className="rounded bg-slate-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-700"
+            >
+              + New test case
+            </button>
+          </div>
         </div>
       </div>
 

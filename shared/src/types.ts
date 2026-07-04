@@ -18,6 +18,7 @@ import type {
   runStatusSchema,
   runSchema,
   stepPatchSchema,
+  freeRunFileSchema,
 } from "./schemas.js";
 
 export type StepType = z.infer<typeof stepTypeSchema>;
@@ -60,6 +61,13 @@ export type RunStatus = z.infer<typeof runStatusSchema>;
 /** Composed run: case.md + run.json merged — what store callers see. */
 export type Run = z.infer<typeof runSchema>;
 export type StepPatch = z.infer<typeof stepPatchSchema>;
+
+/** On-disk `free-run.json` shape — metadata for an unscripted verification session. */
+export type FreeRunFile = z.infer<typeof freeRunFileSchema>;
+/** Composed free run: metadata + the raw textarea content from `notes.md`. */
+export interface FreeRun extends FreeRunFile {
+  notes: string;
+}
 
 export interface TestCaseSummary {
   id: string;

@@ -7,6 +7,7 @@ import { EditorScreen } from "./screens/EditorScreen.js";
 import { RunSetupScreen } from "./screens/RunSetupScreen.js";
 import { RunScreen } from "./screens/RunScreen.js";
 import { RunHistoryScreen } from "./screens/RunHistoryScreen.js";
+import { FreeRunScreen } from "./screens/FreeRunScreen.js";
 import { SettingsScreen } from "./screens/SettingsScreen.js";
 
 type Screen =
@@ -15,6 +16,7 @@ type Screen =
   | { kind: "editor"; testCaseId?: string }
   | { kind: "runSetup"; testCaseId: string; version: number }
   | { kind: "run"; testCaseId: string; runId: string }
+  | { kind: "freeRun"; freeRunId: string }
   | { kind: "history"; testCaseId?: string }
   | { kind: "settings" };
 
@@ -54,6 +56,7 @@ function Shell() {
         <LibraryScreen
           onOpenCase={(id) => push({ kind: "caseDetail", testCaseId: id })}
           onNewCase={() => push({ kind: "editor" })}
+          onNewFreeRun={(freeRunId) => push({ kind: "freeRun", freeRunId })}
           onSettings={() => push({ kind: "settings" })}
           onHistory={() => push({ kind: "history" })}
         />
@@ -103,6 +106,14 @@ function Shell() {
           onSettings={() => push({ kind: "settings" })}
         />
       );
+    case "freeRun":
+      return (
+        <FreeRunScreen
+          freeRunId={screen.freeRunId}
+          onBack={pop}
+          onSettings={() => push({ kind: "settings" })}
+        />
+      );
     case "history":
       return (
         <RunHistoryScreen
@@ -110,6 +121,7 @@ function Shell() {
           onBack={pop}
           onSettings={() => push({ kind: "settings" })}
           onOpenRun={(testCaseId, runId) => push({ kind: "run", testCaseId, runId })}
+          onOpenFreeRun={(freeRunId) => push({ kind: "freeRun", freeRunId })}
         />
       );
     case "settings":

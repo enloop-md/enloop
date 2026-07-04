@@ -22,6 +22,12 @@ export function newRunId(): string {
   return `run-${stamp}-${shortId()}`;
 }
 
+export function newFreeRunId(): string {
+  const now = new Date();
+  const stamp = now.toISOString().replace(/[:.]/g, "-");
+  return `free-${stamp}-${shortId()}`;
+}
+
 export function newTaskId(): string {
   return `task-${shortId()}`;
 }
