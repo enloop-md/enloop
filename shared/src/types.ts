@@ -77,6 +77,19 @@ export interface TestCaseSummary {
   currentVersion: number;
   updatedAt: string;
   archived: boolean;
+  /** Set when this case lives inside a suite folder rather than standalone. */
+  suiteId?: string;
+}
+
+/** A suite: a physical folder holding a `suite.md` (shared prep steps,
+ * variables, dependencies, prerequisites) plus its case subfolders. */
+export interface SuiteSummary {
+  id: string;
+  title: string;
+  description: string;
+  tags: string[];
+  caseCount: number;
+  archived: boolean;
 }
 
 export interface VersionSummary {

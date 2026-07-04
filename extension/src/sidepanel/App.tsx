@@ -8,12 +8,16 @@ import { RunSetupScreen } from "./screens/RunSetupScreen.js";
 import { RunScreen } from "./screens/RunScreen.js";
 import { RunHistoryScreen } from "./screens/RunHistoryScreen.js";
 import { FreeRunScreen } from "./screens/FreeRunScreen.js";
+import { SuiteDetailScreen } from "./screens/SuiteDetailScreen.js";
+import { SuiteEditorScreen } from "./screens/SuiteEditorScreen.js";
 import { SettingsScreen } from "./screens/SettingsScreen.js";
 
 type Screen =
   | { kind: "library" }
   | { kind: "caseDetail"; testCaseId: string }
-  | { kind: "editor"; testCaseId?: string }
+  | { kind: "editor"; testCaseId?: string; suiteId?: string }
+  | { kind: "suiteDetail"; suiteId: string }
+  | { kind: "suiteEditor"; suiteId?: string }
   | { kind: "runSetup"; testCaseId: string; version: number }
   | { kind: "run"; testCaseId: string; runId: string }
   | { kind: "freeRun"; freeRunId: string }
@@ -55,7 +59,9 @@ function Shell() {
       return (
         <LibraryScreen
           onOpenCase={(id) => push({ kind: "caseDetail", testCaseId: id })}
+          onOpenSuite={(suiteId) => push({ kind: "suiteDetail", suiteId })}
           onNewCase={() => push({ kind: "editor" })}
+          onNewSuite={() => push({ kind: "suiteEditor" })}
           onNewFreeRun={(freeRunId) => push({ kind: "freeRun", freeRunId })}
           onSettings={() => push({ kind: "settings" })}
           onHistory={() => push({ kind: "history" })}
@@ -81,8 +87,28 @@ function Shell() {
       return (
         <EditorScreen
           testCaseId={screen.testCaseId}
+          suiteId={screen.suiteId}
           onBack={pop}
           onSaved={(id) => replaceRoot({ kind: "caseDetail", testCaseId: id })}
+        />
+      );
+    case "suiteDetail":
+      return (
+        <SuiteDetailScreen
+          suiteId={screen.suiteId}
+          onBack={pop}
+          onOpenCase={(id) => push({ kind: "caseDetail", testCaseId: id })}
+          onNewCaseInSuite={(suiteId) => push({ kind: "editor", suiteId })}
+          onEditSuite={(suiteId) => push({ kind: "suiteEditor", suiteId })}
+          onSettings={() => push({ kind: "settings" })}
+        />
+      );
+    case "suiteEditor":
+      return (
+        <SuiteEditorScreen
+          suiteId={screen.suiteId}
+          onBack={pop}
+          onSaved={(id) => replaceRoot({ kind: "suiteDetail", suiteId: id })}
         />
       );
     case "runSetup":

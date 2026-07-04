@@ -5,6 +5,7 @@ import type {
   RunStatus,
   RunSummary,
   StepPatch,
+  SuiteSummary,
   TestCaseMeta,
   TestCaseSummary,
   TestCaseVersion,
@@ -29,9 +30,21 @@ export interface TestCaseStore {
   getVersion(id: string, version: number): Promise<TestCaseVersion>;
   /** Raw Markdown text of a version, exactly as stored — for editing. */
   getVersionSource(id: string, version: number): Promise<string>;
-  createTestCase(bodyMarkdown: string): Promise<TestCaseMeta>;
+  createTestCase(bodyMarkdown: string, suiteId?: string): Promise<TestCaseMeta>;
   createVersion(id: string, bodyMarkdown: string): Promise<TestCaseVersion>;
   archiveTestCase(id: string, archived: boolean): Promise<void>;
+
+  listSuites(): Promise<SuiteSummary[]>;
+  getSuite(id: string): Promise<{ doc: TestCaseVersion; cases: TestCaseSummary[]; archived: boolean }>;
+  getSuiteSource(id: string): Promise<string>;
+  createSuite(bodyMarkdown: string): Promise<SuiteSummary>;
+  /** Overwrites suite.md in place — suites are not versioned in v1. */
+  saveSuite(id: string, bodyMarkdown: string): Promise<void>;
+  archiveSuite(id: string, archived: boolean): Promise<void>;
+  /** Raw Markdown a run should freeze: the case's own version merged with
+   * its suite's prep steps/variables (see `buildRunSource`), or just the
+   * case's own version text when it isn't in a suite. */
+  getRunSource(testCaseId: string, version: number): Promise<string>;
 }
 
 /** Everything that reads/writes runs. Same swap-later story as TestCaseStore. */

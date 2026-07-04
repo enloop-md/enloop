@@ -82,6 +82,8 @@ export const testCaseMetaSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   archived: z.boolean(),
+  /** Set when this case lives inside a suite folder rather than standalone. */
+  suiteId: z.string().optional(),
 });
 
 export const NOTE_TYPES = ["note", "feature", "bug", "docs"] as const;

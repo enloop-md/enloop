@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { TestCaseMeta, TestCaseVersion, VersionSummary } from "@tcm/shared";
+import { parseCaseDocument, type TestCaseMeta, type TestCaseVersion, type VersionSummary } from "@tcm/shared";
 import { Header } from "../../components/Header.js";
 import { Markdown } from "../../components/Markdown.js";
 import { useReadyStore } from "../store/DataStoreProvider.js";
@@ -61,8 +61,12 @@ export function CaseDetailScreen({
     setBusy(true);
     setError(null);
     try {
-      const currentVersionDoc = await store.getVersion(testCaseId, meta.currentVersion);
-      if (currentVersionDoc.variables.length > 0) {
+      const runSource = await store.getRunSource(testCaseId, meta.currentVersion);
+      const doc = parseCaseDocument(runSource, {
+        version: meta.currentVersion,
+        createdAt: new Date().toISOString(),
+      });
+      if (doc.variables.length > 0) {
         onRunSetup(meta.currentVersion);
         return;
       }

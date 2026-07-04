@@ -87,11 +87,18 @@ export const CURRENT_FORMAT_VERSION = "0.0.1";
  * (derived from the filename and file mtime) via `fallback`. `@version`
  * (the format version) defaults to `CURRENT_FORMAT_VERSION` when absent,
  * so older files written before this field existed still parse as current.
+ *
+ * A suite's `suite.md` reuses this exact grammar for its shared preparation
+ * steps, description, variables, dependencies, and prerequisites — with one
+ * relaxation: pass `{ requireSteps: false }` to allow a suite with no prep
+ * steps at all (`opts.requireSteps` defaults to `true` for ordinary cases).
  */
 export function parseCaseDocument(
   raw: string,
   fallback: { version: number; createdAt: string },
+  opts: { requireSteps?: boolean } = {},
 ): TestCaseVersion {
+  const requireSteps = opts.requireSteps ?? true;
   const lines = raw.replace(/\r\n/g, "\n").split("\n");
 
   let i = 0;
@@ -157,7 +164,7 @@ export function parseCaseDocument(
     else if (name === "steps") steps = parseSteps(section.content);
   }
 
-  if (steps.length === 0) {
+  if (requireSteps && steps.length === 0) {
     throw new Error('No steps found — add a "# Steps" section with "## " step headings.');
   }
 
@@ -342,6 +349,24 @@ Describe what should happen.
 `;
 }
 
+/** Starter text for a brand new suite, shown in an empty suite editor.
+ * Steps are optional for a suite (shared preparation only), but the
+ * template includes one example since most suites have at least one. */
+export function starterSuiteTemplate(): string {
+  return `# New suite
+@version ${CURRENT_FORMAT_VERSION}
+@author
+Tags:
+
+Describe what this suite of test cases covers and shares.
+
+# Steps
+
+## Log in as the test user
+Shared preparation all cases in this suite start from.
+`;
+}
+
 const STATUS_ICON: Record<string, string> = {
   success: "✅",
   failed: "❌",
@@ -513,4 +538,112 @@ export function renderRunFeedback(doc: TestCaseVersion, run: RunFile): string | 
  * `notes.md` textarea content — regenerated in full on every save. */
 export function renderFreeRunFeedback(freeRun: FreeRunFile, notes: string): string {
   return `# Free run feedback: ${freeRun.title}\n\nSession started ${freeRun.startedAt}, captured live (demo/unscripted testing).\n\n${notes}`;
+}
+
+/** Raw inner text of one top-level (`# `) section of a document, found with
+ * the same splitting logic `parseCaseDocument` itself uses — `null` if the
+ * heading isn't present. Operates on the whole raw text (title heading and
+ * all), which is harmless: the title just becomes an unmatched section. */
+function extractSectionRaw(markdown: string, headingName: string): string | null {
+  const { sections } = splitTopSections(markdown, 1);
+  const match = sections.find((s) => s.heading.trim().toLowerCase() === headingName.toLowerCase());
+  return match ? match.content : null;
+}
+
+/** Start/end offsets of a top-level section's content — from right after
+ * its heading line to right before the next top-level (`# `) heading, or
+ * end of string. `null` if the heading isn't present. */
+function sectionRange(markdown: string, headingName: string): { start: number; end: number } | null {
+  const headingRe = new RegExp(`^# ${headingName}[ \\t]*\\r?\\n`, "im");
+  const match = headingRe.exec(markdown);
+  if (!match) return null;
+  const start = match.index + match[0].length;
+  const nextHeading = /^# /m.exec(markdown.slice(start));
+  const end = nextHeading ? start + nextHeading.index : markdown.length;
+  return { start, end };
+}
+
+/** Merges `content` into `markdown`'s top-level `headingName` section —
+ * "prepend" inserts right after the heading (used for prep steps and
+ * suite dependencies/prerequisites, which come "before" the case's own);
+ * "append" inserts at the section's end (used for variables, so a case's
+ * own duplicate-named variable declaration stays the one that's seen
+ * first when re-parsed). Creates the section (placed right before
+ * `# Steps`) if the case document doesn't already declare it. */
+function mergeTopLevelSection(
+  markdown: string,
+  headingName: string,
+  content: string,
+  position: "prepend" | "append",
+): string {
+  const trimmed = content.trim();
+  if (!trimmed) return markdown;
+  const range = sectionRange(markdown, headingName);
+  if (range) {
+    if (position === "prepend") {
+      return markdown.slice(0, range.start) + trimmed + "\n\n" + markdown.slice(range.start);
+    }
+    const before = markdown.slice(0, range.end).replace(/[ \t]*\n?$/, "");
+    return `${before}\n\n${trimmed}\n\n${markdown.slice(range.end)}`;
+  }
+  const stepsMatch = /^# Steps[ \t]*\r?\n/im.exec(markdown);
+  const insertAt = stepsMatch ? stepsMatch.index : markdown.length;
+  return markdown.slice(0, insertAt) + `# ${headingName}\n\n${trimmed}\n\n` + markdown.slice(insertAt);
+}
+
+function prefixStepHeadings(stepsRaw: string): string {
+  return stepsRaw.replace(/^##\s+/gm, "## Prep: ");
+}
+
+/**
+ * Merges a suite's shared preparation (from its `suite.md`) into a case's
+ * raw Markdown before it's parsed for a run — the run engine and `case.md`
+ * freezing stay untouched; this just makes prep steps ordinary tracked
+ * steps of the run. `suiteMarkdown: null` (standalone case) passes through
+ * unchanged. Prep steps are prefixed `Prep: ` and inserted before the
+ * case's own steps; suite variables are appended after the case's own
+ * (case wins on a name clash); dependencies/prerequisites are concatenated
+ * with the suite's first.
+ */
+export function buildRunSource(caseMarkdown: string, suiteMarkdown: string | null): string {
+  if (!suiteMarkdown) return caseMarkdown;
+  const normalizedCase = caseMarkdown.replace(/\r\n/g, "\n");
+  const normalizedSuite = suiteMarkdown.replace(/\r\n/g, "\n");
+
+  const suiteSteps = extractSectionRaw(normalizedSuite, "Steps");
+  const suiteVariables = extractSectionRaw(normalizedSuite, "Variables");
+  const suiteDependencies = extractSectionRaw(normalizedSuite, "Dependencies");
+  const suitePrerequisites = extractSectionRaw(normalizedSuite, "Prerequisites");
+
+  let result = normalizedCase;
+
+  if (suiteSteps?.trim()) {
+    result = mergeTopLevelSection(result, "Steps", prefixStepHeadings(suiteSteps), "prepend");
+  }
+
+  if (suiteVariables?.trim()) {
+    const caseVarSection = extractSectionRaw(result, "Variables");
+    const caseVarNames = new Set(
+      caseVarSection ? parseVariables(caseVarSection).map((v) => v.name) : [],
+    );
+    const suiteVarSubsections = splitTopSections(suiteVariables, 2).sections.filter(
+      (s) => !caseVarNames.has(s.heading.trim()),
+    );
+    if (suiteVarSubsections.length > 0) {
+      const suiteVarText = suiteVarSubsections
+        .map((s) => `## ${s.heading}\n${s.content}`.trim())
+        .join("\n\n");
+      result = mergeTopLevelSection(result, "Variables", suiteVarText, "append");
+    }
+  }
+
+  if (suiteDependencies?.trim()) {
+    result = mergeTopLevelSection(result, "Dependencies", suiteDependencies, "prepend");
+  }
+
+  if (suitePrerequisites?.trim()) {
+    result = mergeTopLevelSection(result, "Prerequisites", suitePrerequisites, "prepend");
+  }
+
+  return result;
 }

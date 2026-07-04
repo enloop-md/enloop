@@ -1,4 +1,5 @@
 import {
+  buildRunSource,
   caseBookkeepingSchema,
   freeRunFileSchema,
   newFreeRunId,
@@ -20,6 +21,7 @@ import {
   type RunStatus,
   type RunSummary,
   type StepPatch,
+  type SuiteSummary,
   type TestCaseMeta,
   type TestCaseSummary,
   type TestCaseVersion,
@@ -33,6 +35,7 @@ import {
   readTextFile,
   writeJson,
   writeTextFile,
+  tryGetDir,
   tryReadJson,
   tryReadTextFile,
   NotFoundError,
@@ -48,6 +51,7 @@ const REPORT_FILE = "report.md";
 const FEEDBACK_FILE = "feedback.md";
 const FREE_RUN_FILE = "free-run.json";
 const NOTES_FILE = "notes.md";
+const SUITE_FILE = "suite.md";
 
 function versionFile(version: number): string {
   return `v${version}.md`;
@@ -71,6 +75,19 @@ async function readVersion(
 ): Promise<TestCaseVersion> {
   const { text, lastModified } = await readTextFile(versionsDir, versionFile(version));
   return parseCaseDocument(text, { version, createdAt: lastModified });
+}
+
+/** A dir containing `suite.md` is a suite; a dir containing `versions/` is
+ * a case. Exactly one level of suite nesting is supported. */
+async function isSuiteDir(dir: FileSystemDirectoryHandle): Promise<boolean> {
+  return (await tryReadTextFile(dir, SUITE_FILE)) !== null;
+}
+
+async function readSuiteDoc(
+  suiteDir: FileSystemDirectoryHandle,
+): Promise<TestCaseVersion> {
+  const { text, lastModified } = await readTextFile(suiteDir, SUITE_FILE);
+  return parseCaseDocument(text, { version: 1, createdAt: lastModified }, { requireSteps: false });
 }
 
 function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
@@ -131,28 +148,51 @@ export class FsaDataStore implements DataStore {
     return getDir(this.root, FREE_RUNS_DIR, { create });
   }
 
+  /** Locates a case's folder — directly under `test-cases/`, or one level
+   * down inside a suite folder. Ids are globally unique, so this never
+   * has to disambiguate between candidates. */
+  private async findCaseDir(
+    id: string,
+  ): Promise<{ dir: FileSystemDirectoryHandle; suiteId?: string }> {
+    const casesDir = await this.testCasesDir(true);
+    const direct = await tryGetDir(casesDir, id);
+    if (direct && !(await isSuiteDir(direct))) return { dir: direct };
+
+    for (const name of await listDirNames(casesDir)) {
+      const rootDir = await getDir(casesDir, name);
+      if (!(await isSuiteDir(rootDir))) continue;
+      const child = await tryGetDir(rootDir, id);
+      if (child) return { dir: child, suiteId: name };
+    }
+    throw new NotFoundError(`Test case not found: ${id}`);
+  }
+
   // ---- TestCaseStore ----
 
   async listTestCases(): Promise<TestCaseSummary[]> {
     const dir = await this.testCasesDir(true);
-    const ids = await listDirNames(dir);
+    const rootNames = await listDirNames(dir);
     const summaries: TestCaseSummary[] = [];
-    for (const id of ids) {
-      try {
-        const meta = await this.getTestCase(id);
-        summaries.push({
-          id: meta.id,
-          title: meta.title,
-          description: meta.description,
-          tags: meta.tags,
-          currentVersion: meta.currentVersion,
-          updatedAt: meta.updatedAt,
-          archived: meta.archived,
-        });
-      } catch {
-        // A folder under test-cases/ with no parseable version yet (e.g.
-        // mid-write, or not really a test case) — skip it rather than fail
-        // the whole listing.
+    for (const name of rootNames) {
+      const rootDir = await getDir(dir, name);
+      const caseIds = (await isSuiteDir(rootDir)) ? await listDirNames(rootDir) : [name];
+      for (const caseId of caseIds) {
+        try {
+          const meta = await this.getTestCase(caseId);
+          summaries.push({
+            id: meta.id,
+            title: meta.title,
+            description: meta.description,
+            tags: meta.tags,
+            currentVersion: meta.currentVersion,
+            updatedAt: meta.updatedAt,
+            archived: meta.archived,
+            suiteId: meta.suiteId,
+          });
+        } catch {
+          // A folder with no parseable version yet (e.g. mid-write, or not
+          // really a test case) — skip it rather than fail the whole listing.
+        }
       }
     }
     summaries.sort((a, b) => a.title.localeCompare(b.title));
@@ -160,7 +200,7 @@ export class FsaDataStore implements DataStore {
   }
 
   async getTestCase(id: string): Promise<TestCaseMeta> {
-    const caseDir = await getDir(await this.testCasesDir(true), id);
+    const { dir: caseDir, suiteId } = await this.findCaseDir(id);
     const versionsDir = await getDir(caseDir, "versions", { create: true });
     const versions = await listVersionNumbers(versionsDir);
     if (versions.length === 0) {
@@ -181,11 +221,12 @@ export class FsaDataStore implements DataStore {
       createdAt: first.createdAt,
       updatedAt: current.createdAt,
       archived: bookkeeping?.archived ?? false,
+      suiteId,
     };
   }
 
   async listVersions(id: string): Promise<VersionSummary[]> {
-    const caseDir = await getDir(await this.testCasesDir(true), id);
+    const { dir: caseDir } = await this.findCaseDir(id);
     const versionsDir = await getDir(caseDir, "versions", { create: true });
     const versions = await listVersionNumbers(versionsDir);
     const summaries: VersionSummary[] = [];
@@ -202,23 +243,24 @@ export class FsaDataStore implements DataStore {
   }
 
   async getVersion(id: string, version: number): Promise<TestCaseVersion> {
-    const caseDir = await getDir(await this.testCasesDir(true), id);
+    const { dir: caseDir } = await this.findCaseDir(id);
     const versionsDir = await getDir(caseDir, "versions");
     return readVersion(versionsDir, version);
   }
 
   async getVersionSource(id: string, version: number): Promise<string> {
-    const caseDir = await getDir(await this.testCasesDir(true), id);
+    const { dir: caseDir } = await this.findCaseDir(id);
     const versionsDir = await getDir(caseDir, "versions");
     const { text } = await readTextFile(versionsDir, versionFile(version));
     return text;
   }
 
-  async createTestCase(bodyMarkdown: string): Promise<TestCaseMeta> {
+  async createTestCase(bodyMarkdown: string, suiteId?: string): Promise<TestCaseMeta> {
     const parsed = parseCaseDocument(bodyMarkdown, { version: 1, createdAt: nowIso() });
     const id = newTestCaseId(parsed.title);
     const casesDir = await this.testCasesDir(true);
-    const caseDir = await getDir(casesDir, id, { create: true });
+    const parentDir = suiteId ? await getDir(casesDir, suiteId, { create: true }) : casesDir;
+    const caseDir = await getDir(parentDir, id, { create: true });
     const versionsDir = await getDir(caseDir, "versions", { create: true });
     await writeTextFile(versionsDir, versionFile(1), bodyMarkdown);
     await writeJson(caseDir, META_FILE, { archived: false } satisfies CaseBookkeeping);
@@ -226,7 +268,7 @@ export class FsaDataStore implements DataStore {
   }
 
   async createVersion(id: string, bodyMarkdown: string): Promise<TestCaseVersion> {
-    const caseDir = await getDir(await this.testCasesDir(true), id);
+    const { dir: caseDir } = await this.findCaseDir(id);
     const versionsDir = await getDir(caseDir, "versions", { create: true });
     const versions = await listVersionNumbers(versionsDir);
     const nextVersion = (versions[versions.length - 1] ?? 0) + 1;
@@ -237,8 +279,113 @@ export class FsaDataStore implements DataStore {
   }
 
   async archiveTestCase(id: string, archived: boolean): Promise<void> {
-    const caseDir = await getDir(await this.testCasesDir(true), id);
+    const { dir: caseDir } = await this.findCaseDir(id);
     await writeJson(caseDir, META_FILE, { archived } satisfies CaseBookkeeping);
+  }
+
+  // ---- Suites ----
+
+  async listSuites(): Promise<SuiteSummary[]> {
+    const dir = await this.testCasesDir(true);
+    const rootNames = await listDirNames(dir);
+    const summaries: SuiteSummary[] = [];
+    for (const name of rootNames) {
+      const rootDir = await getDir(dir, name);
+      if (!(await isSuiteDir(rootDir))) continue;
+      try {
+        const [doc, bookkeeping, caseIds] = await Promise.all([
+          readSuiteDoc(rootDir),
+          tryReadJson(rootDir, META_FILE, caseBookkeepingSchema),
+          listDirNames(rootDir),
+        ]);
+        summaries.push({
+          id: name,
+          title: doc.title,
+          description: doc.description,
+          tags: doc.tags,
+          caseCount: caseIds.length,
+          archived: bookkeeping?.archived ?? false,
+        });
+      } catch {
+        // Unparseable suite.md — skip, consistent with case listing.
+      }
+    }
+    summaries.sort((a, b) => a.title.localeCompare(b.title));
+    return summaries;
+  }
+
+  async getSuite(
+    id: string,
+  ): Promise<{ doc: TestCaseVersion; cases: TestCaseSummary[]; archived: boolean }> {
+    const suiteDir = await getDir(await this.testCasesDir(true), id);
+    const [doc, bookkeeping, caseIds] = await Promise.all([
+      readSuiteDoc(suiteDir),
+      tryReadJson(suiteDir, META_FILE, caseBookkeepingSchema),
+      listDirNames(suiteDir),
+    ]);
+    const cases: TestCaseSummary[] = [];
+    for (const caseId of caseIds) {
+      try {
+        const meta = await this.getTestCase(caseId);
+        cases.push({
+          id: meta.id,
+          title: meta.title,
+          description: meta.description,
+          tags: meta.tags,
+          currentVersion: meta.currentVersion,
+          updatedAt: meta.updatedAt,
+          archived: meta.archived,
+          suiteId: meta.suiteId,
+        });
+      } catch {
+        // Skip a case folder with no parseable version yet.
+      }
+    }
+    return { doc, cases, archived: bookkeeping?.archived ?? false };
+  }
+
+  async getSuiteSource(id: string): Promise<string> {
+    const suiteDir = await getDir(await this.testCasesDir(true), id);
+    const { text } = await readTextFile(suiteDir, SUITE_FILE);
+    return text;
+  }
+
+  async createSuite(bodyMarkdown: string): Promise<SuiteSummary> {
+    const parsed = parseCaseDocument(bodyMarkdown, { version: 1, createdAt: nowIso() }, { requireSteps: false });
+    const id = newTestCaseId(parsed.title);
+    const suiteDir = await getDir(await this.testCasesDir(true), id, { create: true });
+    await writeTextFile(suiteDir, SUITE_FILE, bodyMarkdown);
+    await writeJson(suiteDir, META_FILE, { archived: false } satisfies CaseBookkeeping);
+    return {
+      id,
+      title: parsed.title,
+      description: parsed.description,
+      tags: parsed.tags,
+      caseCount: 0,
+      archived: false,
+    };
+  }
+
+  async saveSuite(id: string, bodyMarkdown: string): Promise<void> {
+    // Validate before writing so a typo never lands as a broken suite.
+    parseCaseDocument(bodyMarkdown, { version: 1, createdAt: nowIso() }, { requireSteps: false });
+    const suiteDir = await getDir(await this.testCasesDir(true), id);
+    await writeTextFile(suiteDir, SUITE_FILE, bodyMarkdown);
+  }
+
+  async archiveSuite(id: string, archived: boolean): Promise<void> {
+    const suiteDir = await getDir(await this.testCasesDir(true), id);
+    await writeJson(suiteDir, META_FILE, { archived } satisfies CaseBookkeeping);
+  }
+
+  async getRunSource(testCaseId: string, version: number): Promise<string> {
+    const { dir: caseDir, suiteId } = await this.findCaseDir(testCaseId);
+    const versionsDir = await getDir(caseDir, "versions");
+    const { text: caseMarkdown } = await readTextFile(versionsDir, versionFile(version));
+    if (!suiteId) return caseMarkdown;
+    const suiteDir = await getDir(await this.testCasesDir(true), suiteId);
+    const suiteFile = await tryReadTextFile(suiteDir, SUITE_FILE);
+    return buildRunSource(caseMarkdown, suiteFile?.text ?? null);
   }
 
   // ---- RunStore ----
@@ -298,9 +445,7 @@ export class FsaDataStore implements DataStore {
     version: number,
     variableValues: Record<string, string> = {},
   ): Promise<Run> {
-    const caseDir = await getDir(await this.testCasesDir(true), testCaseId);
-    const versionsDir = await getDir(caseDir, "versions");
-    const { text: rawMarkdown } = await readTextFile(versionsDir, versionFile(version));
+    const rawMarkdown = await this.getRunSource(testCaseId, version);
     const declared = parseCaseDocument(rawMarkdown, { version, createdAt: nowIso() });
     const resolvedValues = resolveVariableValues(declared.variables, variableValues);
     const substitutedMarkdown = substituteVariables(rawMarkdown, resolvedValues);

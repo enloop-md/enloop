@@ -1,23 +1,33 @@
 import { useEffect, useMemo, useState } from "react";
-import type { TestCaseSummary } from "@tcm/shared";
+import type { SuiteSummary, TestCaseSummary } from "@tcm/shared";
 import { Header } from "../../components/Header.js";
 import { useReadyStore } from "../store/DataStoreProvider.js";
 
+function matchesQuery(query: string, title: string, tags: string[]): boolean {
+  if (!query) return true;
+  return title.toLowerCase().includes(query) || tags.some((t) => t.toLowerCase().includes(query));
+}
+
 export function LibraryScreen({
   onOpenCase,
+  onOpenSuite,
   onNewCase,
+  onNewSuite,
   onNewFreeRun,
   onSettings,
   onHistory,
 }: {
   onOpenCase: (id: string) => void;
+  onOpenSuite: (suiteId: string) => void;
   onNewCase: () => void;
+  onNewSuite: () => void;
   onNewFreeRun: (freeRunId: string) => void;
   onSettings: () => void;
   onHistory: () => void;
 }) {
   const store = useReadyStore();
   const [cases, setCases] = useState<TestCaseSummary[] | null>(null);
+  const [suites, setSuites] = useState<SuiteSummary[] | null>(null);
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,10 +48,11 @@ export function LibraryScreen({
 
   useEffect(() => {
     let cancelled = false;
-    store
-      .listTestCases()
-      .then((result) => {
-        if (!cancelled) setCases(result);
+    Promise.all([store.listTestCases(), store.listSuites()])
+      .then(([c, s]) => {
+        if (cancelled) return;
+        setCases(c);
+        setSuites(s);
       })
       .catch((e) => !cancelled && setError(String(e)));
     return () => {
@@ -49,18 +60,42 @@ export function LibraryScreen({
     };
   }, [store]);
 
-  const filtered = useMemo(() => {
-    if (!cases) return [];
+  const groups = useMemo(() => {
+    if (!cases || !suites) return null;
     const q = query.trim().toLowerCase();
-    return cases
-      .filter((c) => showArchived || !c.archived)
-      .filter(
-        (c) =>
-          !q ||
-          c.title.toLowerCase().includes(q) ||
-          c.tags.some((t) => t.toLowerCase().includes(q)),
-      );
-  }, [cases, query, showArchived]);
+    const archivedOk = (archived: boolean) => showArchived || !archived;
+
+    const casesBySuite = new Map<string, TestCaseSummary[]>();
+    const ungrouped: TestCaseSummary[] = [];
+    for (const c of cases) {
+      if (!archivedOk(c.archived)) continue;
+      if (c.suiteId) {
+        const list = casesBySuite.get(c.suiteId) ?? [];
+        list.push(c);
+        casesBySuite.set(c.suiteId, list);
+      } else {
+        ungrouped.push(c);
+      }
+    }
+
+    const suiteGroups = suites
+      .filter((s) => archivedOk(s.archived))
+      .map((s) => {
+        const suiteMatches = matchesQuery(q, s.title, s.tags);
+        const allCases = casesBySuite.get(s.id) ?? [];
+        const shownCases = suiteMatches
+          ? allCases
+          : allCases.filter((c) => matchesQuery(q, c.title, c.tags));
+        return { suite: s, cases: shownCases, suiteMatches };
+      })
+      .filter((g) => g.suiteMatches || g.cases.length > 0);
+
+    const shownUngrouped = ungrouped.filter((c) => matchesQuery(q, c.title, c.tags));
+
+    return { suiteGroups, ungrouped: shownUngrouped };
+  }, [cases, suites, query, showArchived]);
+
+  const isEmpty = groups !== null && groups.suiteGroups.length === 0 && groups.ungrouped.length === 0;
 
   return (
     <div className="flex h-full flex-col">
@@ -101,6 +136,12 @@ export function LibraryScreen({
               Free run
             </button>
             <button
+              onClick={onNewSuite}
+              className="rounded border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            >
+              + New suite
+            </button>
+            <button
               onClick={onNewCase}
               className="rounded bg-slate-800 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-700"
             >
@@ -112,12 +153,62 @@ export function LibraryScreen({
 
       <div className="flex-1 overflow-y-auto">
         {error && <p className="p-3 text-sm text-red-600">{error}</p>}
-        {!error && cases === null && <p className="p-3 text-sm text-slate-400">Loading…</p>}
-        {!error && cases !== null && filtered.length === 0 && (
-          <p className="p-3 text-sm text-slate-400">No test cases yet.</p>
+        {!error && groups === null && <p className="p-3 text-sm text-slate-400">Loading…</p>}
+        {!error && isEmpty && <p className="p-3 text-sm text-slate-400">No test cases yet.</p>}
+
+        {groups?.suiteGroups.map(({ suite, cases: suiteCases }) => (
+          <div key={suite.id} className="border-b border-slate-100">
+            <button
+              onClick={() => onOpenSuite(suite.id)}
+              className="flex w-full items-center gap-2 bg-slate-50 px-3 py-2 text-left hover:bg-slate-100"
+            >
+              <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-700">
+                suite
+              </span>
+              <span className="flex-1 truncate text-sm font-medium text-slate-800">{suite.title}</span>
+              {suite.archived && (
+                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
+                  archived
+                </span>
+              )}
+              <span className="text-xs text-slate-400">
+                {suite.caseCount} case{suite.caseCount === 1 ? "" : "s"}
+              </span>
+            </button>
+            <ul className="divide-y divide-slate-100">
+              {suiteCases.map((c) => (
+                <li key={c.id}>
+                  <button
+                    onClick={() => onOpenCase(c.id)}
+                    className="flex w-full flex-col gap-1 py-2 pl-8 pr-3 text-left hover:bg-slate-50"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium text-slate-800">{c.title}</span>
+                      {c.archived && (
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
+                          archived
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                      <span>v{c.currentVersion}</span>
+                      {c.tags.length > 0 && <span>{c.tags.join(", ")}</span>}
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+
+        {groups && groups.suiteGroups.length > 0 && groups.ungrouped.length > 0 && (
+          <div className="bg-slate-50 px-3 py-1 text-xs font-semibold uppercase text-slate-400">
+            Ungrouped
+          </div>
         )}
+
         <ul className="divide-y divide-slate-100">
-          {filtered.map((c) => (
+          {groups?.ungrouped.map((c) => (
             <li key={c.id}>
               <button
                 onClick={() => onOpenCase(c.id)}

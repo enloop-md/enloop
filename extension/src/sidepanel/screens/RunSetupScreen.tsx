@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { generateVariableValue, VARIABLE_GENERATOR_LABELS, type TestCaseVariable } from "@tcm/shared";
+import {
+  generateVariableValue,
+  parseCaseDocument,
+  VARIABLE_GENERATOR_LABELS,
+  type TestCaseVariable,
+} from "@tcm/shared";
 import { Header } from "../../components/Header.js";
 import { useReadyStore } from "../store/DataStoreProvider.js";
 import { getActivePageUrl } from "../../lib/automation.js";
@@ -27,11 +32,12 @@ export function RunSetupScreen({
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [doc, url] = await Promise.all([
-        store.getVersion(testCaseId, version),
+      const [runSource, url] = await Promise.all([
+        store.getRunSource(testCaseId, version),
         getActivePageUrl().catch(() => undefined),
       ]);
       if (cancelled) return;
+      const doc = parseCaseDocument(runSource, { version, createdAt: new Date().toISOString() });
       setPageUrl(url);
       setVariables(doc.variables);
       const initial: Record<string, string> = {};

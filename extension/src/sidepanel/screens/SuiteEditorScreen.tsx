@@ -1,56 +1,57 @@
 import { useEffect, useState } from "react";
-import { parseCaseDocument, starterCaseTemplate } from "@tcm/shared";
+import { parseCaseDocument, starterSuiteTemplate } from "@tcm/shared";
 import { Header } from "../../components/Header.js";
 import { useReadyStore } from "../store/DataStoreProvider.js";
 
-export function EditorScreen({
-  testCaseId,
+export function SuiteEditorScreen({
   suiteId,
   onBack,
   onSaved,
 }: {
-  testCaseId?: string;
-  /** When set and `testCaseId` is unset, the new case is created inside this suite. */
   suiteId?: string;
   onBack: () => void;
-  onSaved: (testCaseId: string) => void;
+  onSaved: (suiteId: string) => void;
 }) {
   const store = useReadyStore();
-  const isNew = !testCaseId;
+  const isNew = !suiteId;
 
-  const [text, setText] = useState(isNew ? starterCaseTemplate() : "");
+  const [text, setText] = useState(isNew ? starterSuiteTemplate() : "");
   const [loaded, setLoaded] = useState(isNew);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!testCaseId) return;
+    if (!suiteId) return;
     let cancelled = false;
-    (async () => {
-      const meta = await store.getTestCase(testCaseId);
-      const source = await store.getVersionSource(testCaseId, meta.currentVersion);
-      if (cancelled) return;
-      setText(source);
-      setLoaded(true);
-    })().catch((e) => !cancelled && setError(String(e)));
+    store
+      .getSuiteSource(suiteId)
+      .then((source) => {
+        if (cancelled) return;
+        setText(source);
+        setLoaded(true);
+      })
+      .catch((e) => !cancelled && setError(String(e)));
     return () => {
       cancelled = true;
     };
-  }, [store, testCaseId]);
+  }, [store, suiteId]);
 
   const preview = (() => {
     try {
-      const parsed = parseCaseDocument(text, { version: 1, createdAt: new Date().toISOString() });
-      const automated = parsed.steps.filter((s) => s.type === "automated").length;
-      const stepSummary = `${parsed.steps.length} step${parsed.steps.length === 1 ? "" : "s"} (${automated} automated)`;
+      const parsed = parseCaseDocument(
+        text,
+        { version: 1, createdAt: new Date().toISOString() },
+        { requireSteps: false },
+      );
+      const stepSummary =
+        parsed.steps.length > 0
+          ? `${parsed.steps.length} prep step${parsed.steps.length === 1 ? "" : "s"}`
+          : "no prep steps";
       const varSummary =
         parsed.variables.length > 0
           ? `, ${parsed.variables.length} variable${parsed.variables.length === 1 ? "" : "s"}`
           : "";
-      return {
-        ok: true as const,
-        summary: stepSummary + varSummary,
-      };
+      return { ok: true as const, summary: stepSummary + varSummary };
     } catch (e) {
       return { ok: false as const, summary: e instanceof Error ? e.message : String(e) };
     }
@@ -65,11 +66,11 @@ export function EditorScreen({
     setBusy(true);
     try {
       if (isNew) {
-        const meta = await store.createTestCase(text, suiteId);
-        onSaved(meta.id);
+        const suite = await store.createSuite(text);
+        onSaved(suite.id);
       } else {
-        await store.createVersion(testCaseId, text);
-        onSaved(testCaseId);
+        await store.saveSuite(suiteId, text);
+        onSaved(suiteId);
       }
     } catch (e) {
       setError(String(e));
@@ -88,7 +89,7 @@ export function EditorScreen({
 
   return (
     <div className="flex h-full flex-col">
-      <Header title={isNew ? "New test case" : "Edit test case"} onBack={onBack} />
+      <Header title={isNew ? "New suite" : "Edit suite"} onBack={onBack} />
       <div className="flex-1 overflow-hidden p-3">
         <textarea
           value={text}
@@ -107,7 +108,7 @@ export function EditorScreen({
           disabled={busy || !preview.ok}
           className="w-full rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
         >
-          {isNew ? "Create test case" : "Save new version"}
+          {isNew ? "Create suite" : "Save suite"}
         </button>
       </div>
     </div>
