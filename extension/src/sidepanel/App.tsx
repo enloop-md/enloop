@@ -4,6 +4,7 @@ import { ConnectScreen } from "./screens/ConnectScreen.js";
 import { LibraryScreen } from "./screens/LibraryScreen.js";
 import { CaseDetailScreen } from "./screens/CaseDetailScreen.js";
 import { EditorScreen } from "./screens/EditorScreen.js";
+import { RunSetupScreen } from "./screens/RunSetupScreen.js";
 import { RunScreen } from "./screens/RunScreen.js";
 import { RunHistoryScreen } from "./screens/RunHistoryScreen.js";
 import { SettingsScreen } from "./screens/SettingsScreen.js";
@@ -12,6 +13,7 @@ type Screen =
   | { kind: "library" }
   | { kind: "caseDetail"; testCaseId: string }
   | { kind: "editor"; testCaseId?: string }
+  | { kind: "runSetup"; testCaseId: string; version: number }
   | { kind: "run"; testCaseId: string; runId: string }
   | { kind: "history"; testCaseId?: string }
   | { kind: "settings" };
@@ -65,6 +67,9 @@ function Shell() {
           onRunStarted={(runId) =>
             push({ kind: "run", testCaseId: screen.testCaseId, runId })
           }
+          onRunSetup={(version) =>
+            push({ kind: "runSetup", testCaseId: screen.testCaseId, version })
+          }
           onHistory={() => push({ kind: "history", testCaseId: screen.testCaseId })}
           onSettings={() => push({ kind: "settings" })}
         />
@@ -75,6 +80,18 @@ function Shell() {
           testCaseId={screen.testCaseId}
           onBack={pop}
           onSaved={(id) => replaceRoot({ kind: "caseDetail", testCaseId: id })}
+        />
+      );
+    case "runSetup":
+      return (
+        <RunSetupScreen
+          testCaseId={screen.testCaseId}
+          version={screen.version}
+          onBack={pop}
+          onRunStarted={(runId) =>
+            push({ kind: "run", testCaseId: screen.testCaseId, runId })
+          }
+          onSettings={() => push({ kind: "settings" })}
         />
       );
     case "run":

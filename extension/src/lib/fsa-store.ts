@@ -4,7 +4,9 @@ import {
   newTestCaseId,
   parseCaseDocument,
   renderRunReport,
+  resolveVariableValues,
   runFileSchema,
+  substituteVariables,
   type CaseBookkeeping,
   type DataStore,
   type Run,
@@ -276,19 +278,27 @@ export class FsaDataStore implements DataStore {
     return composeRun(doc, runFile);
   }
 
-  async createRun(testCaseId: string, version: number): Promise<Run> {
+  async createRun(
+    testCaseId: string,
+    version: number,
+    variableValues: Record<string, string> = {},
+  ): Promise<Run> {
     const caseDir = await getDir(await this.testCasesDir(true), testCaseId);
     const versionsDir = await getDir(caseDir, "versions");
     const { text: rawMarkdown } = await readTextFile(versionsDir, versionFile(version));
-    const doc = parseCaseDocument(rawMarkdown, { version, createdAt: nowIso() });
+    const declared = parseCaseDocument(rawMarkdown, { version, createdAt: nowIso() });
+    const resolvedValues = resolveVariableValues(declared.variables, variableValues);
+    const substitutedMarkdown = substituteVariables(rawMarkdown, resolvedValues);
+    const doc = parseCaseDocument(substitutedMarkdown, { version, createdAt: nowIso() });
 
     const runId = newRunId();
     const runsDir = await this.runsDir(true);
     const tcRunsDir = await getDir(runsDir, testCaseId, { create: true });
     const runDir = await getDir(tcRunsDir, runId, { create: true });
 
-    // Verbatim copy — frozen forever, regardless of later edits to the case.
-    await writeTextFile(runDir, CASE_FILE, rawMarkdown);
+    // Verbatim copy of the *substituted* text — frozen forever, regardless
+    // of later edits to the case or a different run's variable values.
+    await writeTextFile(runDir, CASE_FILE, substitutedMarkdown);
 
     const now = nowIso();
     const runFile: RunFile = {

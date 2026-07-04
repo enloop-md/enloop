@@ -39,9 +39,14 @@ export function EditorScreen({
     try {
       const parsed = parseCaseDocument(text, { version: 1, createdAt: new Date().toISOString() });
       const automated = parsed.steps.filter((s) => s.type === "automated").length;
+      const stepSummary = `${parsed.steps.length} step${parsed.steps.length === 1 ? "" : "s"} (${automated} automated)`;
+      const varSummary =
+        parsed.variables.length > 0
+          ? `, ${parsed.variables.length} variable${parsed.variables.length === 1 ? "" : "s"}`
+          : "";
       return {
         ok: true as const,
-        summary: `${parsed.steps.length} step${parsed.steps.length === 1 ? "" : "s"} (${automated} automated)`,
+        summary: stepSummary + varSummary,
       };
     } catch (e) {
       return { ok: false as const, summary: e instanceof Error ? e.message : String(e) };

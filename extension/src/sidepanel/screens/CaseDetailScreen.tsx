@@ -9,6 +9,7 @@ export function CaseDetailScreen({
   onBack,
   onEdit,
   onRunStarted,
+  onRunSetup,
   onHistory,
   onSettings,
 }: {
@@ -16,6 +17,7 @@ export function CaseDetailScreen({
   onBack: () => void;
   onEdit: () => void;
   onRunStarted: (runId: string) => void;
+  onRunSetup: (version: number) => void;
   onHistory: () => void;
   onSettings: () => void;
 }) {
@@ -59,6 +61,11 @@ export function CaseDetailScreen({
     setBusy(true);
     setError(null);
     try {
+      const currentVersionDoc = await store.getVersion(testCaseId, meta.currentVersion);
+      if (currentVersionDoc.variables.length > 0) {
+        onRunSetup(meta.currentVersion);
+        return;
+      }
       const run = await store.createRun(testCaseId, meta.currentVersion);
       onRunStarted(run.id);
     } catch (e) {

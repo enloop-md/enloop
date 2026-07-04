@@ -1,4 +1,21 @@
-import type { RunFile, Step, StepType, TestCaseVersion } from "./types.js";
+import { VARIABLE_GENERATORS } from "./schemas.js";
+import type {
+  RunFile,
+  Step,
+  StepType,
+  TestCaseVariable,
+  TestCaseVersion,
+  VariableGenerator,
+} from "./types.js";
+
+/**
+ * Format version of this grammar itself — bump only when the grammar below
+ * changes in a way that would matter to a parser (new/renamed sections,
+ * changed line syntax, etc). Not to be confused with a test case's own
+ * v1.md/v2.md version history, which tracks edits to a case's *content*
+ * under this same grammar.
+ */
+export const CURRENT_FORMAT_VERSION = "0.0.1";
 
 /**
  * Grammar (see README-less by design — this comment is the spec). The very
@@ -7,10 +24,34 @@ import type { RunFile, Step, StepType, TestCaseVersion } from "./types.js";
  * that first H1 already "used up" the top level:
  *
  *   # Case title
+ *   @version 0.0.1
+ *   @author Sergey Ryabenko
  *   Tags: auth, smoke
- *   Change note: Added SSO redirect check      (both lines optional)
+ *   Change note: Added SSO redirect check      (all four lines optional)
  *
  *   Free text description.
+ *
+ *   # Variables                                 (optional)
+ *
+ *   ## USERNAME
+ *   Login username to register with.            (free text description,
+ *                                                 like a step's instructions)
+ *   Generator: random-string 8                   (optional — see below;
+ *                                                 omit for a plain manual
+ *                                                 field)
+ *
+ *   ## PRODUCT_ID
+ *   Product to add to cart.
+ *   Default: sku-12345                          (optional literal default)
+ *
+ *   Generators, given as `Generator: <name> [arg]`: `timestamp` (epoch ms,
+ *   or ISO text with arg `iso`), `page-url`, `page-domain` (both read the
+ *   active tab when a run starts), `random-number` (arg `min-max`, default
+ *   `0-999999`), `random-string` (arg = length, default 8). A run prompts
+ *   for every declared variable, pre-filling generated ones, then replaces
+ *   every `%NAME%` placeholder anywhere in the rest of the document —
+ *   title, description, step instructions, selectors, scripts — with the
+ *   resolved value. See `substituteVariables`.
  *
  *   # Dependencies                              (optional, bullet list)
  *   - Seeded test user
@@ -40,7 +81,9 @@ import type { RunFile, Step, StepType, TestCaseVersion } from "./types.js";
  *                                                  world with DOM access)
  *
  * `version`/`createdAt` are not part of the text — callers supply them
- * (derived from the filename and file mtime) via `fallback`.
+ * (derived from the filename and file mtime) via `fallback`. `@version`
+ * (the format version) defaults to `CURRENT_FORMAT_VERSION` when absent,
+ * so older files written before this field existed still parse as current.
  */
 export function parseCaseDocument(
   raw: string,
@@ -57,12 +100,26 @@ export function parseCaseDocument(
   const title = lines[i].slice(2).trim();
   i++;
 
+  let formatVersion = CURRENT_FORMAT_VERSION;
+  let author = "";
   let tags: string[] = [];
   let changeNote = "";
   while (i < lines.length) {
     const line = lines[i];
+    const versionMatch = /^@version\s+(.*)$/i.exec(line);
+    const authorMatch = /^@author\s+(.*)$/i.exec(line);
     const tagsMatch = /^Tags:\s*(.*)$/i.exec(line);
     const noteMatch = /^Change note:\s*(.*)$/i.exec(line);
+    if (versionMatch) {
+      formatVersion = versionMatch[1].trim();
+      i++;
+      continue;
+    }
+    if (authorMatch) {
+      author = authorMatch[1].trim();
+      i++;
+      continue;
+    }
     if (tagsMatch) {
       tags = tagsMatch[1]
         .split(",")
@@ -83,13 +140,15 @@ export function parseCaseDocument(
   const { preamble, sections: topSections } = splitTopSections(rest, 1);
   const description = preamble.trim();
 
+  let variables: TestCaseVariable[] = [];
   let dependencies: string[] = [];
   let prerequisites: string[] = [];
   let steps: Step[] = [];
 
   for (const section of topSections) {
     const name = section.heading.trim().toLowerCase();
-    if (name === "dependencies") dependencies = parseBulletList(section.content);
+    if (name === "variables") variables = parseVariables(section.content);
+    else if (name === "dependencies") dependencies = parseBulletList(section.content);
     else if (name === "prerequisites" || name === "prerequirements")
       prerequisites = parseBulletList(section.content);
     else if (name === "steps") steps = parseSteps(section.content);
@@ -102,10 +161,13 @@ export function parseCaseDocument(
   return {
     version: fallback.version,
     createdAt: fallback.createdAt,
+    formatVersion,
+    author,
     changeNote,
     title,
     description,
     tags,
+    variables,
     dependencies,
     prerequisites,
     steps,
@@ -138,6 +200,58 @@ function splitTopSections(
     preamble: preambleLines.join("\n"),
     sections: sections.map((s) => ({ heading: s.heading, content: s.content.join("\n").trim() })),
   };
+}
+
+function parseVariables(sectionBody: string): TestCaseVariable[] {
+  const { sections } = splitTopSections(sectionBody, 2);
+  return sections.map((s) => parseOneVariable(s.heading, s.content));
+}
+
+const VARIABLE_DEFAULT_RE = /^Default:\s*(.*)$/i;
+const VARIABLE_GENERATOR_RE = /^Generator:\s*(\S+)(?:\s+(.*))?$/i;
+
+function parseOneVariable(name: string, body: string): TestCaseVariable {
+  const descriptionLines: string[] = [];
+  let defaultValue: string | undefined;
+  let generator: VariableGenerator | undefined;
+  let generatorArg: string | undefined;
+
+  for (const line of body.split("\n")) {
+    const defaultMatch = VARIABLE_DEFAULT_RE.exec(line);
+    const generatorMatch = VARIABLE_GENERATOR_RE.exec(line);
+    if (defaultMatch) {
+      defaultValue = defaultMatch[1].trim() || undefined;
+      continue;
+    }
+    if (generatorMatch) {
+      const candidate = generatorMatch[1].trim().toLowerCase();
+      if ((VARIABLE_GENERATORS as readonly string[]).includes(candidate)) {
+        generator = candidate as VariableGenerator;
+        generatorArg = generatorMatch[2]?.trim() || undefined;
+      }
+      continue;
+    }
+    descriptionLines.push(line);
+  }
+
+  return {
+    name: name.trim(),
+    description: descriptionLines.join("\n").trim(),
+    defaultValue,
+    generator,
+    generatorArg,
+  };
+}
+
+const PLACEHOLDER_RE = /%([A-Za-z_][A-Za-z0-9_]*)%/g;
+
+/** Replaces every `%NAME%` placeholder in `text` with its resolved value.
+ * A placeholder with no matching entry in `values` is left untouched,
+ * rather than assuming a missing variable means "blank it out". */
+export function substituteVariables(text: string, values: Record<string, string>): string {
+  return text.replace(PLACEHOLDER_RE, (match, name: string) =>
+    name in values ? values[name] : match,
+  );
 }
 
 function parseBulletList(text: string): string[] {
@@ -203,6 +317,8 @@ function parseOneStep(title: string, body: string, index: number): Step {
 /** Starter text for a brand new test case, shown in an empty editor. */
 export function starterCaseTemplate(): string {
   return `# New test case
+@version ${CURRENT_FORMAT_VERSION}
+@author
 Tags:
 
 Describe what this test case covers.

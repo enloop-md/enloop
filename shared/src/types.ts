@@ -2,6 +2,8 @@ import type { z } from "zod";
 import type {
   stepTypeSchema,
   stepSchema,
+  variableGeneratorSchema,
+  testCaseVariableSchema,
   testCaseVersionSchema,
   caseBookkeepingSchema,
   testCaseMetaSchema,
@@ -19,6 +21,10 @@ import type {
 export type StepType = z.infer<typeof stepTypeSchema>;
 /** One step, parsed out of a case document's `## Steps` section. */
 export type Step = z.infer<typeof stepSchema>;
+
+export type VariableGenerator = z.infer<typeof variableGeneratorSchema>;
+/** One variable, parsed out of a case document's `# Variables` section. */
+export type TestCaseVariable = z.infer<typeof testCaseVariableSchema>;
 
 /**
  * A fully self-contained version of a test case, parsed from one Markdown

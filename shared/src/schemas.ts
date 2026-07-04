@@ -8,6 +8,27 @@ import { z } from "zod";
 
 export const stepTypeSchema = z.enum(["manual", "automated"]);
 
+export const VARIABLE_GENERATORS = [
+  "timestamp",
+  "page-url",
+  "page-domain",
+  "random-number",
+  "random-string",
+] as const;
+
+export const variableGeneratorSchema = z.enum(VARIABLE_GENERATORS);
+
+/** One entry from a case document's `# Variables` section — a named
+ * placeholder (`%NAME%`) a run prompts for before its steps start. */
+export const testCaseVariableSchema = z.object({
+  name: z.string().min(1),
+  description: z.string(),
+  defaultValue: z.string().optional(),
+  generator: variableGeneratorSchema.optional(),
+  /** Generator-specific argument, e.g. length for random-string, "min-max" for random-number. */
+  generatorArg: z.string().optional(),
+});
+
 /** A step as parsed from a case document's `## Steps` section (one `### `). */
 export const stepSchema = z.object({
   id: z.string(),
@@ -31,10 +52,16 @@ export const stepSchema = z.object({
 export const testCaseVersionSchema = z.object({
   version: z.number().int().positive(),
   createdAt: z.string(),
+  /** Format version of the grammar this document was parsed with, e.g.
+   * `@version 0.0.1`. Not the same as `version` above. */
+  formatVersion: z.string(),
+  /** Free-text `@author` line, settable per version like `changeNote`. */
+  author: z.string(),
   changeNote: z.string(),
   title: z.string().min(1),
   description: z.string(),
   tags: z.array(z.string()),
+  variables: z.array(testCaseVariableSchema),
   dependencies: z.array(z.string()),
   prerequisites: z.array(z.string()),
   steps: z.array(stepSchema),

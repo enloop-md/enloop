@@ -36,7 +36,14 @@ export interface TestCaseStore {
 export interface RunStore {
   listRuns(testCaseId?: string): Promise<RunSummary[]>;
   getRun(testCaseId: string, runId: string): Promise<Run>;
-  createRun(testCaseId: string, version: number): Promise<Run>;
+  /**
+   * `variableValues` supplies a value per declared `# Variables` entry
+   * (keyed by name); anything omitted falls back to that variable's
+   * generator or default — see `resolveVariableValues`. The version's raw
+   * Markdown has every `%NAME%` placeholder substituted with the resolved
+   * value *before* being frozen as the run's `case.md`.
+   */
+  createRun(testCaseId: string, version: number, variableValues?: Record<string, string>): Promise<Run>;
   updateStep(testCaseId: string, runId: string, stepId: string, patch: StepPatch): Promise<Run>;
   finishRun(testCaseId: string, runId: string, status: RunStatus): Promise<Run>;
 }

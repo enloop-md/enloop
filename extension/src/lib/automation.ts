@@ -6,6 +6,14 @@ export async function getActiveTabId(): Promise<number> {
   return tab.id;
 }
 
+/** Used to seed `page-url`/`page-domain` variable generators. Returns
+ * `undefined` rather than throwing — a run can still start without it, the
+ * generated value just comes back blank for the user to fill in by hand. */
+export async function getActivePageUrl(): Promise<string | undefined> {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab?.url;
+}
+
 /**
  * Calls the global `public/harness.js` defines. Reinjected fresh before
  * every automated step (idempotent — redefining the global is harmless),
