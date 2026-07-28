@@ -224,3 +224,6 @@ Tell the user:
 - Whether the app map was built fresh or reused.
 
 Do not claim the case was executed. It was parsed and linted, not run.
+
+Finish by telling them the next step: run it in the extension, then
+`/enloop:check` back here to triage what it found.

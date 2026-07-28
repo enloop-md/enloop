@@ -10,7 +10,7 @@
     {
       "name": "enloop",
       "source": "./plugins/enloop",
-      "description": "Write manual test cases from inside the app repo being tested — routes, labels and selectors derived from source, never invented."
+      "description": "Write manual test cases from inside the app repo being tested, then triage the runs that come back — routes, labels and selectors derived from source, never invented."
     }
   ]
 }

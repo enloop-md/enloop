@@ -13,10 +13,11 @@ you like.
 
 - **The extension** runs cases: step-by-step, marking pass/fail, executing
   automated steps in the page, capturing notes, and writing a run report.
-- **The skills** author cases: `/enloop:write` writes a case for a real
-  feature or ticket from inside the app repo being tested;
-  `/enloop-demo` produces demo cases that exercise the case grammar
-  itself.
+- **The skills** close the loop: `/enloop:write` writes a case for a real
+  feature or ticket from inside the app repo being tested, and
+  `/enloop:check` triages the finished run back in that same repo —
+  deciding per failure whether the app is wrong or the case is.
+  `/enloop-demo` produces demo cases that exercise the case grammar itself.
 
 ---
 
@@ -112,12 +113,14 @@ prerequisites when a run starts.
 
 ## Part 2 — The skills
 
-Two skills, deliberately separate because they have different jobs and
-different homes.
+The loop is **write → run → check**: author a case from the app's source,
+execute it in the side panel, then bring the result back to the repo and
+decide what it means.
 
 | Skill | Lives | Run it from | Writes |
 | --- | --- | --- | --- |
 | `/enloop:write` | `enloop` plugin (installable anywhere) | the app repo you are testing | a real case into your cases folder |
+| `/enloop:check` | same plugin | the app repo you are testing | a triage report, and a fixed case version when the case was at fault |
 | `/enloop-demo` | this repo's `.claude/skills/` | this repo only | a demo case exercising the grammar |
 
 `/enloop-demo` is intentionally **not** distributable: it needs this
@@ -125,9 +128,10 @@ repo's parser, its TypeScript build, and the extension build to verify what it
 produces. Copying it into another project gives you a skill whose every path is
 wrong. Don't.
 
-### Installing `/enloop:write`
+### Installing the plugin
 
-Pick one of three, depending on what you're doing.
+Both `/enloop:write` and `/enloop:check` ship in the same plugin. Pick one
+of three install paths, depending on what you're doing.
 
 **A. Try it, or use it solo across your own projects.** Add this repo as a
 marketplace and install:
@@ -160,9 +164,9 @@ of `~/.claude`.)
 
 ### Configuring it
 
-The skill needs to know where this repo lives, since it runs from *other*
-repos and reads the grammar from here. Set it once in your user
-`settings.json`:
+The skills need to know where this repo lives, since they run from *other*
+repos and read the grammar and the run data from here. Set it once in your
+user `settings.json`:
 
 ```json
 {
@@ -177,10 +181,10 @@ Optionally set `ENLOOP_CASES_DIR` if your cases folder is not
 real cases somewhere sensible rather than in this repo's git-ignored
 `private/`.
 
-The skill never hardcodes a path: the app repo is `${CLAUDE_PROJECT_DIR}`, and
+Neither skill hardcodes a path: the app repo is `${CLAUDE_PROJECT_DIR}`, and
 everything about Enloop comes from `$ENLOOP_HOME`.
 
-### Using it
+### Writing a case
 
 From inside the repo of the app you're testing:
 
@@ -214,6 +218,48 @@ What it does, in order:
 7. Writes `<id>/meta.json` and `<id>/versions/v1.md` into your cases folder.
 
 Then open the extension, find the case in the Library, and run it.
+
+### Checking a run
+
+When a run finishes, the extension writes `report.md` (every step, for
+sharing) and — only when there was something to act on — `feedback.md`, an
+action list built from the failures and the tester's typed notes
+(`bug` / `feature` / `docs`). Both land next to `run.json` in
+`runs/<case-id>/<run-id>/`.
+
+Back in the app repo:
+
+```
+/enloop:check
+```
+
+With no argument it takes the most recent finished run and tells you which
+one it picked. Pass a run id, case id, or case title to pick a different
+one.
+
+It reads the run, then makes one judgement per finding — the judgement the
+tester can't make and the report can't contain:
+
+| Verdict | What it means | Evidence it must give |
+| --- | --- | --- |
+| App bug | Behaviour contradicts the app's own source | `file.ext:123` and the mechanism |
+| Case defect | The step was stale, wrong, or unanswerable | the grep showing the selector or route is gone |
+| Environment | Wrong build, missing fixture, bad integration state | what must be true for a rerun to mean anything |
+| Not reproducible | Couldn't be located in source from here | what it would take to reproduce |
+
+It also sweeps every `Where:` and `Selector:` in the case — including on
+steps that passed — against current source, because a selector that
+changed under a passing step is next run's mystery failure.
+
+Then it acts on what it owns. **Case defects it fixes itself**, writing
+`versions/v<n+1>.md` with a `Change note:` and re-checking the edited steps
+against the step contract; previous versions are never edited in place.
+**App bugs it reports and stops** — file, line, and the fix it would make —
+because you may want a ticket or a different fix rather than an edit
+appearing under you. Say go and it implements it.
+
+Nothing is rerun, and it won't claim otherwise: a fixed case and a patched
+bug both need another pass through the extension.
 
 ### The step contract
 
