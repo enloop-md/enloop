@@ -7,5 +7,9 @@ dist-*/
 # Local test-case/run data (a connected File System Access folder) — not source.
 /private/
 
-# Claude Code machine-local settings.
+# Claude Code machine-local settings and state. These carry absolute paths
+# from whatever machine they were written on — keep them out of a public repo.
 .claude/settings.local.json
+.claude.json
+/backups/
+/cache/

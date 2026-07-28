@@ -1,0 +1,283 @@
+# Test Case Manager
+
+A Chrome side-panel extension for running manual and automated test cases,
+plus the Claude Code skills that write those cases for you.
+
+Open source under the [MIT license](LICENSE) — the extension, the case
+parser, and the skills are all in this repo.
+
+Cases are plain Markdown in a folder you pick. The extension reads and writes
+that folder directly through the File System Access API — no server, no
+database, no account. Your cases are diffable files you can commit wherever
+you like.
+
+- **The extension** runs cases: step-by-step, marking pass/fail, executing
+  automated steps in the page, capturing notes, and writing a run report.
+- **The skills** author cases: `author-test-case` writes a case for a real
+  feature or ticket from inside the app repo being tested;
+  `generate-example-case` produces demo cases that exercise the case grammar
+  itself.
+
+---
+
+## Part 1 — The extension
+
+### Build and load
+
+```bash
+npm install
+npm run build
+```
+
+Then in Chrome: `chrome://extensions` → enable **Developer mode** → **Load
+unpacked** → select `extension/dist`. Open the side panel from the extension's
+toolbar icon.
+
+On first run the panel asks you to connect a folder. Pick any directory; the
+extension creates its layout inside:
+
+```
+<your folder>/
+├── test-cases/          cases and suites
+├── runs/                one folder per run: case.md, run.json, report.md
+└── free-runs/           unscripted sessions
+```
+
+After a rebuild, hit **reload** on `chrome://extensions` and reopen the side
+panel — a build alone does not refresh an already-loaded extension.
+
+### The case format
+
+A case is one Markdown file. The full grammar is the doc comment at the top of
+[`shared/src/markdown.ts`](shared/src/markdown.ts) — that comment is the spec,
+and it is the thing to read when writing cases by hand.
+
+```markdown
+# Sync a contact from the CRM to the mailer
+@version 0.0.2
+@author Your Name
+Tags: sync-console, integrations, manual
+
+Verifies the single-contact sync path added in PROJ-1234.
+
+# Variables
+
+## TEST_CONTACT_EMAIL
+Email of a contact present in both the CRM and the mailer.
+Default: qa.bot@example.com
+
+# Prerequisites
+- Logged in to the admin as a super-admin
+
+# Steps
+
+## Open the sync console
+Where: /admin/sync-console
+Selector: #account-tabs
+Navigate to the page.
+
+### Expected
+- The account picker renders as tabs.
+- Each tab shows the account name with its sync purpose beneath it.
+
+## Sync the contact
+Where: /admin/sync-console
+Selector: #sync-crm-mailer-btn
+Click `Sync CRM → Mailer`.
+
+### Expected
+- A spinner appears on that button only.
+- A toast reports synced / skipped / failed counts.
+
+### Note
+Regression check — this button used to stay disabled when the local column
+had no match, even though the sync creates the record.
+```
+
+Key fields: `Where:` (the route or screen the tester starts from), `Selector:`
+(the extension scrolls it into view and flashes it), `### Expected` (pass
+criteria only), `### Note` (background, rendered dimmed). A fenced code block
+in place of instructions makes the step **automated** — the script runs in the
+page's own world with DOM access and calls `api.fail(msg)` to fail the step.
+
+Variables declared under `# Variables` are prompted for when a run starts, then
+every `%NAME%` placeholder in the document is substituted — title, instructions,
+selectors, and scripts included.
+
+**Suites** are folders with a `suite.md` holding shared setup; each case inside
+inherits the suite's prep steps (prefixed `Prep:`), variables, dependencies, and
+prerequisites when a run starts.
+
+---
+
+## Part 2 — The skills
+
+Two skills, deliberately separate because they have different jobs and
+different homes.
+
+| Skill | Lives | Run it from | Writes |
+| --- | --- | --- | --- |
+| `author-test-case` | `test-cases` plugin (installable anywhere) | the app repo you are testing | a real case into your cases folder |
+| `generate-example-case` | this repo's `.claude/skills/` | this repo only | a demo case exercising the grammar |
+
+`generate-example-case` is intentionally **not** distributable: it needs this
+repo's parser, its TypeScript build, and the extension build to verify what it
+produces. Copying it into another project gives you a skill whose every path is
+wrong. Don't.
+
+### Installing `author-test-case`
+
+Pick one of three, depending on what you're doing.
+
+**A. Try it, or use it solo across your own projects.** Add this repo as a
+marketplace and install:
+
+```
+/plugin marketplace add ryabenko-pro/test-case-management
+/plugin install test-cases@test-case-management
+```
+
+Update later with `/plugin update test-cases`. Works in every project; nothing
+to commit anywhere.
+
+**B. Give it to your team.** Same two commands, run by each teammate. If the
+repo is private, they need read access — marketplaces work fine from private
+repositories. To make a project install it automatically for everyone who opens
+it, declare the marketplace in that project's `.claude/settings.json` rather
+than asking people to run commands.
+
+**C. Develop it.** Symlink the plugin folder into your skills directory so
+edits are live and versioned in one place:
+
+```bash
+ln -s "$PWD/plugins/test-cases" ~/.claude/skills/test-cases
+```
+
+It loads next session as `test-cases@skills-dir`; `/reload-plugins` picks it up
+immediately. This is the setup to use if you intend to change the skill or the
+step contract. (If you've relocated `CLAUDE_CONFIG_DIR`, use that path instead
+of `~/.claude`.)
+
+### Configuring it
+
+The skill needs to know where this repo lives, since it runs from *other*
+repos and reads the grammar from here. Set it once in your user
+`settings.json`:
+
+```json
+{
+  "env": {
+    "TCM_HOME": "/path/to/test-case-management"
+  }
+}
+```
+
+Optionally set `TCM_CASES_DIR` if your cases folder is not
+`$TCM_HOME/private/test-cases` — which it usually isn't, once you're storing
+real cases somewhere sensible rather than in this repo's git-ignored
+`private/`.
+
+The skill never hardcodes a path: the app repo is `${CLAUDE_PROJECT_DIR}`, and
+everything about the Test Case Manager comes from `$TCM_HOME`.
+
+### Using it
+
+From inside the repo of the app you're testing:
+
+```
+/test-cases:author-test-case PROJ-1234
+```
+
+The argument is the scope — a ticket id, a branch, a feature name, or a
+sentence. With a branch checked out it diffs against `main` and covers what
+actually changed, including the seams where the change meets existing
+behaviour.
+
+It is `disable-model-invocation: true`, so it only ever runs when you ask.
+
+What it does, in order:
+
+1. Resolves the two roots and reads the case grammar fresh from
+   `$TCM_HOME/shared/src/markdown.ts`. It never works from a remembered
+   version of the grammar and never carries a vendored copy.
+2. Reads the [step contract](plugins/test-cases/skills/author-test-case/references/step-contract.md).
+3. Works out the scope from the diff and states it back to you in one line, so
+   a wrong reading costs seconds instead of a whole case.
+4. Builds or refreshes an **app map** at `.claude/test-map.md` in the app repo
+   — routes, screens, and the selectors for key elements, each with the file it
+   came from. This is the expensive part, and it's cached. Commit it; teammates
+   and later runs get it free.
+5. Writes the case, deriving **every** route, label, and selector from source
+   read during that session.
+6. Validates by parsing the result with the real parser and checking it against
+   the contract's reject list.
+7. Writes `<id>/meta.json` and `<id>/versions/v1.md` into your cases folder.
+
+Then open the extension, find the case in the Library, and run it.
+
+### The step contract
+
+The contract is what makes the output executable rather than merely plausible.
+It is a real file — [`step-contract.md`](plugins/test-cases/skills/author-test-case/references/step-contract.md)
+— and it is the thing to edit when cases come out wrong.
+
+The rules, in brief:
+
+1. One step is one action with one observable result. If it contains "then",
+   split it.
+2. Every step states where it starts, via `Where:`.
+3. Every UI step carries a `Selector:`, taken from source — never invented,
+   never a structural path.
+4. `### Expected` holds binary, observable pass criteria as bullets. Nothing
+   else.
+5. Rationale, regression history, and caveats go in `### Note`.
+6. Test data is resolved before the run. A variable gets a default, a
+   generator, or explicit instructions for obtaining it — never "find a company
+   that…" mid-run.
+7. No conditionals inside a step. A conditional becomes its own skippable step.
+8. Cleanup is explicit. A case that can't be run twice will be run once.
+
+It ends in a ten-item reject list the skill checks mechanically before writing
+anything. If the generated cases drift, tighten that list rather than
+re-explaining the goal in the prompt.
+
+---
+
+## Repository layout
+
+```
+extension/          Chrome extension (React + Vite, side panel)
+shared/             parser, schemas, id/variable helpers — the grammar lives here
+plugins/test-cases/ the distributable skill plugin
+.claude/skills/     generate-example-case (this repo only)
+.claude-plugin/     marketplace manifest, so this repo is installable
+private/            local connected-folder data (git-ignored)
+```
+
+Development:
+
+```bash
+npm run dev         # extension with HMR
+npm run build       # production build to extension/dist
+npm run typecheck   # shared + extension
+```
+
+## Contributing
+
+Issues and pull requests are welcome.
+
+Two things to know before opening a PR:
+
+- **The grammar's spec is the doc comment** at the top of
+  [`shared/src/markdown.ts`](shared/src/markdown.ts). If you change how a
+  document parses, change that comment in the same commit and bump
+  `CURRENT_FORMAT_VERSION`. Existing case files must keep parsing.
+- **Examples must be generic.** Everything in this repo — README samples, the
+  step contract, doc comments — uses a fictional admin app with a CRM and a
+  mailer. Don't paste in routes, ticket ids, company names, or bug narratives
+  from a real employer or client; those belong in your own cases folder, which
+  is git-ignored for exactly this reason.
+
+## License
+
+[MIT](LICENSE) © Sergey Ryabenko

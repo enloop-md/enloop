@@ -1,0 +1,10 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "test-cases",
+  "version": "0.1.0",
+  "description": "Author manual test cases for the Test Case Manager extension from inside the app repo being tested — routes, labels and selectors derived from source, never invented.",
+  "author": {
+    "name": "Sergey Ryabenko",
+    "email": "ryabenko.sergey@gmail.com"
+  }
+}
