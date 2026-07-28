@@ -41,6 +41,14 @@ export const stepSchema = z.object({
   /** CSS selector for the element this step is about, e.g. `Selector: #login-button`.
    * Used to scroll it into view and flash it in the page when the step is focused. */
   selector: z.string().optional(),
+  /** Where the tester should be standing before doing this step — a route,
+   * screen name, or other surface, e.g. `Where: /admin/sync-console`.
+   * Keeps "which app/tab am I in?" out of the instructions prose. */
+  where: z.string().optional(),
+  /** Background a tester may want but must not have to read to judge
+   * pass/fail — rationale, regression history, caveats. Parsed from a
+   * `### Note` subsection so `expected` can stay purely the pass criteria. */
+  note: z.string().optional(),
 });
 
 /**

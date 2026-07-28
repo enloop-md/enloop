@@ -268,6 +268,12 @@ function StepRow({
 
       {expanded && (
         <div className="space-y-3 px-3 pb-3">
+          {step.where && (
+            <div className="flex items-baseline gap-1.5 text-xs">
+              <span className="font-medium text-slate-500">Where:</span>
+              <code className="text-slate-600">{step.where}</code>
+            </div>
+          )}
           {step.selector && (
             <div className="flex items-center gap-2">
               <button
@@ -295,6 +301,12 @@ function StepRow({
             <div className="text-xs text-slate-500">
               <span className="font-medium text-slate-600">Expected:</span>
               <Markdown text={step.expected} className="text-xs text-slate-500" />
+            </div>
+          )}
+          {step.note && (
+            <div className="border-l-2 border-slate-200 pl-2 text-[11px] text-slate-400">
+              <span className="font-medium">Note:</span>
+              <Markdown text={step.note} className="text-[11px] text-slate-400" />
             </div>
           )}
 

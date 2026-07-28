@@ -18,7 +18,7 @@ import type {
  * v1.md/v2.md version history, which tracks edits to a case's *content*
  * under this same grammar.
  */
-export const CURRENT_FORMAT_VERSION = "0.0.1";
+export const CURRENT_FORMAT_VERSION = "0.0.2";
 
 /**
  * Grammar (see README-less by design — this comment is the spec). The very
@@ -65,6 +65,12 @@ export const CURRENT_FORMAT_VERSION = "0.0.1";
  *   # Steps
  *
  *   ## Step title
+ *   Where: /admin/integrations                  (optional — the route or
+ *                                                 screen the tester should
+ *                                                 already be on before doing
+ *                                                 this step, so "which app
+ *                                                 am I in?" stays out of the
+ *                                                 instructions prose)
  *   Selector: #login-button                     (optional — scrolls this
  *                                                 into view and flashes it
  *                                                 in the page when the step
@@ -72,8 +78,18 @@ export const CURRENT_FORMAT_VERSION = "0.0.1";
  *                                                 via the Highlight button)
  *   Free text instructions (manual step — no code fence found).
  *
+ *   `Where:` and `Selector:` form a header block directly under the step
+ *   title and may appear in either order; the first line that is neither
+ *   ends the header and begins the instructions.
+ *
  *   ### Expected                                (optional)
- *   What should happen.
+ *   What should happen — pass criteria only.
+ *
+ *   ### Note                                    (optional)
+ *   Background the tester may want but must not have to read to judge
+ *   pass/fail: rationale, regression history, caveats. Keeping it out of
+ *   `### Expected` is the whole point — Expected stays scannable.
+ *   `### Expected` and `### Note` may appear in either order.
  *
  *   ## Another step title
  *   ```js
@@ -278,37 +294,77 @@ function parseSteps(stepsSectionBody: string): Step[] {
 }
 
 const FENCE_RE = /```([^\n]*)\n([\s\S]*?)```/;
-const EXPECTED_RE = /^###\s+Expected\s*$/im;
+const SUBSECTION_RE = /^###\s+(Expected|Note)\s*$/i;
 const SELECTOR_RE = /^Selector:\s*(.*)$/i;
+const WHERE_RE = /^Where:\s*(.*)$/i;
+
+/** Splits a step body into its lead text and any `### Expected` / `### Note`
+ * subsections. They may appear in either order, and either may be absent. */
+function splitStepSubsections(text: string): {
+  lead: string;
+  expected?: string;
+  note?: string;
+} {
+  const lead: string[] = [];
+  const expected: string[] = [];
+  const note: string[] = [];
+  let current = lead;
+  let sawExpected = false;
+  let sawNote = false;
+
+  for (const line of text.split("\n")) {
+    const match = SUBSECTION_RE.exec(line);
+    if (match) {
+      if (match[1].toLowerCase() === "expected") {
+        current = expected;
+        sawExpected = true;
+      } else {
+        current = note;
+        sawNote = true;
+      }
+      continue;
+    }
+    current.push(line);
+  }
+
+  return {
+    lead: lead.join("\n").trim(),
+    expected: sawExpected ? expected.join("\n").trim() || undefined : undefined,
+    note: sawNote ? note.join("\n").trim() || undefined : undefined,
+  };
+}
 
 function parseOneStep(title: string, body: string, index: number): Step {
   const lines = body.split("\n");
   let i = 0;
   while (i < lines.length && lines[i].trim() === "") i++;
-  const selectorMatch = i < lines.length ? SELECTOR_RE.exec(lines[i]) : null;
-  const selector = selectorMatch?.[1].trim() || undefined;
-  const bodyAfterSelector = (selector ? lines.slice(i + 1) : lines).join("\n");
+
+  // `Selector:`/`Where:` form a small header block at the top of a step, in
+  // either order. The first line that is neither ends the header.
+  let selector: string | undefined;
+  let where: string | undefined;
+  for (; i < lines.length; i++) {
+    const selectorMatch = SELECTOR_RE.exec(lines[i]);
+    const whereMatch = WHERE_RE.exec(lines[i]);
+    if (selectorMatch) selector = selectorMatch[1].trim() || undefined;
+    else if (whereMatch) where = whereMatch[1].trim() || undefined;
+    else break;
+  }
+  const bodyAfterHeader = lines.slice(i).join("\n");
 
   let script: string | undefined;
-  let remaining = bodyAfterSelector;
+  let remaining = bodyAfterHeader;
 
-  const fenceMatch = FENCE_RE.exec(bodyAfterSelector);
+  const fenceMatch = FENCE_RE.exec(bodyAfterHeader);
   if (fenceMatch) {
     script = fenceMatch[2].replace(/\n$/, "");
     remaining = (
-      bodyAfterSelector.slice(0, fenceMatch.index) +
-      bodyAfterSelector.slice(fenceMatch.index + fenceMatch[0].length)
+      bodyAfterHeader.slice(0, fenceMatch.index) +
+      bodyAfterHeader.slice(fenceMatch.index + fenceMatch[0].length)
     ).trim();
   }
 
-  let instructions = remaining;
-  let expected: string | undefined;
-  const expectedMatch = EXPECTED_RE.exec(remaining);
-  if (expectedMatch) {
-    instructions = remaining.slice(0, expectedMatch.index).trim();
-    expected = remaining.slice(expectedMatch.index + expectedMatch[0].length).trim() || undefined;
-  }
-  instructions = instructions.trim();
+  const { lead, expected, note } = splitStepSubsections(remaining);
 
   const type: StepType = script !== undefined ? "automated" : "manual";
 
@@ -317,10 +373,12 @@ function parseOneStep(title: string, body: string, index: number): Step {
     order: index,
     title: title.trim(),
     type,
-    instructions: instructions || undefined,
+    instructions: lead || undefined,
     expected,
     script,
     selector,
+    where,
+    note,
   };
 }
 
@@ -342,10 +400,12 @@ Describe what this test case covers.
 # Steps
 
 ## First step
-Describe what the tester should do.
+Where:
+Selector:
+Describe the single action the tester should take.
 
 ### Expected
-Describe what should happen.
+Describe the observable result that makes this step pass.
 `;
 }
 
