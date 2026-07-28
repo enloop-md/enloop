@@ -1,16 +1,16 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "test-case-management",
-  "description": "Skills for authoring and running manual test cases with the Test Case Manager Chrome extension.",
+  "name": "enloop",
+  "description": "Enloop — write and run manual test cases with Claude Code and a Chrome side panel.",
   "owner": {
     "name": "Sergey Ryabenko",
     "email": "ryabenko.sergey@gmail.com"
   },
   "plugins": [
     {
-      "name": "test-cases",
-      "source": "./plugins/test-cases",
-      "description": "Author manual test cases for the Test Case Manager extension from inside the app repo being tested — routes, labels and selectors derived from source, never invented."
+      "name": "enloop",
+      "source": "./plugins/enloop",
+      "description": "Write manual test cases from inside the app repo being tested — routes, labels and selectors derived from source, never invented."
     }
   ]
 }

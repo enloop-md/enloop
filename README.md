@@ -1,4 +1,4 @@
-# Test Case Manager
+# Enloop
 
 A Chrome side-panel extension for running manual and automated test cases,
 plus the Claude Code skills that write those cases for you.
@@ -13,9 +13,9 @@ you like.
 
 - **The extension** runs cases: step-by-step, marking pass/fail, executing
   automated steps in the page, capturing notes, and writing a run report.
-- **The skills** author cases: `author-test-case` writes a case for a real
+- **The skills** author cases: `/enloop:write` writes a case for a real
   feature or ticket from inside the app repo being tested;
-  `generate-example-case` produces demo cases that exercise the case grammar
+  `/enloop-demo` produces demo cases that exercise the case grammar
   itself.
 
 ---
@@ -117,15 +117,15 @@ different homes.
 
 | Skill | Lives | Run it from | Writes |
 | --- | --- | --- | --- |
-| `author-test-case` | `test-cases` plugin (installable anywhere) | the app repo you are testing | a real case into your cases folder |
-| `generate-example-case` | this repo's `.claude/skills/` | this repo only | a demo case exercising the grammar |
+| `/enloop:write` | `enloop` plugin (installable anywhere) | the app repo you are testing | a real case into your cases folder |
+| `/enloop-demo` | this repo's `.claude/skills/` | this repo only | a demo case exercising the grammar |
 
-`generate-example-case` is intentionally **not** distributable: it needs this
+`/enloop-demo` is intentionally **not** distributable: it needs this
 repo's parser, its TypeScript build, and the extension build to verify what it
 produces. Copying it into another project gives you a skill whose every path is
 wrong. Don't.
 
-### Installing `author-test-case`
+### Installing `/enloop:write`
 
 Pick one of three, depending on what you're doing.
 
@@ -133,11 +133,11 @@ Pick one of three, depending on what you're doing.
 marketplace and install:
 
 ```
-/plugin marketplace add ryabenko-pro/test-case-management
-/plugin install test-cases@test-case-management
+/plugin marketplace add ryabenko-pro/enloop
+/plugin install enloop@enloop
 ```
 
-Update later with `/plugin update test-cases`. Works in every project; nothing
+Update later with `/plugin update enloop`. Works in every project; nothing
 to commit anywhere.
 
 **B. Give it to your team.** Same two commands, run by each teammate. If the
@@ -150,10 +150,10 @@ than asking people to run commands.
 edits are live and versioned in one place:
 
 ```bash
-ln -s "$PWD/plugins/test-cases" ~/.claude/skills/test-cases
+ln -s "$PWD/plugins/enloop" ~/.claude/skills/enloop
 ```
 
-It loads next session as `test-cases@skills-dir`; `/reload-plugins` picks it up
+It loads next session as `enloop@skills-dir`; `/reload-plugins` picks it up
 immediately. This is the setup to use if you intend to change the skill or the
 step contract. (If you've relocated `CLAUDE_CONFIG_DIR`, use that path instead
 of `~/.claude`.)
@@ -167,25 +167,25 @@ repos and reads the grammar from here. Set it once in your user
 ```json
 {
   "env": {
-    "TCM_HOME": "/path/to/test-case-management"
+    "ENLOOP_HOME": "/path/to/enloop"
   }
 }
 ```
 
-Optionally set `TCM_CASES_DIR` if your cases folder is not
-`$TCM_HOME/private/test-cases` — which it usually isn't, once you're storing
+Optionally set `ENLOOP_CASES_DIR` if your cases folder is not
+`$ENLOOP_HOME/private/test-cases` — which it usually isn't, once you're storing
 real cases somewhere sensible rather than in this repo's git-ignored
 `private/`.
 
 The skill never hardcodes a path: the app repo is `${CLAUDE_PROJECT_DIR}`, and
-everything about the Test Case Manager comes from `$TCM_HOME`.
+everything about Enloop comes from `$ENLOOP_HOME`.
 
 ### Using it
 
 From inside the repo of the app you're testing:
 
 ```
-/test-cases:author-test-case PROJ-1234
+/enloop:write PROJ-1234
 ```
 
 The argument is the scope — a ticket id, a branch, a feature name, or a
@@ -198,9 +198,9 @@ It is `disable-model-invocation: true`, so it only ever runs when you ask.
 What it does, in order:
 
 1. Resolves the two roots and reads the case grammar fresh from
-   `$TCM_HOME/shared/src/markdown.ts`. It never works from a remembered
+   `$ENLOOP_HOME/shared/src/markdown.ts`. It never works from a remembered
    version of the grammar and never carries a vendored copy.
-2. Reads the [step contract](plugins/test-cases/skills/author-test-case/references/step-contract.md).
+2. Reads the [step contract](plugins/enloop/skills/write/references/step-contract.md).
 3. Works out the scope from the diff and states it back to you in one line, so
    a wrong reading costs seconds instead of a whole case.
 4. Builds or refreshes an **app map** at `.claude/test-map.md` in the app repo
@@ -218,7 +218,7 @@ Then open the extension, find the case in the Library, and run it.
 ### The step contract
 
 The contract is what makes the output executable rather than merely plausible.
-It is a real file — [`step-contract.md`](plugins/test-cases/skills/author-test-case/references/step-contract.md)
+It is a real file — [`step-contract.md`](plugins/enloop/skills/write/references/step-contract.md)
 — and it is the thing to edit when cases come out wrong.
 
 The rules, in brief:
@@ -248,8 +248,8 @@ re-explaining the goal in the prompt.
 ```
 extension/          Chrome extension (React + Vite, side panel)
 shared/             parser, schemas, id/variable helpers — the grammar lives here
-plugins/test-cases/ the distributable skill plugin
-.claude/skills/     generate-example-case (this repo only)
+plugins/enloop/     the distributable skill plugin
+.claude/skills/     enloop-demo (this repo only)
 .claude-plugin/     marketplace manifest, so this repo is installable
 private/            local connected-folder data (git-ignored)
 ```

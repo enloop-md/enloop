@@ -1,15 +1,15 @@
 ---
-name: author-test-case
-description: Write a manual test case for the Test Case Manager extension covering a feature, ticket, or branch in the app repo you are currently in. Every route, UI label and selector is derived from that repo's source rather than recalled, and the finished case is parsed with the real grammar parser before it is written. Use when the user asks to write/author/generate a test case, QA checklist, or manual verification plan for a ticket or branch — e.g. "write a test case for PROJ-1234", "make a QA case for this branch". Not for demo/example cases exercising the grammar itself; that is generate-example-case, which only runs inside the test-assistant repo.
+name: write
+description: Write a manual test case for Enloop covering a feature, ticket, or branch in the app repo you are currently in. Every route, UI label and selector is derived from that repo's source rather than recalled, and the finished case is parsed with the real grammar parser before it is written. Use when the user asks to write/author/generate a test case, QA checklist, or manual verification plan for a ticket or branch — e.g. "write a test case for PROJ-1234", "make a QA case for this branch". Not for demo/example cases exercising the grammar itself; that is the enloop-demo skill, which only runs inside the Enloop repo.
 disable-model-invocation: true
 allowed-tools: Read Grep Glob Write Edit Bash(git diff *) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(rg *) Bash(node *) Bash(npx tsc *) Bash(mkdir -p *) Bash(openssl rand *)
 ---
 
-# Author a test case
+# Write a test case
 
-Produces one real test case, written into the Test Case Manager's cases
-folder, that a tester can execute without stopping to think. Two failure
-modes this skill exists to prevent:
+Produces one real test case, written into Enloop's cases folder, that a
+tester can execute without stopping to think. Two failure modes this skill
+exists to prevent:
 
 1. **Invented specifics.** A route, button label, or selector recalled
    from conversation rather than read from the app's source. These look
@@ -30,31 +30,31 @@ Two roots. Never hardcode either.
 
 - **App repo** — where you are now: `${CLAUDE_PROJECT_DIR}`. Source of
   every route, label and selector.
-- **Test Case Manager repo** — `$TCM_HOME`. Source of the grammar, and
+- **Enloop repo** — `$ENLOOP_HOME`. Source of the grammar, and
   parent of the cases folder.
 
 ```bash
-echo "TCM_HOME=${TCM_HOME:-unset} TCM_CASES_DIR=${TCM_CASES_DIR:-unset}"
+echo "ENLOOP_HOME=${ENLOOP_HOME:-unset} ENLOOP_CASES_DIR=${ENLOOP_CASES_DIR:-unset}"
 ```
 
-If `TCM_HOME` is unset, ask the user for the path and tell them to add it
+If `ENLOOP_HOME` is unset, ask the user for the path and tell them to add it
 to their settings `env` block so this is a one-time cost:
 
 ```json
-{ "env": { "TCM_HOME": "/path/to/test-assistant" } }
+{ "env": { "ENLOOP_HOME": "/path/to/enloop" } }
 ```
 
-Cases are written to `$TCM_CASES_DIR`, defaulting to
-`$TCM_HOME/private/test-cases` when unset.
+Cases are written to `$ENLOOP_CASES_DIR`, defaulting to
+`$ENLOOP_HOME/private/test-cases` when unset.
 
 Verify both roots exist before continuing. If `${CLAUDE_PROJECT_DIR}` and
-`$TCM_HOME` are the same directory, you are in the wrong repo — that means
-the user wants `generate-example-case`, not this skill.
+`$ENLOOP_HOME` are the same directory, you are in the wrong repo — that means
+the user wants the `enloop-demo` skill, not this one.
 
 ## 2. Read the grammar fresh from source
 
 The grammar is a doc comment at the top of
-`$TCM_HOME/shared/src/markdown.ts`. It changes. **Read it every time** —
+`$ENLOOP_HOME/shared/src/markdown.ts`. It changes. **Read it every time** —
 never write a case from a remembered version of the grammar, and never
 copy the grammar into this skill.
 
@@ -163,10 +163,10 @@ Hand-written Markdown mis-parses silently — a heading at the wrong level,
 a label line that does not match its regex.
 
 ```bash
-cd "$TCM_HOME/shared" && npx tsc -p tsconfig.json --noEmit false --outDir dist --declaration false
+cd "$ENLOOP_HOME/shared" && npx tsc -p tsconfig.json --noEmit false --outDir dist --declaration false
 ```
 
-Then run a throwaway Node script against `$TCM_HOME/shared/dist/markdown.js`
+Then run a throwaway Node script against `$ENLOOP_HOME/shared/dist/markdown.js`
 that:
 
 - calls `parseCaseDocument(raw, { version: 1, createdAt: new Date().toISOString() })`
@@ -181,7 +181,7 @@ that:
 - prints each step's title, `where`, `selector` and `expected` so you can
   read the parsed result rather than the source you just wrote.
 
-Delete `$TCM_HOME/shared/dist` and the script afterward. They are scratch,
+Delete `$ENLOOP_HOME/shared/dist` and the script afterward. They are scratch,
 not source — and leaving a stale `dist` in that repo is confusing.
 
 ### 8b. Run the reject list
@@ -193,11 +193,11 @@ deliberately mechanical.
 ## 9. Write the files
 
 ```
-$TCM_CASES_DIR/test-cases/<id>/meta.json          {"archived": false}
-$TCM_CASES_DIR/test-cases/<id>/versions/v1.md     the validated Markdown
+$ENLOOP_CASES_DIR/test-cases/<id>/meta.json          {"archived": false}
+$ENLOOP_CASES_DIR/test-cases/<id>/versions/v1.md     the validated Markdown
 ```
 
-`<id>` follows `newTestCaseId` in `$TCM_HOME/shared/src/id.ts`: the title
+`<id>` follows `newTestCaseId` in `$ENLOOP_HOME/shared/src/id.ts`: the title
 lowercased with every non-alphanumeric run replaced by `-`, trimmed of
 leading/trailing `-`, cut to 40 characters, then `-` and 8 hex characters
 (`openssl rand -hex 4`).

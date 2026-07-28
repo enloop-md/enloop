@@ -3,7 +3,7 @@ import pkg from "./package.json";
 
 export default defineManifest({
   manifest_version: 3,
-  name: "Test Case Manager",
+  name: "Enloop",
   description: "Run manual + automated test cases from a Chrome side panel.",
   version: pkg.version,
   action: {},

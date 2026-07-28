@@ -27,7 +27,7 @@ export function ConnectScreen() {
 
   return (
     <Centered>
-      <h1 className="text-lg font-semibold text-slate-800">Test Case Manager</h1>
+      <h1 className="text-lg font-semibold text-slate-800">Enloop</h1>
       <p className="text-sm text-slate-500">
         Pick a folder on disk to store test cases and runs as JSON files.
       </p>

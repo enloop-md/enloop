@@ -1,6 +1,6 @@
 ---
-name: generate-example-case
-description: Generate a working, live-verified example — a standalone test case, a suite (shared prep steps across cases), or a free run — for the Test Case Manager Chrome extension and drop it into the connected private/test-cases folder. Use this whenever the user asks for an example/demo test case, suite, or free run, wants "something to try in the browser", or wants to demonstrate a case-Markdown grammar feature (variables, selectors, automated steps, dependencies, suite prep-step merging, ...) — especially right after that feature was just added to shared/src/markdown.ts. Do not hand-write and hand off an example without running this skill's validation steps; an example that merely "looks right" is not the deliverable here.
+name: enloop-demo
+description: Generate a working, live-verified example — a standalone test case, a suite (shared prep steps across cases), or a free run — for the Enloop Chrome extension and drop it into the connected private/test-cases folder. Use this whenever the user asks for an example/demo test case, suite, or free run, wants "something to try in the browser", or wants to demonstrate a case-Markdown grammar feature (variables, selectors, automated steps, dependencies, suite prep-step merging, ...) — especially right after that feature was just added to shared/src/markdown.ts. Do not hand-write and hand off an example without running this skill's validation steps; an example that merely "looks right" is not the deliverable here.
 ---
 
 # Generate an example test case
