@@ -144,6 +144,11 @@ will fail on the next run for a reason nobody will remember.
 Report each stale reference with the source that replaced it, if you can
 find it.
 
+Note steps that carry no `Selector:` at all, too. Those run without
+Highlight, which is the feature that makes a case fast to execute. If
+there are several, offer `/enloop:instrument` to add the handles, then a
+new case version to use them.
+
 ## 6. Act on what you own
 
 **Case defects — fix them.** The case is yours to correct. Write a new

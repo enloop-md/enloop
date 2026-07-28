@@ -121,6 +121,7 @@ decide what it means.
 | --- | --- | --- | --- |
 | `/enloop:write` | `enloop` plugin (installable anywhere) | the app repo you are testing | a real case into your cases folder |
 | `/enloop:check` | same plugin | the app repo you are testing | a triage report, and a fixed case version when the case was at fault |
+| `/enloop:instrument` | same plugin | the app repo you are testing | `data-testid` attributes in the app's source, so Highlight can find elements |
 | `/enloop-demo` | this repo's `.claude/skills/` | this repo only | a demo case exercising the grammar |
 
 `/enloop-demo` is intentionally **not** distributable: it needs this
@@ -260,6 +261,54 @@ appearing under you. Say go and it implements it.
 
 Nothing is rerun, and it won't claim otherwise: a fixed case and a patched
 bug both need another pass through the extension.
+
+### Adding selectors to the app
+
+`Selector:` is the field that makes a case fast to execute — the extension
+scrolls the element into view and flashes it. It's also the field most often
+missing, because `/enloop:write` refuses to invent one: if the element has no
+stable handle in source, the step ships without a selector and the skill says
+so.
+
+`/enloop:instrument` is the fix. From the app repo:
+
+```
+/enloop:instrument sync console
+```
+
+It takes a screen, component path, feature, case id, or nothing (meaning
+whatever the last write/check flagged), and adds test handles to the app's
+source. Attribute-only changes — no reformatting, no restructuring — so the
+diff is reviewable and merges as its own commit.
+
+What it does that a hand-rolled "add data-testid everywhere" pass doesn't:
+
+- **Follows your existing convention** instead of introducing a second one.
+  It counts what's already in the repo (`data-testid` vs `data-test` vs
+  `data-cy`) and matches both the attribute and the naming shape.
+- **Checks the attribute survives the production build first.** Toolchains
+  like `babel-plugin-react-remove-properties` strip test attributes from
+  prod bundles. If your testers hit a production build, every selector you
+  add would resolve in dev and nowhere else. It stops rather than proceed.
+- **Handles lists properly.** Highlight uses `document.querySelector`, so a
+  testid repeated across rows always flashes row one. Lists get a container
+  handle, a shared row handle, and a `data-<entity>-id` for addressing a
+  specific row by variable.
+- **Names for role, not visible text.** A testid derived from a button's
+  label breaks on a copy change or translation — exactly the coupling a
+  testid exists to avoid.
+- **Is idempotent.** Elements with a usable `id`, `name`, or stable
+  `aria-label` are left alone. A second run produces an empty diff.
+
+It also flags what no attribute can fix, which is worth knowing before you
+write a case against a screen: Highlight runs `document.querySelector` in
+the **top frame only**, so content inside an `<iframe>` or behind a shadow
+root is unreachable no matter what you tag it with.
+
+Finally it offers a convention line for the app repo's `CLAUDE.md`, so new
+UI arrives already instrumented rather than needing the next backfill. It
+won't write to `CLAUDE.md` without you agreeing — that file is read into
+every session in that repo.
 
 ### The step contract
 

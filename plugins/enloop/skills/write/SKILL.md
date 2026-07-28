@@ -133,7 +133,9 @@ Practically, for each step you intend to write:
 If a needed element has no stable selector, do not invent one. Write the
 step without a `Selector:`, add a `### Note` saying the element lacks a
 test handle, and mention it in your final report as a suggested
-`data-testid`.
+`data-testid`. Collect these — the report ends by offering
+`/enloop:instrument` to add them, which is the only way those steps ever
+gain a working Highlight.
 
 ## 7. Write the case
 
@@ -226,4 +228,6 @@ Tell the user:
 Do not claim the case was executed. It was parsed and linted, not run.
 
 Finish by telling them the next step: run it in the extension, then
-`/enloop:check` back here to triage what it found.
+`/enloop:check` back here to triage what it found. If any step had to go
+without a `Selector:`, offer `/enloop:instrument` first — Highlight is
+dead weight on those steps until the elements have handles.
