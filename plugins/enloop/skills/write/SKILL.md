@@ -26,15 +26,19 @@ anything else.
 
 ## 1. Resolve where things live
 
-Two roots. Never hardcode either.
+Three paths. Never hardcode any of them.
 
 - **App repo** — where you are now: `${CLAUDE_PROJECT_DIR}`. Source of
   every route, label and selector.
-- **Enloop repo** — `$ENLOOP_HOME`. Source of the grammar, and
-  parent of the cases folder.
+- **Enloop repo** — `$ENLOOP_HOME`. Source of the grammar.
+- **Data folder** — the directory the user connected in the extension.
+  Resolve it by following `${CLAUDE_SKILL_DIR}/../../references/data-folder.md`,
+  which you must read now. Do not guess which directory level it names;
+  guessing is how a finished case ends up somewhere the extension cannot
+  see it.
 
 ```bash
-echo "ENLOOP_HOME=${ENLOOP_HOME:-unset} ENLOOP_CASES_DIR=${ENLOOP_CASES_DIR:-unset}"
+echo "ENLOOP_HOME=${ENLOOP_HOME:-unset}"
 ```
 
 If `ENLOOP_HOME` is unset, ask the user for the path and tell them to add it
@@ -44,10 +48,7 @@ to their settings `env` block so this is a one-time cost:
 { "env": { "ENLOOP_HOME": "/path/to/enloop" } }
 ```
 
-Cases are written to `$ENLOOP_CASES_DIR`, defaulting to
-`$ENLOOP_HOME/private/test-cases` when unset.
-
-Verify both roots exist before continuing. If `${CLAUDE_PROJECT_DIR}` and
+Verify each path exists before continuing. If `${CLAUDE_PROJECT_DIR}` and
 `$ENLOOP_HOME` are the same directory, you are in the wrong repo — that means
 the user wants the `enloop-demo` skill, not this one.
 
@@ -194,10 +195,18 @@ deliberately mechanical.
 
 ## 9. Write the files
 
+`$DATA_DIR` is what you resolved in step 1. The `test-cases/` segment is
+not optional — it is where `FsaDataStore` looks, and a case written beside
+it instead of inside it will not appear in the Library:
+
 ```
-$ENLOOP_CASES_DIR/test-cases/<id>/meta.json          {"archived": false}
-$ENLOOP_CASES_DIR/test-cases/<id>/versions/v1.md     the validated Markdown
+$DATA_DIR/test-cases/<id>/meta.json          {"archived": false}
+$DATA_DIR/test-cases/<id>/versions/v1.md     the validated Markdown
 ```
+
+Then run the verification at the end of `references/data-folder.md`. It is
+two `ls` calls and it is the only thing standing between a misplaced file
+and a user staring at an empty Library.
 
 `<id>` follows `newTestCaseId` in `$ENLOOP_HOME/shared/src/id.ts`: the title
 lowercased with every non-alphanumeric run replaced by `-`, trimmed of
@@ -217,6 +226,8 @@ previous version in place; the version history is the audit trail.
 Tell the user:
 
 - The case title and its id, so they can find it in the Library.
+- **The absolute path you wrote to.** One line, so a misplaced case is
+  caught here rather than as an empty Library later.
 - What scope it covers (branch/ticket) and how many steps.
 - Which screens it touches.
 - Anything you could not derive from source — elements with no stable

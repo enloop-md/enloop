@@ -177,10 +177,41 @@ user `settings.json`:
 }
 ```
 
-Optionally set `ENLOOP_CASES_DIR` if your cases folder is not
-`$ENLOOP_HOME/private/test-cases` — which it usually isn't, once you're storing
-real cases somewhere sensible rather than in this repo's git-ignored
-`private/`.
+Then point the skills at your **data folder** — the directory you picked with
+"Connect folder…" in the extension:
+
+```json
+{
+  "env": {
+    "ENLOOP_HOME": "/path/to/enloop",
+    "ENLOOP_DATA_DIR": "/path/to/the/folder/you/connected"
+  }
+}
+```
+
+This is the folder the extension owns, containing `test-cases/`, `runs/` and
+`free-runs/`. Cases go **inside** `test-cases/`, not at the top of the data
+folder — a case written one level off doesn't error, it just never appears in
+the Library.
+
+Because that's easy to get wrong, the skills don't take the path on faith:
+they detect which level you actually named, correct it if you pointed at the
+`test-cases` subfolder, and verify after writing that the file landed where
+`FsaDataStore` reads from. If the path is empty or unrecognisable they stop
+and ask rather than creating a stray `test-cases/` somewhere unrelated. The
+rules are in
+[`references/data-folder.md`](plugins/enloop/references/data-folder.md), shared
+by both skills so they can't drift apart.
+
+If you keep a **separate data folder per project**, set `ENLOOP_DATA_DIR` in
+that project's `.claude/settings.json` rather than your user one — the
+project value wins, so each repo writes to its own folder and you're never
+relying on remembering which one is current. Keep `ENLOOP_HOME` in the user
+settings; it's the same everywhere.
+
+`ENLOOP_CASES_DIR` is the former name for this setting and still works.
+Unset, it defaults to `$ENLOOP_HOME/private/test-cases` — this repo's
+git-ignored scratch folder, which is rarely what you want for real cases.
 
 Neither skill hardcodes a path: the app repo is `${CLAUDE_PROJECT_DIR}`, and
 everything about Enloop comes from `$ENLOOP_HOME`.
@@ -216,7 +247,9 @@ What it does, in order:
    read during that session.
 6. Validates by parsing the result with the real parser and checking it against
    the contract's reject list.
-7. Writes `<id>/meta.json` and `<id>/versions/v1.md` into your cases folder.
+7. Writes `<id>/meta.json` and `<id>/versions/v1.md` into `test-cases/` in
+   your data folder, then verifies the file landed where the extension reads
+   from and reports the absolute path.
 
 Then open the extension, find the case in the Library, and run it.
 

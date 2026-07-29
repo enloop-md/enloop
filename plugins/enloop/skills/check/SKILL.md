@@ -25,11 +25,14 @@ Two roots. Never hardcode either.
 
 - **App repo** — where you are now: `${CLAUDE_PROJECT_DIR}`. The place a
   bug gets confirmed and fixed.
-- **Enloop cases folder** — `$ENLOOP_CASES_DIR`, defaulting to
-  `$ENLOOP_HOME/private/test-cases` when unset. The place runs are stored.
+- **Data folder** — the directory the user connected in the extension,
+  where runs are stored. Resolve it by following
+  `${CLAUDE_SKILL_DIR}/../../references/data-folder.md`, which you must
+  read now. Pointing one level off here does not produce an error; it
+  produces "no runs found" for a case that ran fine.
 
 ```bash
-echo "ENLOOP_HOME=${ENLOOP_HOME:-unset} ENLOOP_CASES_DIR=${ENLOOP_CASES_DIR:-unset}"
+echo "ENLOOP_HOME=${ENLOOP_HOME:-unset}"
 ```
 
 If `ENLOOP_HOME` is unset, ask for the path and tell the user to add it to
@@ -37,25 +40,24 @@ their settings `env` block so it is a one-time cost.
 
 ## 2. Find the run
 
-Runs live under the cases folder in a fixed layout:
+Runs live under the data folder in a fixed layout:
 
 ```
-<cases folder>/runs/<testCaseId>/<runId>/case.md       the exact case text that was run (frozen)
-                                        /run.json      per-step status, comments, notes, tasks
-                                        /report.md     human-readable summary of every step
-                                        /feedback.md   action items — written only when there is signal
-<cases folder>/free-runs/<freeRunId>/free-run.json     unscripted session
-                                    /notes.md
-                                    /feedback.md
+<data folder>/runs/<testCaseId>/<runId>/case.md       the exact case text that was run (frozen)
+                                       /run.json      per-step status, comments, notes, tasks
+                                       /report.md     human-readable summary of every step
+                                       /feedback.md   action items — written only when there is signal
+<data folder>/free-runs/<freeRunId>/free-run.json     unscripted session
+                                   /notes.md
+                                   /feedback.md
 ```
 
 Run ids sort chronologically (`run-<ISO timestamp>-<hex>`), so the newest
-run is the last entry:
+run is the last entry. `$DATA_DIR` is what you resolved in step 1:
 
 ```bash
-CASES="${ENLOOP_CASES_DIR:-$ENLOOP_HOME/private/test-cases}"
-ls -d "$CASES"/runs/*/*/ 2>/dev/null | sort | tail -5
-ls -d "$CASES"/free-runs/*/ 2>/dev/null | sort | tail -3
+ls -d "$DATA_DIR"/runs/*/*/ 2>/dev/null | sort | tail -5
+ls -d "$DATA_DIR"/free-runs/*/ 2>/dev/null | sort | tail -3
 ```
 
 Match $ARGUMENTS against the paths. With no argument, take the newest run
@@ -63,8 +65,11 @@ whose `run.json` has `finishedAt` set — and say which one you picked, with
 its date, before doing anything else. Picking the wrong run wastes the
 whole triage.
 
-If no run directory exists at all, stop and say so: the case has been
-written but never executed, and there is nothing to check.
+If both listings come back empty, do not conclude the case was never run
+until you have confirmed `$DATA_DIR` is right — `ls "$DATA_DIR"` should
+show `test-cases`/`runs`/`free-runs`. An empty result from a wrong path
+looks exactly like a case that was never executed. Once the path is
+confirmed, say so plainly: the case exists but has no runs.
 
 ## 3. Read the run
 
@@ -156,7 +161,7 @@ version alongside the existing ones, never editing a previous version in
 place:
 
 ```
-$ENLOOP_CASES_DIR/test-cases/<testCaseId>/versions/v<n+1>.md
+$DATA_DIR/test-cases/<testCaseId>/versions/v<n+1>.md
 ```
 
 Read the current highest `v<n>.md`, apply the fix, and add a
