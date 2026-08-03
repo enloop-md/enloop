@@ -137,6 +137,8 @@ function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
     status: runFile.status,
     startedAt: runFile.startedAt,
     finishedAt: runFile.finishedAt,
+    dependencies: doc.dependencies,
+    prerequisites: doc.prerequisites,
     steps,
   };
 }

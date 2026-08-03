@@ -119,6 +119,19 @@ single line is always one selector even when it contains commas — `.a, .b` is 
 CSS group, and the browser returns whichever comes first in the document, not
 the one written first.
 
+A `Where:` that names a route, an absolute URL, or a local address gets a **Go**
+control in the run screen that navigates the tab the run is using — the same tab
+Highlight and automated steps act on, so opening the page leaves you where the
+next step expects. A bare route resolves against whatever page is open and
+refuses rather than guesses when there is nothing to resolve against; write
+`Where: %BASE_URL%/admin/sync` when a case has to be certain.
+
+`# Prerequisites` is where services the tester must start themselves belong,
+with the command for each. The run screen renders Prerequisites and
+Dependencies together in a **"Before you start"** block, collapsed by default —
+most runs happen against an environment that is already up, so it stays out of
+the way of the current step without being absent, which is what it was before.
+
 `@project` names the app under test. One connected folder usually holds cases
 from several repos, so the skills also prefix the title with it — that is what
 makes a case findable in the side panel, which lists cases **most recently

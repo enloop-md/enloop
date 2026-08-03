@@ -204,6 +204,12 @@ export const runSchema = z.object({
   status: runStatusSchema,
   startedAt: z.string(),
   finishedAt: z.string().nullable(),
+  /** From the frozen `case.md`, so a tester can see what had to be true
+   * before step 1 — a service started, a fixture seeded — without leaving
+   * the run to go read the case. Composed, not stored: `run.json` holds
+   * execution state only. */
+  dependencies: z.array(z.string()),
+  prerequisites: z.array(z.string()),
   steps: z.array(runStepSchema),
 });
 

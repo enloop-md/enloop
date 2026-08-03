@@ -15,6 +15,8 @@ import { useReadyStore } from "../store/DataStoreProvider.js";
 import { chainAutomatedFrom, markManualStep, runAutomatedStep } from "../../lib/run-engine.js";
 import { getActiveTabId } from "../../lib/automation.js";
 import { highlightSelectorsInTab } from "../../lib/highlight.js";
+import { looksNavigable } from "../../lib/navigate.js";
+import { NavigateButton } from "../../components/NavigateButton.js";
 
 export function RunScreen({
   testCaseId,
@@ -151,6 +153,7 @@ export function RunScreen({
       )}
 
       <div className="flex-1 overflow-y-auto">
+        <BeforeYouStart dependencies={run.dependencies} prerequisites={run.prerequisites} />
         {run.steps.map((step, index) => (
           <StepRow
             key={step.stepId}
@@ -186,6 +189,65 @@ export function RunScreen({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * What had to be true before step 1 — a service started, a fixture seeded,
+ * a branch deployed. Collapsed by default and on every open: most runs
+ * happen against an environment that is already up, so this is reference
+ * material, not a checklist to work through, and in a side panel the space
+ * it would cost is space the current step needs. The summary line still
+ * says it is there, which is the part that was missing entirely before.
+ */
+function BeforeYouStart({
+  dependencies,
+  prerequisites,
+}: {
+  dependencies: string[];
+  prerequisites: string[];
+}) {
+  if (dependencies.length === 0 && prerequisites.length === 0) return null;
+
+  const counts = [
+    prerequisites.length > 0 &&
+      `${prerequisites.length} prerequisite${prerequisites.length === 1 ? "" : "s"}`,
+    dependencies.length > 0 &&
+      `${dependencies.length} dependenc${dependencies.length === 1 ? "y" : "ies"}`,
+  ].filter((c): c is string => !!c);
+
+  return (
+    <details className="group border-b border-slate-200 bg-slate-50">
+      <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-xs text-slate-500 hover:bg-slate-100">
+        <span className="text-slate-400 transition-transform group-open:rotate-90">▸</span>
+        <span className="font-medium text-slate-600">Before you start</span>
+        <span className="text-slate-400">{counts.join(" · ")}</span>
+      </summary>
+      <div className="space-y-2 px-3 pb-3 pt-1">
+        {prerequisites.length > 0 && (
+          <div>
+            <h3 className="mb-0.5 text-[10px] font-semibold uppercase text-slate-400">
+              Prerequisites
+            </h3>
+            <Markdown
+              text={prerequisites.map((p) => `- ${p}`).join("\n")}
+              className="text-xs text-slate-600"
+            />
+          </div>
+        )}
+        {dependencies.length > 0 && (
+          <div>
+            <h3 className="mb-0.5 text-[10px] font-semibold uppercase text-slate-400">
+              Dependencies
+            </h3>
+            <Markdown
+              text={dependencies.map((d) => `- ${d}`).join("\n")}
+              className="text-xs text-slate-600"
+            />
+          </div>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -276,9 +338,10 @@ function StepRow({
       {expanded && (
         <div className="space-y-3 px-3 pb-3">
           {step.where && (
-            <div className="flex items-baseline gap-1.5 text-xs">
+            <div className="flex flex-wrap items-baseline gap-1.5 text-xs">
               <span className="font-medium text-slate-500">Where:</span>
               <code className="text-slate-600">{step.where}</code>
+              {looksNavigable(step.where) && <NavigateButton where={step.where} />}
             </div>
           )}
           {step.selectors.length > 0 && (

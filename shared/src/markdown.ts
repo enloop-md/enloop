@@ -66,6 +66,15 @@ export const CURRENT_FORMAT_VERSION = "0.0.3";
  *
  *   # Prerequisites                             (optional, bullet list)
  *   - Browser open at https://app.example.com
+ *   - API running locally: `npm run dev` in the app repo
+ *
+ *   Anything the tester must *do* before step 1 belongs in Prerequisites,
+ *   including starting services locally — with the command, so it is
+ *   actionable rather than a reminder. Dependencies is for what must
+ *   already be true and is not the tester's to arrange: a deployed branch,
+ *   a migration, an access level. The run screen renders both in one
+ *   collapsed "Before you start" block, since the usual case is an
+ *   environment that is already up.
  *
  *   # Steps
  *
@@ -76,6 +85,16 @@ export const CURRENT_FORMAT_VERSION = "0.0.3";
  *                                                 this step, so "which app
  *                                                 am I in?" stays out of the
  *                                                 instructions prose)
+ *
+ *   A `Where:` that is a route (`/admin/x`), an absolute URL, or a local
+ *   address (`localhost:3000/admin`) gets a Go control in the run screen
+ *   that navigates the tab the run is using. A bare route resolves against
+ *   whatever page is open, which is right when the tester is already in
+ *   the app and refuses to guess when they are not — so a case that has to
+ *   be certain declares a `BASE_URL` variable and writes
+ *   `Where: %BASE_URL%/admin/x`, which substitutes to an absolute URL
+ *   before the run starts. Prose (`the CRM's web console → Contacts`) is
+ *   left alone; it names a place, not an address.
  *   Selector: #login-button                     (optional — scrolls this
  *                                                 into view and flashes it
  *                                                 in the page when the step

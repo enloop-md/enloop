@@ -177,9 +177,24 @@ Follow the grammar from step 2 and the contract from step 3. Structure:
   or ticket). Two or three sentences.
 - **`# Variables`** — every value the tester supplies. Contract rule 6:
   each gets a `Default:`, a `Generator:`, or explicit acquisition steps.
-- **`# Dependencies`** — what must be true of the environment: deployed
-  branch, migrations, access levels, running workers.
-- **`# Prerequisites`** — what must be true of the data before step 1.
+- **`# Dependencies`** — what must already be true and is not the tester's
+  to arrange: deployed branch, migrations, access levels.
+- **`# Prerequisites`** — what the tester must *do* before step 1. Data
+  that must exist, and **every service they have to start themselves**,
+  each with the command that starts it and the directory to run it in:
+
+      - API running locally: `npm run dev` in the app repo
+      - Worker running: `php bin/console messenger:consume async`
+
+  Read these out of the repo — `package.json` scripts, `Procfile`,
+  `docker-compose.yml`, the README's local-setup section — the same way
+  you derive routes and selectors. A remembered start command is an
+  invented specific like any other.
+
+  This is where a tester looks when something doesn't respond, so a
+  missing entry costs them a debugging session. The run screen shows the
+  section collapsed by default, so listing what is usually already running
+  costs nothing.
 - **`# Steps`** — per the contract. Cleanup steps at the end.
 
 Write it to a scratch file first. It is not going into the cases folder
