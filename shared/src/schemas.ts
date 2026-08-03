@@ -38,9 +38,12 @@ export const stepSchema = z.object({
   instructions: z.string().optional(),
   expected: z.string().optional(),
   script: z.string().optional(),
-  /** CSS selector for the element this step is about, e.g. `Selector: #login-button`.
-   * Used to scroll it into view and flash it in the page when the step is focused. */
-  selector: z.string().optional(),
+  /** CSS selectors for the element this step is about, in the order they were
+   * written (`Selector: #login-button`, repeated for fallbacks). Highlight
+   * tries each until one matches, so a step survives a dynamic container or a
+   * generated class name by naming a looser alternative after the exact one.
+   * Empty when the step declares none. */
+  selectors: z.array(z.string()),
   /** Where the tester should be standing before doing this step — a route,
    * screen name, or other surface, e.g. `Where: /admin/sync-console`.
    * Keeps "which app/tab am I in?" out of the instructions prose. */
@@ -65,6 +68,11 @@ export const testCaseVersionSchema = z.object({
   formatVersion: z.string(),
   /** Free-text `@author` line, settable per version like `changeNote`. */
   author: z.string(),
+  /** Free-text `@project` line — the app under test this case belongs to.
+   * One data folder usually serves several repos, so this is what tells a
+   * reader (and a reviewer of the raw Markdown) which product the routes and
+   * selectors below refer to. Empty when the document declares none. */
+  project: z.string(),
   changeNote: z.string(),
   title: z.string().min(1),
   description: z.string(),
@@ -84,6 +92,9 @@ export const caseBookkeepingSchema = z.object({
 export const testCaseMetaSchema = z.object({
   id: z.string(),
   title: z.string().min(1),
+  /** `@project` from the current version — which app under test this case
+   * covers. Empty when the document declares none. */
+  project: z.string(),
   description: z.string(),
   tags: z.array(z.string()),
   currentVersion: z.number().int().positive(),

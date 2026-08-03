@@ -149,10 +149,21 @@ will fail on the next run for a reason nobody will remember.
 Report each stale reference with the source that replaced it, if you can
 find it.
 
+A step may carry several `Selector:` lines — fallbacks, tried in order
+until one matches. Check them all: a dead *first* selector is invisible in
+a run that passed on the second, and left alone it decays into a step with
+no working handle at all. Removing one that no longer exists in source is
+a legitimate fix in the new version.
+
 Note steps that carry no `Selector:` at all, too. Those run without
 Highlight, which is the feature that makes a case fast to execute. If
 there are several, offer `/enloop:instrument` to add the handles, then a
 new case version to use them.
+
+While you are here, check the case's header: `@project` present and
+matching this repo, and the title prefixed with it. A case that predates
+those conventions gets them in the new version you are about to write —
+that is what makes it findable in a Library holding several products.
 
 ## 6. Act on what you own
 

@@ -2,10 +2,24 @@ import { useEffect, useMemo, useState } from "react";
 import type { SuiteSummary, TestCaseSummary } from "@tcm/shared";
 import { Header } from "../../components/Header.js";
 import { useReadyStore } from "../store/DataStoreProvider.js";
+import { relativeTime } from "../../lib/time.js";
 
-function matchesQuery(query: string, title: string, tags: string[]): boolean {
+function matchesQuery(query: string, title: string, tags: string[], project = ""): boolean {
   if (!query) return true;
-  return title.toLowerCase().includes(query) || tags.some((t) => t.toLowerCase().includes(query));
+  return (
+    title.toLowerCase().includes(query) ||
+    project.toLowerCase().includes(query) ||
+    tags.some((t) => t.toLowerCase().includes(query))
+  );
+}
+
+/** A suite is as recent as its most recently updated case. Sorting groups by
+ * that keeps the whole Library in one recency order — the store already
+ * returns cases newest-first, so a suite whose case was just rewritten does
+ * not stay buried under alphabetically earlier ones. A suite with no cases
+ * has nothing to date, and sorts last. */
+function newestCaseAt(cases: TestCaseSummary[]): string {
+  return cases.reduce((newest, c) => (c.updatedAt > newest ? c.updatedAt : newest), "");
 }
 
 export function LibraryScreen({
@@ -81,16 +95,20 @@ export function LibraryScreen({
     const suiteGroups = suites
       .filter((s) => archivedOk(s.archived))
       .map((s) => {
-        const suiteMatches = matchesQuery(q, s.title, s.tags);
+        const suiteMatches = matchesQuery(q, s.title, s.tags, s.project);
         const allCases = casesBySuite.get(s.id) ?? [];
         const shownCases = suiteMatches
           ? allCases
-          : allCases.filter((c) => matchesQuery(q, c.title, c.tags));
-        return { suite: s, cases: shownCases, suiteMatches };
+          : allCases.filter((c) => matchesQuery(q, c.title, c.tags, c.project));
+        return { suite: s, cases: shownCases, suiteMatches, updatedAt: newestCaseAt(allCases) };
       })
-      .filter((g) => g.suiteMatches || g.cases.length > 0);
+      .filter((g) => g.suiteMatches || g.cases.length > 0)
+      .sort(
+        (a, b) =>
+          b.updatedAt.localeCompare(a.updatedAt) || a.suite.title.localeCompare(b.suite.title),
+      );
 
-    const shownUngrouped = ungrouped.filter((c) => matchesQuery(q, c.title, c.tags));
+    const shownUngrouped = ungrouped.filter((c) => matchesQuery(q, c.title, c.tags, c.project));
 
     return { suiteGroups, ungrouped: shownUngrouped };
   }, [cases, suites, query, showArchived]);
@@ -115,7 +133,7 @@ export function LibraryScreen({
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search title or tag…"
+          placeholder="Search title, project or tag…"
           className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
         />
         <div className="flex items-center justify-between">
@@ -192,7 +210,8 @@ export function LibraryScreen({
                     </div>
                     <div className="flex items-center gap-2 text-xs text-slate-400">
                       <span>v{c.currentVersion}</span>
-                      {c.tags.length > 0 && <span>{c.tags.join(", ")}</span>}
+                      <span className="whitespace-nowrap">{relativeTime(c.updatedAt)}</span>
+                      {c.tags.length > 0 && <span className="truncate">{c.tags.join(", ")}</span>}
                     </div>
                   </button>
                 </li>
@@ -224,7 +243,8 @@ export function LibraryScreen({
                 </div>
                 <div className="flex items-center gap-2 text-xs text-slate-400">
                   <span>v{c.currentVersion}</span>
-                  {c.tags.length > 0 && <span>{c.tags.join(", ")}</span>}
+                  <span className="whitespace-nowrap">{relativeTime(c.updatedAt)}</span>
+                  {c.tags.length > 0 && <span className="truncate">{c.tags.join(", ")}</span>}
                 </div>
               </button>
             </li>

@@ -36,8 +36,9 @@ following the rest of this list.
 
 The grammar lives as a doc comment at the top of `shared/src/markdown.ts`
 and evolves over time — don't rely on memory of what fields exist
-(`@version`/`@author`, `# Variables`, `Selector:`, `### Expected`, fenced
-code = automated step, etc.). Read it fresh every time.
+(`@version`/`@author`/`@project`, `# Variables`, `Selector:` — which may
+repeat for ordered fallbacks — `### Expected`, fenced code = automated
+step, etc.). Read it fresh every time.
 
 ### 3. Pick a safe target page
 
@@ -60,6 +61,12 @@ it — don't guess selectors from memory.
 Follow the grammar exactly. Keep the scenario legible: a real title, a
 short description of what it demonstrates, and steps that isolate the
 feature being shown rather than burying it in unrelated setup.
+
+Title these `Enloop demo: <what it shows>` and set `@project Enloop demo`,
+the same convention `/enloop:write` follows for a real app. It is what
+keeps generated examples distinguishable from real cases in a Library that
+holds both — which is exactly the situation this repo's own data folder is
+in.
 
 ### 5. Validate parsing for real — never skip this
 
@@ -161,7 +168,7 @@ step(s) were confirmed passing live — not just parsed.
 ## Suites: shared prep steps across cases
 
 A suite is a physical folder holding a `suite.md` (reuses the exact case
-grammar — title/`@version`/`@author`/`Tags:`, description, `# Variables`,
+grammar — title/`@version`/`@author`/`@project`/`Tags:`, description, `# Variables`,
 `# Dependencies`, `# Prerequisites`, `# Steps` — but steps are **optional**)
 plus one or more case subfolders. What's worth demonstrating here isn't
 the suite alone (an empty folder proves nothing) — it's that a case
