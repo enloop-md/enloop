@@ -14,7 +14,7 @@ import { RunStatusBadge, StepStatusBadge } from "../../components/StatusBadge.js
 import { useReadyStore } from "../store/DataStoreProvider.js";
 import { chainAutomatedFrom, markManualStep, runAutomatedStep } from "../../lib/run-engine.js";
 import { getActiveTabId } from "../../lib/automation.js";
-import { highlightSelectorInTab } from "../../lib/highlight.js";
+import { highlightSelectorsInTab } from "../../lib/highlight.js";
 
 export function RunScreen({
   testCaseId,
@@ -224,18 +224,25 @@ function StepRow({
   const [highlightState, setHighlightState] = useState<"idle" | "highlighting" | "not-found">(
     "idle",
   );
+  // Which candidate actually matched last time — null until a highlight runs.
+  // With fallbacks in play, "it worked" is not enough: the tester needs to see
+  // that it was the third selector, not the one they expected.
+  const [matchedSelector, setMatchedSelector] = useState<string | null>(null);
+  const selectorKey = step.selectors.join("\n");
 
   useEffect(() => setCommentDraft(step.comment), [step.comment]);
 
   async function highlight() {
-    if (!step.selector) return;
+    if (step.selectors.length === 0) return;
     setHighlightState("highlighting");
     try {
       const tabId = await getActiveTabId();
-      const found = await highlightSelectorInTab(tabId, step.selector);
-      setHighlightState(found ? "idle" : "not-found");
-      if (!found) setTimeout(() => setHighlightState("idle"), 2000);
+      const matched = await highlightSelectorsInTab(tabId, step.selectors);
+      setMatchedSelector(matched);
+      setHighlightState(matched ? "idle" : "not-found");
+      if (!matched) setTimeout(() => setHighlightState("idle"), 2000);
     } catch {
+      setMatchedSelector(null);
       setHighlightState("not-found");
       setTimeout(() => setHighlightState("idle"), 2000);
     }
@@ -243,8 +250,8 @@ function StepRow({
 
   // Flash the element automatically whenever this step becomes the focused one.
   useEffect(() => {
-    if (expanded && step.selector) void highlight();
-  }, [expanded, step.selector]);
+    if (expanded && step.selectors.length > 0) void highlight();
+  }, [expanded, selectorKey]);
 
   return (
     <div className="border-b border-slate-100">
@@ -274,19 +281,44 @@ function StepRow({
               <code className="text-slate-600">{step.where}</code>
             </div>
           )}
-          {step.selector && (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={highlight}
-                disabled={highlightState === "highlighting"}
-                className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50"
-              >
-                ✨ Highlight
-              </button>
-              <code className="text-[10px] text-slate-400">{step.selector}</code>
-              {highlightState === "not-found" && (
-                <span className="text-[10px] text-red-500">not found on page</span>
-              )}
+          {step.selectors.length > 0 && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={highlight}
+                  disabled={highlightState === "highlighting"}
+                  className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+                >
+                  ✨ Highlight
+                </button>
+                {highlightState === "not-found" && (
+                  <span className="text-[10px] text-red-500">
+                    {step.selectors.length > 1 ? "no candidate matched" : "not found on page"}
+                  </span>
+                )}
+                {matchedSelector && step.selectors.length > 1 && (
+                  <span className="text-[10px] text-slate-400">
+                    matched #{step.selectors.indexOf(matchedSelector) + 1} of{" "}
+                    {step.selectors.length}
+                  </span>
+                )}
+              </div>
+              <ul className="space-y-0.5">
+                {step.selectors.map((sel, i) => (
+                  <li key={`${i}-${sel}`} className="flex items-baseline gap-1">
+                    {step.selectors.length > 1 && (
+                      <span className="text-[10px] text-slate-300">{i + 1}.</span>
+                    )}
+                    <code
+                      className={`text-[10px] ${
+                        matchedSelector === sel ? "font-medium text-amber-600" : "text-slate-400"
+                      }`}
+                    >
+                      {sel}
+                    </code>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
           {step.instructions && (

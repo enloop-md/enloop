@@ -52,6 +52,20 @@ Verify each path exists before continuing. If `${CLAUDE_PROJECT_DIR}` and
 `$ENLOOP_HOME` are the same directory, you are in the wrong repo — that means
 the user wants the `enloop-demo` skill, not this one.
 
+Then resolve the **project name** — the app under test. One data folder
+serves every repo a user writes cases from, so a Library without it is a
+flat list of titles with no way to tell which product each belongs to. In
+order:
+
+1. `$ENLOOP_PROJECT`, if set.
+2. An `## Enloop` section in `${CLAUDE_PROJECT_DIR}/CLAUDE.md` — what
+   `/enloop:setup` writes. Read the `Project:` line there.
+3. Ask the user, offering the repo directory name as the default, and tell
+   them `/enloop:setup` records it once so this question stops recurring.
+
+Use it verbatim, including capitalisation. It goes in two places in the
+finished case (step 7): the `@project` line and the title prefix.
+
 ## 2. Read the grammar fresh from source
 
 The grammar is a doc comment at the top of
@@ -128,7 +142,11 @@ Practically, for each step you intend to write:
 - Visible label → the JSX/template/i18n entry. Quote it exactly, including
   capitalisation, in backticks.
 - Selector → `data-testid` first, then `id`, then a stable `aria-label`.
-  Never a structural path.
+  Never a structural path. Where the element sits in a modal, drawer or
+  portal, or its handle is new in this branch and may not be deployed
+  where the tester runs, add a second `Selector:` line as a fallback —
+  see the contract's rule 3 for when this earns its keep and when it is
+  just noise.
 - Expected message text → the string literal in source, not a paraphrase.
 
 If a needed element has no stable selector, do not invent one. Write the
@@ -142,9 +160,18 @@ gain a working Highlight.
 
 Follow the grammar from step 2 and the contract from step 3. Structure:
 
-- **Title** — specific enough to find in a Library list. Include the
-  ticket id when there is one.
+- **Title** — `<Project>: <what this verifies>`, e.g.
+  `Careerminds: Sync a contact to the CRM`. The prefix is what makes the
+  case findable in a side panel listing several products' cases at once;
+  the rest must be specific enough to tell it from its siblings. Include
+  the ticket id when there is one. Do not re-prefix a title that already
+  starts with the project name.
 - **`@version`** — the `CURRENT_FORMAT_VERSION` you read in step 2.
+- **`@author`** — the case's author, if known.
+- **`@project`** — the project name from step 1, on its own line. The
+  title prefix serves the Library list; this line serves anyone reading
+  the raw Markdown, and is what the run report and `feedback.md` carry
+  back to the repo. Both, always.
 - **`Tags:`** — ticket id, feature area, and `manual`.
 - **Description** — what this verifies and why it exists now (which branch
   or ticket). Two or three sentences.
@@ -175,13 +202,19 @@ that:
 - calls `parseCaseDocument(raw, { version: 1, createdAt: new Date().toISOString() })`
   and asserts the step count, variable count, dependency and prerequisite
   counts match what you intended,
+- asserts `doc.project` is the project name from step 1, and that
+  `doc.title` starts with it,
 - asserts every step you gave a `Where:`/`Selector:`/`### Note` actually
   came back with those fields populated (a mis-indented header line
-  silently becomes body prose — this check is what catches it),
+  silently becomes body prose — this check is what catches it). Note that
+  `step.selectors` is an **array**, in written order: a step with two
+  fallback lines must come back with `selectors.length === 2`, and a step
+  whose selectors silently collapsed to one is the exact failure this
+  check exists to catch,
 - if there are variables, calls `resolveVariableValues` +
   `substituteVariables` from `dist/variables.js` and asserts no `%NAME%`
   survives: `!/%[A-Za-z_]+%/.test(substituted)`,
-- prints each step's title, `where`, `selector` and `expected` so you can
+- prints each step's title, `where`, `selectors` and `expected` so you can
   read the parsed result rather than the source you just wrote.
 
 Delete `$ENLOOP_HOME/shared/dist` and the script afterward. They are scratch,
@@ -225,7 +258,9 @@ previous version in place; the version history is the audit trail.
 
 Tell the user:
 
-- The case title and its id, so they can find it in the Library.
+- The case title (with its project prefix) and its id, so they can find it
+  in the Library. It sorts to the top of the list — the Library is ordered
+  by last update.
 - **The absolute path you wrote to.** One line, so a misplaced case is
   caught here rather than as an empty Library later.
 - What scope it covers (branch/ticket) and how many steps.
@@ -241,4 +276,6 @@ Do not claim the case was executed. It was parsed and linted, not run.
 Finish by telling them the next step: run it in the extension, then
 `/enloop:check` back here to triage what it found. If any step had to go
 without a `Selector:`, offer `/enloop:instrument` first — Highlight is
-dead weight on those steps until the elements have handles.
+dead weight on those steps until the elements have handles. If you had to
+ask for the project name in step 1, offer `/enloop:setup` so the next case
+in this repo does not ask again.

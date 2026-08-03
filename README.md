@@ -13,11 +13,12 @@ you like.
 
 - **The extension** runs cases: step-by-step, marking pass/fail, executing
   automated steps in the page, capturing notes, and writing a run report.
-- **The skills** close the loop: `/enloop:write` writes a case for a real
-  feature or ticket from inside the app repo being tested, and
-  `/enloop:check` triages the finished run back in that same repo —
-  deciding per failure whether the app is wrong or the case is.
-  `/enloop-demo` produces demo cases that exercise the case grammar itself.
+- **The skills** close the loop: `/enloop:setup` prepares an app repo once,
+  `/enloop:write` writes a case for a real feature or ticket from inside the
+  app repo being tested, and `/enloop:check` triages the finished run back in
+  that same repo — deciding per failure whether the app is wrong or the case
+  is. `/enloop-demo` produces demo cases that exercise the case grammar
+  itself.
 
 ---
 
@@ -54,9 +55,10 @@ A case is one Markdown file. The full grammar is the doc comment at the top of
 and it is the thing to read when writing cases by hand.
 
 ```markdown
-# Sync a contact from the CRM to the mailer
-@version 0.0.2
+# Careerminds: Sync a contact from the CRM to the mailer
+@version 0.0.3
 @author Your Name
+@project Careerminds
 Tags: sync-console, integrations, manual
 
 Verifies the single-contact sync path added in PROJ-1234.
@@ -83,6 +85,7 @@ Navigate to the page.
 
 ## Sync the contact
 Where: /admin/sync-console
+Selector: [data-testid="sync-crm-mailer"]
 Selector: #sync-crm-mailer-btn
 Click `Sync CRM → Mailer`.
 
@@ -100,6 +103,26 @@ Key fields: `Where:` (the route or screen the tester starts from), `Selector:`
 criteria only), `### Note` (background, rendered dimmed). A fenced code block
 in place of instructions makes the step **automated** — the script runs in the
 page's own world with DOM access and calls `api.fail(msg)` to fail the step.
+
+Selectors named in a step's *prose* are clickable too: inline code that can
+only be a selector (`#sync-btn`, `[data-testid="row"]`, `.modal .btn`) renders
+as a Highlight control, as does a link written `[the Sync button](#sync-btn)`.
+Nothing declares this and no existing case needs changing — it is recognised
+from the text, and deliberately strict, so visible UI labels in backticks
+(`` `Save changes` ``), ticket refs (`#1234`), routes and filenames stay plain.
+
+`Selector:` may be repeated. The candidates are tried **in order** and the
+first one that matches the page wins, so a step can name an exact handle and
+fall back to a looser one when the element sits in a modal or its `data-testid`
+has not been deployed yet. The run screen shows which candidate matched. A
+single line is always one selector even when it contains commas — `.a, .b` is a
+CSS group, and the browser returns whichever comes first in the document, not
+the one written first.
+
+`@project` names the app under test. One connected folder usually holds cases
+from several repos, so the skills also prefix the title with it — that is what
+makes a case findable in the side panel, which lists cases **most recently
+updated first**.
 
 Variables declared under `# Variables` are prompted for when a run starts, then
 every `%NAME%` placeholder in the document is substituted — title, instructions,
@@ -119,7 +142,8 @@ decide what it means.
 
 | Skill | Lives | Run it from | Writes |
 | --- | --- | --- | --- |
-| `/enloop:write` | `enloop` plugin (installable anywhere) | the app repo you are testing | a real case into your cases folder |
+| `/enloop:setup` | `enloop` plugin (installable anywhere) | the app repo you are testing, once | the project name and the test-selector convention into that repo's `CLAUDE.md` |
+| `/enloop:write` | same plugin | the app repo you are testing | a real case into your cases folder |
 | `/enloop:check` | same plugin | the app repo you are testing | a triage report, and a fixed case version when the case was at fault |
 | `/enloop:instrument` | same plugin | the app repo you are testing | `data-testid` attributes in the app's source, so Highlight can find elements |
 | `/enloop-demo` | this repo's `.claude/skills/` | this repo only | a demo case exercising the grammar |
@@ -216,6 +240,39 @@ git-ignored scratch folder, which is rarely what you want for real cases.
 Neither skill hardcodes a path: the app repo is `${CLAUDE_PROJECT_DIR}`, and
 everything about Enloop comes from `$ENLOOP_HOME`.
 
+### Setting up a repo
+
+Run this once per app repo, before the first case:
+
+```
+/enloop:setup
+```
+
+It settles two things that every later case depends on.
+
+**The project name.** One connected folder normally holds cases from every
+repo you write from, so a case needs to say which app it belongs to.
+`/enloop:setup` agrees a name with you and records it, after which
+`/enloop:write` titles cases `<Project>: ...` and sets `@project` without
+asking again.
+
+**The selector convention**, written into the app repo's `CLAUDE.md`. Highlight
+is only as good as the handles in the app, and `/enloop:instrument` backfilling
+them is work that decays the moment someone ships a screen without them. The
+section it installs — which attribute this repo uses, how values are named,
+what to do about list rows, and which elements are unreachable from the side
+panel at all — is read into every Claude Code session in that repo, so new UI
+arrives instrumented instead of being retrofitted.
+
+It detects the convention already in the repo rather than imposing one, checks
+that your production build doesn't strip test attributes (if it does, every
+selector you add would resolve in dev and nowhere else), and shows you the
+block before touching `CLAUDE.md`. Re-running it updates that section in place.
+
+It can also write `ENLOOP_HOME`, `ENLOOP_DATA_DIR` and `ENLOOP_PROJECT` into
+the project's settings for you, which is the same configuration described
+above — done once, with the data folder detection already applied.
+
 ### Writing a case
 
 From inside the repo of the app you're testing:
@@ -282,8 +339,9 @@ tester can't make and the report can't contain:
 | Not reproducible | Couldn't be located in source from here | what it would take to reproduce |
 
 It also sweeps every `Where:` and `Selector:` in the case — including on
-steps that passed — against current source, because a selector that
-changed under a passing step is next run's mystery failure.
+steps that passed, and including fallback selectors a passing run never
+reached — against current source, because a selector that changed under a
+passing step is next run's mystery failure.
 
 Then it acts on what it owns. **Case defects it fixes itself**, writing
 `versions/v<n+1>.md` with a `Change note:` and re-checking the edited steps
@@ -338,10 +396,9 @@ write a case against a screen: Highlight runs `document.querySelector` in
 the **top frame only**, so content inside an `<iframe>` or behind a shadow
 root is unreachable no matter what you tag it with.
 
-Finally it offers a convention line for the app repo's `CLAUDE.md`, so new
-UI arrives already instrumented rather than needing the next backfill. It
-won't write to `CLAUDE.md` without you agreeing — that file is read into
-every session in that repo.
+Finally it checks that the app repo's `CLAUDE.md` carries the convention
+`/enloop:setup` installs, so new UI arrives already instrumented rather than
+needing the next backfill — and points you at `/enloop:setup` if it doesn't.
 
 ### The step contract
 
@@ -355,7 +412,9 @@ The rules, in brief:
    split it.
 2. Every step states where it starts, via `Where:`.
 3. Every UI step carries a `Selector:`, taken from source — never invented,
-   never a structural path.
+   never a structural path. Repeat the line for ordered fallbacks when the
+   element can genuinely move (a modal, a portal, a handle not yet deployed),
+   best first.
 4. `### Expected` holds binary, observable pass criteria as bullets. Nothing
    else.
 5. Rationale, regression history, and caveats go in `### Note`.
@@ -365,7 +424,7 @@ The rules, in brief:
 7. No conditionals inside a step. A conditional becomes its own skippable step.
 8. Cleanup is explicit. A case that can't be run twice will be run once.
 
-It ends in a ten-item reject list the skill checks mechanically before writing
+It ends in a reject list the skill checks mechanically before writing
 anything. If the generated cases drift, tighten that list rather than
 re-explaining the goal in the prompt.
 

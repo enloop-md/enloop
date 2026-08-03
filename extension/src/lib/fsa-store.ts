@@ -90,6 +90,14 @@ async function readSuiteDoc(
   return parseCaseDocument(text, { version: 1, createdAt: lastModified }, { requireSteps: false });
 }
 
+/** Most recently edited first — `updatedAt` is the current version file's
+ * mtime, so a case rises to the top of the Library the moment a new version
+ * lands. Title is the tie-break, which keeps ordering stable for cases
+ * written in the same second (a batch import, or a skill writing several). */
+function byRecentlyUpdated(a: TestCaseSummary, b: TestCaseSummary): number {
+  return b.updatedAt.localeCompare(a.updatedAt) || a.title.localeCompare(b.title);
+}
+
 function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
   const stateByStepId = new Map(runFile.steps.map((s) => [s.stepId, s]));
   const steps = doc.steps.map((step) => {
@@ -111,7 +119,7 @@ function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
       instructions: step.instructions,
       expected: step.expected,
       script: step.script,
-      selector: step.selector,
+      selectors: step.selectors,
       status: state.status,
       comment: state.comment,
       notes: state.notes,
@@ -182,6 +190,7 @@ export class FsaDataStore implements DataStore {
           summaries.push({
             id: meta.id,
             title: meta.title,
+            project: meta.project,
             description: meta.description,
             tags: meta.tags,
             currentVersion: meta.currentVersion,
@@ -195,7 +204,7 @@ export class FsaDataStore implements DataStore {
         }
       }
     }
-    summaries.sort((a, b) => a.title.localeCompare(b.title));
+    summaries.sort(byRecentlyUpdated);
     return summaries;
   }
 
@@ -215,6 +224,7 @@ export class FsaDataStore implements DataStore {
     return {
       id,
       title: current.title,
+      project: current.project,
       description: current.description,
       tags: current.tags,
       currentVersion,
@@ -301,6 +311,7 @@ export class FsaDataStore implements DataStore {
         summaries.push({
           id: name,
           title: doc.title,
+          project: doc.project,
           description: doc.description,
           tags: doc.tags,
           caseCount: caseIds.length,
@@ -330,6 +341,7 @@ export class FsaDataStore implements DataStore {
         cases.push({
           id: meta.id,
           title: meta.title,
+          project: meta.project,
           description: meta.description,
           tags: meta.tags,
           currentVersion: meta.currentVersion,
@@ -341,6 +353,7 @@ export class FsaDataStore implements DataStore {
         // Skip a case folder with no parseable version yet.
       }
     }
+    cases.sort(byRecentlyUpdated);
     return { doc, cases, archived: bookkeeping?.archived ?? false };
   }
 
@@ -359,6 +372,7 @@ export class FsaDataStore implements DataStore {
     return {
       id,
       title: parsed.title,
+      project: parsed.project,
       description: parsed.description,
       tags: parsed.tags,
       caseCount: 0,

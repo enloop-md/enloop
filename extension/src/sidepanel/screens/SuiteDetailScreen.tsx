@@ -68,6 +68,12 @@ export function SuiteDetailScreen({
       <Header title={doc.title} onBack={onBack} onSettings={onSettings} />
       <div className="flex-1 overflow-y-auto p-3">
         {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
+        {doc.project && (
+          <div className="mb-2 flex items-baseline gap-1.5 text-xs">
+            <span className="font-medium text-slate-500">Project:</span>
+            <span className="text-slate-600">{doc.project}</span>
+          </div>
+        )}
         {doc.description && (
           <Markdown text={doc.description} className="mb-3 text-sm text-slate-600" />
         )}

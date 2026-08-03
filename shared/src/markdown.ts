@@ -18,7 +18,7 @@ import type {
  * v1.md/v2.md version history, which tracks edits to a case's *content*
  * under this same grammar.
  */
-export const CURRENT_FORMAT_VERSION = "0.0.2";
+export const CURRENT_FORMAT_VERSION = "0.0.3";
 
 /**
  * Grammar (see README-less by design — this comment is the spec). The very
@@ -29,8 +29,13 @@ export const CURRENT_FORMAT_VERSION = "0.0.2";
  *   # Case title
  *   @version 0.0.1
  *   @author Sergey Ryabenko
+ *   @project Careerminds                       (the app under test — which
+ *                                                repo/product this case
+ *                                                belongs to, so a reader
+ *                                                opening the file cold knows
+ *                                                what they are looking at)
  *   Tags: auth, smoke
- *   Change note: Added SSO redirect check      (all four lines optional)
+ *   Change note: Added SSO redirect check      (all five lines optional)
  *
  *   Free text description.
  *
@@ -76,11 +81,33 @@ export const CURRENT_FORMAT_VERSION = "0.0.2";
  *                                                 in the page when the step
  *                                                 is focused, or on demand
  *                                                 via the Highlight button)
+ *   Selector: [data-testid="login"] button      (optional fallbacks — repeat
+ *   Selector: form .btn-primary                  the line; they are tried in
+ *                                                 order and the first one
+ *                                                 that matches something on
+ *                                                 the page wins)
  *   Free text instructions (manual step — no code fence found).
  *
  *   `Where:` and `Selector:` form a header block directly under the step
  *   title and may appear in either order; the first line that is neither
  *   ends the header and begins the instructions.
+ *
+ *   A single `Selector:` line is always one selector, even when it contains
+ *   commas — `a, b` is a CSS selector *group*, and `querySelector` returns
+ *   whichever of the two comes first in the document, not the one written
+ *   first. Ordered fallback is what repeated lines buy you: write the most
+ *   specific/stable handle first, then progressively looser ones for the
+ *   dynamic containers and generated class names it might have to survive.
+ *
+ *   Anywhere in a step's prose — instructions, `### Expected`, `### Note` —
+ *   a selector written as inline code (`` `#sync-btn` ``,
+ *   `` `[data-testid="row"]` ``) renders in the side panel as a control
+ *   that flashes that element, the same as the step's own `Selector:`.
+ *   Nothing declares this; it is recognised from the text. A Markdown link
+ *   with a fragment href does the same with prose for a label:
+ *   `[the Sync button](#sync-crm-btn)`. Visible UI labels in backticks —
+ *   which is how the step contract asks authors to quote them — are left
+ *   alone; only text that could not be a label qualifies.
  *
  *   ### Expected                                (optional)
  *   What should happen — pass criteria only.
@@ -128,12 +155,14 @@ export function parseCaseDocument(
 
   let formatVersion = CURRENT_FORMAT_VERSION;
   let author = "";
+  let project = "";
   let tags: string[] = [];
   let changeNote = "";
   while (i < lines.length) {
     const line = lines[i];
     const versionMatch = /^@version\s+(.*)$/i.exec(line);
     const authorMatch = /^@author\s+(.*)$/i.exec(line);
+    const projectMatch = /^@project\s+(.*)$/i.exec(line);
     const tagsMatch = /^Tags:\s*(.*)$/i.exec(line);
     const noteMatch = /^Change note:\s*(.*)$/i.exec(line);
     if (versionMatch) {
@@ -143,6 +172,11 @@ export function parseCaseDocument(
     }
     if (authorMatch) {
       author = authorMatch[1].trim();
+      i++;
+      continue;
+    }
+    if (projectMatch) {
+      project = projectMatch[1].trim();
       i++;
       continue;
     }
@@ -189,6 +223,7 @@ export function parseCaseDocument(
     createdAt: fallback.createdAt,
     formatVersion,
     author,
+    project,
     changeNote,
     title,
     description,
@@ -340,14 +375,18 @@ function parseOneStep(title: string, body: string, index: number): Step {
   while (i < lines.length && lines[i].trim() === "") i++;
 
   // `Selector:`/`Where:` form a small header block at the top of a step, in
-  // either order. The first line that is neither ends the header.
-  let selector: string | undefined;
+  // either order. The first line that is neither ends the header. `Selector:`
+  // may repeat: each line is one candidate, kept in document order, and the
+  // highlighter walks them until one matches.
+  const selectors: string[] = [];
   let where: string | undefined;
   for (; i < lines.length; i++) {
     const selectorMatch = SELECTOR_RE.exec(lines[i]);
     const whereMatch = WHERE_RE.exec(lines[i]);
-    if (selectorMatch) selector = selectorMatch[1].trim() || undefined;
-    else if (whereMatch) where = whereMatch[1].trim() || undefined;
+    if (selectorMatch) {
+      const candidate = selectorMatch[1].trim();
+      if (candidate) selectors.push(candidate);
+    } else if (whereMatch) where = whereMatch[1].trim() || undefined;
     else break;
   }
   const bodyAfterHeader = lines.slice(i).join("\n");
@@ -376,7 +415,7 @@ function parseOneStep(title: string, body: string, index: number): Step {
     instructions: lead || undefined,
     expected,
     script,
-    selector,
+    selectors,
     where,
     note,
   };
@@ -387,6 +426,7 @@ export function starterCaseTemplate(): string {
   return `# New test case
 @version ${CURRENT_FORMAT_VERSION}
 @author
+@project
 Tags:
 
 Describe what this test case covers.
@@ -416,6 +456,7 @@ export function starterSuiteTemplate(): string {
   return `# New suite
 @version ${CURRENT_FORMAT_VERSION}
 @author
+@project
 Tags:
 
 Describe what this suite of test cases covers and shares.
@@ -452,6 +493,7 @@ export function renderRunReport(doc: TestCaseVersion, run: RunFile): string {
 
   lines.push(`# ${doc.title} — Run Report`);
   lines.push("");
+  if (doc.project) lines.push(`- Project: ${doc.project}`);
   lines.push(`- Version: v${run.testCaseVersion}`);
   lines.push(`- Status: ${run.status}`);
   lines.push(`- Started: ${run.startedAt}`);
@@ -552,6 +594,7 @@ export function renderRunFeedback(doc: TestCaseVersion, run: RunFile): string | 
   const lines: string[] = [];
   lines.push(`# Feedback: ${doc.title} (v${run.testCaseVersion}, run ${run.id})`);
   lines.push("");
+  if (doc.project) lines.push(`Project: **${doc.project}**`);
   lines.push(`Human verification run finished ${run.finishedAt ?? "—"} with status **${run.status}**.`);
   lines.push(`${failedCount} failed, ${warningCount} warnings, ${noteCount} feedback notes.`);
   lines.push("");

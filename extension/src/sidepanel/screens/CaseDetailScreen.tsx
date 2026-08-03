@@ -106,6 +106,18 @@ export function CaseDetailScreen({
       <Header title={meta.title} onBack={onBack} onSettings={onSettings} />
       <div className="flex-1 overflow-y-auto p-3">
         {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
+        {(version?.project || meta.project) && (
+          <div className="mb-2 flex items-baseline gap-1.5 text-xs">
+            <span className="font-medium text-slate-500">Project:</span>
+            <span className="text-slate-600">{version?.project || meta.project}</span>
+          </div>
+        )}
+        {(version?.author || version?.formatVersion) && (
+          <div className="mb-3 flex flex-wrap items-baseline gap-x-3 text-[11px] text-slate-400">
+            {version.author && <span>by {version.author}</span>}
+            {version.formatVersion && <span>grammar {version.formatVersion}</span>}
+          </div>
+        )}
         {meta.description && (
           <Markdown text={meta.description} className="mb-3 text-sm text-slate-600" />
         )}
@@ -171,9 +183,16 @@ export function CaseDetailScreen({
                   {s.type}
                 </span>
               </div>
-              {s.selector && (
-                <code className="mt-1 block text-[10px] text-amber-600">{s.selector}</code>
-              )}
+              {s.selectors.map((sel, si) => (
+                <code
+                  key={`${si}-${sel}`}
+                  className={`mt-1 block text-[10px] ${
+                    si === 0 ? "text-amber-600" : "text-amber-600/60"
+                  }`}
+                >
+                  {s.selectors.length > 1 ? `${si + 1}. ${sel}` : sel}
+                </code>
+              ))}
               {s.instructions && (
                 <Markdown text={s.instructions} className="mt-1 text-xs text-slate-500" />
               )}

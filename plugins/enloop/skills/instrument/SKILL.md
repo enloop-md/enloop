@@ -40,6 +40,11 @@ of emitting a selector that will silently never match:
    the DOM. Selectors that depend on runtime ids only work if the case
    declares that id as a variable.
 
+A step may carry several `Selector:` lines, tried in order until one
+matches. That is a safety net for elements whose position in the DOM moves
+— a modal or portal — not a substitute for a stable handle. Adding the
+handle here is what lets a case name one selector and be right.
+
 ## 1. Detect the existing convention — never introduce a second one
 
 The worst outcome here is a repo with `data-testid` in some files,
@@ -173,20 +178,23 @@ say so.
 ## 9. Offer the convention for future code
 
 A backfill decays. The durable half of this is making new UI arrive
-already instrumented, which is a one-line convention in the app repo's
-`CLAUDE.md` — offer it, and add it if the user agrees:
+already instrumented, which is what `/enloop:setup` installs in the app
+repo's `CLAUDE.md`.
 
-```markdown
-## Test selectors
-Interactive controls and any element a test asserts on carry
-`data-testid`, named for the element's role in the flow (never its visible
-text). List rows get a shared row testid plus a `data-<entity>-id`
-attribute for addressing a specific row.
+Check whether that section exists:
+
+```bash
+rg -n '^## Enloop' CLAUDE.md
 ```
 
-Adjust that text to the convention you detected in step 1. Do not
-silently write to `CLAUDE.md`; it is the user's file and it is read into
-every session in that repo.
+If it does, and the convention you detected in step 1 matches what it
+says, there is nothing to do here — say so. If it disagrees with what the
+code actually does, that is worth raising: one of the two is wrong, and
+the code usually wins.
+
+If there is no such section, offer `/enloop:setup` rather than writing a
+convention yourself. It also records the project name, which cases need
+and this skill has no reason to know about.
 
 ## 10. Report
 

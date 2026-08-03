@@ -79,6 +79,59 @@ like `div > div:nth-child(3) > button`. If the element genuinely has no
 stable handle, that is a finding worth a `### Note` and often worth a
 `data-testid` in the app; say so rather than guessing.
 
+### Fallbacks: repeat the line, best handle first
+
+`Selector:` may appear several times on one step. Highlight tries them in
+order and stops at the first that matches the page, so a second line is
+free insurance for anything the DOM can change out from under you:
+
+    Selector: [data-testid="sync-console"]
+    Selector: #sync-console
+    Selector: .modal--sync [role="tablist"]
+
+Write fallbacks when — and only when — the first selector can genuinely
+miss:
+
+- **A dynamic container.** The element lives in a modal, drawer or portal
+  that renders under a different root depending on how it was opened.
+- **A handle that may not have shipped yet.** The exact `data-testid` is
+  in your branch but not in the environment the tester is on; a looser
+  `id` or `aria-label` behind it keeps the step usable today.
+- **A framework-generated class or id** that is stable within a build but
+  not across them.
+
+Do not pad a step with three variations of the same reliable handle.
+Every fallback is a claim that the one above it can fail; a list of near
+duplicates just makes "matched #3 of 3" meaningless when the tester sees
+it. Two entries is usually the whole of it.
+
+Order matters and is the point: most specific and most stable first,
+loosest last. A loose selector first will match something *plausible* and
+flash the wrong element, which is worse than not matching at all.
+
+One line is always one selector, even with commas — `.a, .b` is a CSS
+group, and the browser returns whichever comes first in the *document*,
+not the one you wrote first. Ordered fallback needs separate lines.
+
+### Selectors named in prose are clickable too
+
+The side panel turns a selector written as inline code anywhere in a
+step's instructions, `### Expected` or `### Note` into a Highlight
+control. So a step that mentions a second element in passing —
+
+    Confirm the row appears in `[data-testid="connections-table"]`.
+
+— gives the tester a way to find that element without it competing with
+the step's own `Selector:`, which stays the element the step *acts on*.
+
+For prose instead of a raw selector, link it: `[the Sync button](#sync-btn)`.
+
+This changes nothing about how you write. Keep quoting visible labels in
+backticks (`` `Save changes` ``) — those are left as plain code, because
+only text that could not be a label is treated as a selector. The one
+thing to avoid is inventing a selector for prose value; the same
+never-invent rule applies here as to `Selector:`.
+
 ## 4. `### Expected` is pass criteria only
 
 Bullets. Observable. Binary. A tester reading only the Expected block must
@@ -179,5 +232,9 @@ Before writing the file, check every step. Any hit means fix it:
 - [ ] A step body contains "if", "or", "optionally" in a way that makes
       the tester choose
 - [ ] A UI label, route, or selector appears that was not read from source
+- [ ] A step lists fallback `Selector:` lines that are near-duplicates of
+      each other, or puts the loosest one first
+- [ ] The case has no `@project` line naming the app under test
+- [ ] The title does not begin with the project prefix
 - [ ] The run leaves state behind with no cleanup step and no `### Note`
       acknowledging it

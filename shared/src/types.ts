@@ -72,6 +72,9 @@ export interface FreeRun extends FreeRunFile {
 export interface TestCaseSummary {
   id: string;
   title: string;
+  /** `@project` from the current version — the app under test. Empty when
+   * the document declares none. */
+  project: string;
   description: string;
   tags: string[];
   currentVersion: number;
@@ -86,6 +89,8 @@ export interface TestCaseSummary {
 export interface SuiteSummary {
   id: string;
   title: string;
+  /** `@project` from `suite.md` — the app under test. */
+  project: string;
   description: string;
   tags: string[];
   caseCount: number;
