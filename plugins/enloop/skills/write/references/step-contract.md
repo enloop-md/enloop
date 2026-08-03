@@ -67,6 +67,20 @@ a terminal, a mail client — say so explicitly:
 A step whose `Where:` differs from the previous step's must begin by
 getting there. Don't leave the tester to navigate silently.
 
+**Write it as a route whenever it is one.** A `Where:` of `/admin/sync`,
+an absolute URL, or a local address like `localhost:3000/admin` gets a Go
+control in the run screen that navigates the tab the run is using — one
+click instead of retyping a path. Prose gets nothing, which is correct
+when the place genuinely is prose (`the CRM's web console → Contacts`),
+and a waste when the step could have named the route.
+
+A bare route resolves against whatever page the tester has open. That is
+right when they are already in the app, and refuses rather than guesses
+when they are not. If a case must be certain — it starts from a blank tab,
+or spans two hosts — declare a `BASE_URL` variable and write
+`Where: %BASE_URL%/admin/sync`, which substitutes to an absolute URL
+before the run starts.
+
 ## 3. Every UI step carries a `Selector:`
 
 The extension scrolls the selector into view and flashes it. This is the
@@ -222,6 +236,9 @@ Before writing the file, check every step. Any hit means fix it:
 - [ ] Instructions contain " then " or list more than ~3 discrete actions
 - [ ] A UI step has no `Selector:`
 - [ ] Any step has no `Where:`
+- [ ] A `Where:` is prose where the step could have named a route
+- [ ] A service the tester must start is missing from `# Prerequisites`,
+      or is listed without the command that starts it
 - [ ] `### Expected` is prose rather than bullets
 - [ ] `### Expected` contains "why", "used to", "this regression-checks",
       or any parenthetical longer than a clause — move it to `### Note`
