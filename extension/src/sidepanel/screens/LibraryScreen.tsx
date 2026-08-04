@@ -1,8 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import type { SuiteSummary, TestCaseSummary } from "@tcm/shared";
+import {
+  exampleCaseSource,
+  type FreeRunFile,
+  type RunSummary,
+  type SuiteSummary,
+  type TestCaseSummary,
+} from "@tcm/shared";
+import { ErrorNotice } from "../../components/ErrorNotice.js";
 import { Header } from "../../components/Header.js";
 import { useReadyStore } from "../store/DataStoreProvider.js";
 import { relativeTime } from "../../lib/time.js";
+
+const DOCS_URL = "https://github.com/ryabenko-pro/enloop#readme";
 
 function matchesQuery(query: string, title: string, tags: string[], project = ""): boolean {
   if (!query) return true;
@@ -10,6 +19,108 @@ function matchesQuery(query: string, title: string, tags: string[], project = ""
     title.toLowerCase().includes(query) ||
     project.toLowerCase().includes(query) ||
     tags.some((t) => t.toLowerCase().includes(query))
+  );
+}
+
+type Unfinished =
+  | { kind: "run"; id: string; testCaseId: string; title: string; done: number; total: number }
+  | { kind: "freeRun"; id: string; title: string };
+
+/**
+ * The run the tester walked away from, if there is one.
+ *
+ * The panel's document dies whenever the panel closes, and a restored
+ * navigation stack only survives until Chrome restarts — so the case that
+ * this exists for is the tester who marked four steps yesterday, closed the
+ * laptop, and now has no idea that the run is sitting there half-finished.
+ * Only the most recent is offered: older abandoned runs are history, and
+ * belong on the history screen.
+ */
+function mostRecentUnfinished(runs: RunSummary[], freeRuns: FreeRunFile[]): Unfinished | null {
+  const open = [
+    ...runs
+      .filter((r) => r.status === "in_progress")
+      .map((r) => ({
+        startedAt: r.startedAt,
+        entry: {
+          kind: "run" as const,
+          id: r.id,
+          testCaseId: r.testCaseId,
+          title: r.testCaseTitle,
+          done: r.passCount + r.failCount,
+          total: r.stepCount,
+        },
+      })),
+    ...freeRuns
+      .filter((f) => !f.finishedAt)
+      .map((f) => ({
+        startedAt: f.startedAt,
+        entry: { kind: "freeRun" as const, id: f.id, title: f.title },
+      })),
+  ].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+
+  return open[0]?.entry ?? null;
+}
+
+function ResumeBanner({
+  unfinished,
+  onResume,
+}: {
+  unfinished: Unfinished;
+  onResume: () => void;
+}) {
+  return (
+    <button
+      onClick={onResume}
+      className="flex w-full items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2 text-left hover:bg-amber-100"
+    >
+      <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-medium text-amber-900">
+        in progress
+      </span>
+      <span className="flex-1 truncate text-xs font-medium text-amber-900">
+        {unfinished.title}
+      </span>
+      <span className="shrink-0 text-[11px] text-amber-700">
+        {unfinished.kind === "run" && `${unfinished.done}/${unfinished.total} · `}Resume →
+      </span>
+    </button>
+  );
+}
+
+/**
+ * What a connected-but-empty folder says.
+ *
+ * It used to say "No test cases yet.", which is true and useless: the two
+ * doors out of it are a Markdown editor for a grammar the tester has not
+ * read, and a set of Claude Code skills they may not have installed. The
+ * example is here so the first thing anyone does with Enloop is watch a run
+ * work, rather than author one blind.
+ */
+function FirstRun({ busy, onLoadExample }: { busy: boolean; onLoadExample: () => void }) {
+  return (
+    <div className="space-y-3 p-4 text-sm">
+      <h2 className="font-medium text-slate-800">Nothing here yet</h2>
+      <p className="text-slate-500">
+        Cases are Markdown files in the folder you connected. Start with the example — it runs
+        against a public demo site and shows every control the panel has: Go, Highlight, values
+        that type themselves in, and a step that runs a script in the page.
+      </p>
+      <button
+        onClick={onLoadExample}
+        disabled={busy}
+        className="w-full rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+      >
+        Load an example case
+      </button>
+      <p className="text-xs text-slate-400">
+        For your own app, cases are written from its repo with the Claude Code skill{" "}
+        <code className="text-slate-500">/enloop:write</code>, which reads the code and derives
+        the routes and selectors.{" "}
+        <a href={DOCS_URL} target="_blank" rel="noreferrer" className="text-sky-600 hover:underline">
+          Setting that up ↗
+        </a>
+      </p>
+    </div>
   );
 }
 
@@ -30,6 +141,8 @@ export function LibraryScreen({
   onNewFreeRun,
   onSettings,
   onHistory,
+  onOpenRun,
+  onOpenFreeRun,
 }: {
   onOpenCase: (id: string) => void;
   onOpenSuite: (suiteId: string) => void;
@@ -38,13 +151,16 @@ export function LibraryScreen({
   onNewFreeRun: (freeRunId: string) => void;
   onSettings: () => void;
   onHistory: () => void;
+  onOpenRun: (testCaseId: string, runId: string) => void;
+  onOpenFreeRun: (freeRunId: string) => void;
 }) {
   const store = useReadyStore();
   const [cases, setCases] = useState<TestCaseSummary[] | null>(null);
   const [suites, setSuites] = useState<SuiteSummary[] | null>(null);
+  const [unfinished, setUnfinished] = useState<Unfinished | null>(null);
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
 
   async function startFreeRun() {
@@ -54,7 +170,20 @@ export function LibraryScreen({
       const freeRun = await store.createFreeRun(`Free run ${new Date().toLocaleDateString()}`);
       onNewFreeRun(freeRun.id);
     } catch (e) {
-      setError(String(e));
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function loadExample() {
+    setBusy(true);
+    setError(null);
+    try {
+      const meta = await store.createTestCase(exampleCaseSource());
+      onOpenCase(meta.id);
+    } catch (e) {
+      setError(e);
     } finally {
       setBusy(false);
     }
@@ -68,7 +197,24 @@ export function LibraryScreen({
         setCases(c);
         setSuites(s);
       })
-      .catch((e) => !cancelled && setError(String(e)));
+      .catch((e) => !cancelled && setError(e));
+    return () => {
+      cancelled = true;
+    };
+  }, [store]);
+
+  // A run left open. Loaded separately from the library itself so a slow or
+  // broken runs folder cannot keep the case list from rendering.
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([store.listRuns(), store.listFreeRuns()])
+      .then(([runs, freeRuns]) => {
+        if (!cancelled) setUnfinished(mostRecentUnfinished(runs, freeRuns));
+      })
+      .catch(() => {
+        // Not worth an error banner: the library is still perfectly usable
+        // without the shortcut, and Runs shows the same thing.
+      });
     return () => {
       cancelled = true;
     };
@@ -113,7 +259,15 @@ export function LibraryScreen({
     return { suiteGroups, ungrouped: shownUngrouped };
   }, [cases, suites, query, showArchived]);
 
-  const isEmpty = groups !== null && groups.suiteGroups.length === 0 && groups.ungrouped.length === 0;
+  // "Nothing here yet" and "nothing matches that search" are different
+  // situations with different answers, and the onboarding one must not fire
+  // for a tester who mistyped a tag.
+  const libraryEmpty = cases !== null && suites !== null && cases.length === 0 && suites.length === 0;
+  const noMatches =
+    !libraryEmpty &&
+    groups !== null &&
+    groups.suiteGroups.length === 0 &&
+    groups.ungrouped.length === 0;
 
   return (
     <div className="flex h-full flex-col">
@@ -169,10 +323,24 @@ export function LibraryScreen({
         </div>
       </div>
 
+      {unfinished && (
+        <ResumeBanner
+          unfinished={unfinished}
+          onResume={() =>
+            unfinished.kind === "run"
+              ? onOpenRun(unfinished.testCaseId, unfinished.id)
+              : onOpenFreeRun(unfinished.id)
+          }
+        />
+      )}
+
       <div className="flex-1 overflow-y-auto">
-        {error && <p className="p-3 text-sm text-red-600">{error}</p>}
-        {!error && groups === null && <p className="p-3 text-sm text-slate-400">Loading…</p>}
-        {!error && isEmpty && <p className="p-3 text-sm text-slate-400">No test cases yet.</p>}
+        <ErrorNotice error={error} className="p-3" />
+        {error == null && groups === null && <p className="p-3 text-sm text-slate-400">Loading…</p>}
+        {error == null && noMatches && (
+          <p className="p-3 text-sm text-slate-400">Nothing matches that search.</p>
+        )}
+        {error == null && libraryEmpty && <FirstRun busy={busy} onLoadExample={loadExample} />}
 
         {groups?.suiteGroups.map(({ suite, cases: suiteCases }) => (
           <div key={suite.id} className="border-b border-slate-100">

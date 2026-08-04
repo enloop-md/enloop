@@ -244,6 +244,60 @@ That is a research task, mid-run. Good:
 > local column reads `(not found)`. Record it here before starting the run.
 > Default: Acme Corp
 
+### Every literal a tester types is quoted and bolded
+
+Any value they must enter — into a field, a select, a search box, a command
+— is written as `"**value**"`: double quotes around a bolded run, holding
+exactly what should be typed.
+
+    Put "**Buy milk**" in the task title field.
+    Set `Priority` to "**High**".
+    Search for "**qa.bot@example.com**".
+
+Not: *Put value Buy milk in input.* Where the value ends is then the
+tester's guess, and a two-word value in the middle of a sentence is
+genuinely ambiguous.
+
+**Why both marks.** The panel turns each one into a control: clicking it
+arms the page, and the next input, textarea or **select** the tester clicks
+receives the value — with a copy fallback for anywhere the extension cannot
+reach. So the markup is not decoration; it is what makes a value insertable
+instead of retyped. It takes both marks because either alone is something
+people already write for other reasons. Quotes alone are ordinary
+punctuation — *the row shows "Undefined property"* quotes an error message,
+not a value to type. Bold alone is emphasis. Requiring the pair means the
+author opts in deliberately, and never trips it by writing normal prose.
+
+**And why this pair.** A case file is read on GitHub, in editors, in code
+review — by people who never open the extension — far more often than it is
+run. `"**Buy milk**"` renders as a quoted value with the value emphasised in
+any Markdown viewer, so the file reads correctly to them and the extension
+still gets an unambiguous signal. A sigil like `(!)"Buy milk"` would parse
+just as well and would litter the text for every human reader.
+
+This is a different mark from backticks, and the difference is load-bearing:
+
+| Mark | Means | Panel behaviour |
+| --- | --- | --- |
+| `"**quoted bold**"` | a value to **type** | insertable into a field |
+| `` `backticked` `` | a label or heading to **find** on screen | plain text |
+| `` `#selector` `` | an element to **find** in the DOM | Highlight control |
+| `**bold**` alone | emphasis | plain text |
+| `"quoted"` alone | ordinary punctuation | plain text |
+
+So: ``Set `Priority` to "**High**"`` — `Priority` is the field's visible
+label, `"**High**"` is the option to choose. Marking the label as a value or
+backticking the value inverts both behaviours.
+
+For a value that comes from a variable, mark up the placeholder:
+`Enter "**%TEST_EMAIL%**"`. It is substituted before the run, so the tester
+sees and inserts the real value.
+
+Values are insertable wherever they appear in a running case — instructions,
+`### Expected`, `### Note`. They belong in the instruction that asks for
+them, but a note that says *if the seeded user is missing, use
+"**admin@example.com**"* is a value too, and the panel treats it as one.
+
 ## 7. No conditionals inside a step
 
 "If a second enabled account exists, do X" makes the tester decide. Make
@@ -284,6 +338,9 @@ Before writing the file, check every step. Any hit means fix it:
 - [ ] A step body contains "if", "or", "optionally" in a way that makes
       the tester choose
 - [ ] A UI label, route, or selector appears that was not read from source
+- [ ] A value the tester must type is not written as `"**value**"`
+- [ ] A visible label is marked up as a value, or a typed value is in
+      backticks
 - [ ] A step lists fallback `Selector:` lines that are near-duplicates of
       each other, or puts the loosest one first
 - [ ] The case has no `@project` line naming the app under test

@@ -55,11 +55,13 @@ export const CURRENT_FORMAT_VERSION = "0.0.4";
  *   Generators, given as `Generator: <name> [arg]`: `timestamp` (epoch ms,
  *   or ISO text with arg `iso`), `page-url`, `page-domain` (both read the
  *   active tab when a run starts), `random-number` (arg `min-max`, default
- *   `0-999999`), `random-string` (arg = length, default 8). A run prompts
- *   for every declared variable, pre-filling generated ones, then replaces
- *   every `%NAME%` placeholder anywhere in the rest of the document —
- *   title, description, step instructions, selectors, scripts — with the
- *   resolved value. See `substituteVariables`.
+ *   `0-999999`), `random-string` (arg = length, default 8). Starting a run
+ *   resolves every declared variable — generator, else declared default,
+ *   else whatever the tester typed before starting — and replaces every
+ *   `%NAME%` placeholder anywhere in the rest of the document (title,
+ *   description, step instructions, selectors, scripts) with the resolved
+ *   value. A variable that resolves to nothing is not substituted at all:
+ *   the step keeps the literal `%NAME%`. See `substituteVariables`.
  *
  *   # Dependencies                              (optional, bullet list)
  *   - Seeded test user
@@ -128,6 +130,19 @@ export const CURRENT_FORMAT_VERSION = "0.0.4";
  *   first. Ordered fallback is what repeated lines buy you: write the most
  *   specific/stable handle first, then progressively looser ones for the
  *   dynamic containers and generated class names it might have to survive.
+ *
+ *   Every literal the tester must type is written as "**value**" — double
+ *   quotes around a bolded run — e.g. `Put "**Buy milk**" in the task
+ *   field`. The side panel turns each one into a control: clicking it arms
+ *   the page so the next input, textarea or select the tester clicks
+ *   receives the value, with a copy fallback. It takes both marks because
+ *   either alone is something authors already write for other reasons —
+ *   quotes for an error message being cited, bold for emphasis — and a
+ *   control offering to type a quoted sentence fragment into the page is
+ *   worse than no control. Backticks mean the opposite thing (a label or
+ *   element to *find*), so those must not be swapped either. The pair is
+ *   deliberately still readable as ordinary Markdown: these files are read
+ *   on GitHub and in editors far more than they are run.
  *
  *   Anywhere in a step's prose — instructions, `### Expected`, `### Note` —
  *   a selector written as inline code (`` `#sync-btn` ``,
@@ -337,11 +352,17 @@ function parseOneVariable(name: string, body: string): TestCaseVariable {
 const PLACEHOLDER_RE = /%([A-Za-z_][A-Za-z0-9_]*)%/g;
 
 /** Replaces every `%NAME%` placeholder in `text` with its resolved value.
- * A placeholder with no matching entry in `values` is left untouched,
- * rather than assuming a missing variable means "blank it out". */
+ *
+ * A variable is only used when it actually has a value. A placeholder with
+ * no matching entry in `values` — or whose value is blank — is left as
+ * `%NAME%`, because the alternative is worse in both directions: blanking
+ * it turns `Where: %BASE_URL%/admin` into `Where: /admin`, an instruction
+ * that looks complete and is wrong, and there is no way for the tester
+ * reading the run to tell that a value was ever meant to be there. Leaving
+ * the placeholder says exactly what happened. */
 export function substituteVariables(text: string, values: Record<string, string>): string {
   return text.replace(PLACEHOLDER_RE, (match, name: string) =>
-    name in values ? values[name] : match,
+    values[name]?.trim() ? values[name] : match,
   );
 }
 

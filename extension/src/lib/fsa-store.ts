@@ -433,6 +433,7 @@ export class FsaDataStore implements DataStore {
         if (!runFile) continue;
         const passCount = runFile.steps.filter((s) => s.status === "success").length;
         const failCount = runFile.steps.filter((s) => s.status === "failed").length;
+        const warnCount = runFile.steps.filter((s) => s.status === "warning").length;
         summaries.push({
           id: runFile.id,
           testCaseId: runFile.testCaseId,
@@ -445,6 +446,7 @@ export class FsaDataStore implements DataStore {
           stepCount: runFile.steps.length,
           passCount,
           failCount,
+          warnCount,
         });
       }
     }

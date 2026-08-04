@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import type { DataStore } from "@tcm/shared";
+import { describeError } from "../../lib/errors.js";
 import { FsaDataStore } from "../../lib/fsa-store.js";
 import {
   checkPermission,
@@ -49,7 +50,7 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
       if (perm === "granted") activate(handle);
       else setConnection({ status: "needs-permission", folderName: handle.name });
     })().catch((e) => {
-      if (!cancelled) setConnection({ status: "error", message: String(e) });
+      if (!cancelled) setConnection({ status: "error", message: describeError(e) });
     });
     return () => {
       cancelled = true;
@@ -62,7 +63,7 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
       activate(handle);
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
-      setConnection({ status: "error", message: String(e) });
+      setConnection({ status: "error", message: describeError(e) });
     }
   }, [activate]);
 
@@ -77,7 +78,7 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
       if (granted) activate(handle);
       else setConnection({ status: "needs-permission", folderName: handle.name });
     } catch (e) {
-      setConnection({ status: "error", message: String(e) });
+      setConnection({ status: "error", message: describeError(e) });
     }
   }, [activate, connect]);
 

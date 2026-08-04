@@ -1,3 +1,5 @@
+import { getPageAccess, type PageAccess } from "./page-access.js";
+
 /**
  * Injected directly via chrome.scripting.executeScript's `func` — this is
  * static, extension-authored code (not dynamic user script text), so none
@@ -35,25 +37,41 @@ function highlightElement(selectors: string[]): { matched: string | null } {
   return { matched: null };
 }
 
-/** Scrolls the first matching selector into view and flashes it in the given
- * tab, returning which one matched — `null` if the tab has no active
- * document or none of the candidates match anything there. Never throws:
- * this is a visual aid, not a correctness check, so callers should treat a
- * miss as a no-op. */
-export async function highlightSelectorsInTab(
-  tabId: number,
-  selectors: string[],
-): Promise<string | null> {
-  if (selectors.length === 0) return null;
+export type HighlightOutcome =
+  /** A candidate matched and was flashed. */
+  | { status: "matched"; selector: string }
+  /** The page was reachable and none of the candidates matched. */
+  | { status: "no-match" }
+  /** Nothing was looked for — the page could not be scripted at all. */
+  | { status: "blocked"; access: PageAccess };
+
+/**
+ * Scrolls the first matching selector into view and flashes it in the active
+ * tab. Never throws: this is a visual aid, not a correctness check.
+ *
+ * The `blocked` case is separate from `no-match` because they lie about each
+ * other. Reporting "not found on page" for a `chrome://` tab, or for a site
+ * whose access has not been granted, sends the tester off to check a
+ * selector that was never looked for.
+ */
+export async function highlightSelectors(selectors: string[]): Promise<HighlightOutcome> {
+  if (selectors.length === 0) return { status: "no-match" };
+
+  const access = await getPageAccess();
+  if (access.status !== "ready") return { status: "blocked", access };
+
   try {
     const [injection] = await chrome.scripting.executeScript({
-      target: { tabId },
+      target: { tabId: access.tabId },
       world: "ISOLATED",
       func: highlightElement,
       args: [selectors],
     });
-    return injection?.result?.matched ?? null;
+    const matched = injection?.result?.matched ?? null;
+    return matched ? { status: "matched", selector: matched } : { status: "no-match" };
   } catch {
-    return null;
+    // Access was there a moment ago, so this is the page itself refusing —
+    // a tab mid-navigation, or a frame that went away.
+    return { status: "no-match" };
   }
 }

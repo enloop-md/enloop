@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { parseCaseDocument, starterCaseTemplate } from "@tcm/shared";
+import { ErrorNotice } from "../../components/ErrorNotice.js";
 import { Header } from "../../components/Header.js";
 import { useReadyStore } from "../store/DataStoreProvider.js";
 
@@ -21,7 +22,7 @@ export function EditorScreen({
   const [text, setText] = useState(isNew ? starterCaseTemplate() : "");
   const [loaded, setLoaded] = useState(isNew);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     if (!testCaseId) return;
@@ -32,7 +33,7 @@ export function EditorScreen({
       if (cancelled) return;
       setText(source);
       setLoaded(true);
-    })().catch((e) => !cancelled && setError(String(e)));
+    })().catch((e) => !cancelled && setError(e));
     return () => {
       cancelled = true;
     };
@@ -72,16 +73,20 @@ export function EditorScreen({
         onSaved(testCaseId);
       }
     } catch (e) {
-      setError(String(e));
+      setError(e);
     } finally {
       setBusy(false);
     }
   }
 
   if (!loaded) {
+    // A load that failed leaves `loaded` false forever, so the error has to
+    // be rendered here too — otherwise the screen sits on "Loading…" with
+    // the reason it will never finish held in state and never shown.
     return (
       <div className="flex h-full flex-col">
-        <Header title="Loading…" onBack={onBack} />
+        <Header title={error == null ? "Loading…" : "Could not open"} onBack={onBack} />
+        <ErrorNotice error={error} className="p-3" />
       </div>
     );
   }
@@ -98,7 +103,7 @@ export function EditorScreen({
         />
       </div>
       <div className="space-y-2 border-t border-slate-200 p-3">
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        <ErrorNotice error={error} />
         <p className={`text-xs ${preview.ok ? "text-slate-500" : "text-amber-600"}`}>
           {preview.summary}
         </p>

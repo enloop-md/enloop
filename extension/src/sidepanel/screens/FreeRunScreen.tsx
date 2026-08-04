@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { FreeRun } from "@tcm/shared";
+import { ErrorNotice } from "../../components/ErrorNotice.js";
 import { Header } from "../../components/Header.js";
 import { useReadyStore } from "../store/DataStoreProvider.js";
 
@@ -19,7 +20,7 @@ export function FreeRunScreen({
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -32,7 +33,7 @@ export function FreeRunScreen({
         setTitle(f.title);
         setNotes(f.notes);
       })
-      .catch((e) => !cancelled && setError(String(e)));
+      .catch((e) => !cancelled && setError(e));
     return () => {
       cancelled = true;
     };
@@ -45,7 +46,7 @@ export function FreeRunScreen({
       const updated = await store.updateFreeRun(freeRunId, patch);
       setFreeRun(updated);
     } catch (e) {
-      setError(String(e));
+      setError(e);
     }
   }
 
@@ -69,7 +70,7 @@ export function FreeRunScreen({
       const updated = await store.finishFreeRun(freeRunId);
       setFreeRun(updated);
     } catch (e) {
-      setError(String(e));
+      setError(e);
     } finally {
       setBusy(false);
     }
@@ -79,7 +80,11 @@ export function FreeRunScreen({
     return (
       <div className="flex h-full flex-col">
         <Header title="Free run" onBack={onBack} onSettings={onSettings} />
-        <p className="p-3 text-sm text-slate-400">{error ?? "Loading…"}</p>
+        {error == null ? (
+          <p className="p-3 text-sm text-slate-400">Loading…</p>
+        ) : (
+          <ErrorNotice error={error} className="p-3" />
+        )}
       </div>
     );
   }
@@ -99,7 +104,7 @@ export function FreeRunScreen({
           className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm font-medium disabled:bg-slate-50"
         />
       </div>
-      {error && <p className="px-3 pt-2 text-sm text-red-600">{error}</p>}
+      <ErrorNotice error={error} className="px-3 pt-2" />
       <div className="flex-1 overflow-hidden p-3">
         <textarea
           value={notes}
