@@ -35,6 +35,11 @@ export function RunScreen({
   const [expandedStepId, setExpandedStepId] = useState<string | null>(null);
   const [busyStepId, setBusyStepId] = useState<string | null>(null);
   const autoStarted = useRef(false);
+  const [commentDraft, setCommentDraft] = useState("");
+  // Seeded once per run rather than mirrored from `run.comment`: every save
+  // returns a fresh Run, and syncing on that would fight the cursor of
+  // someone still typing.
+  const commentSeeded = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,6 +48,10 @@ export function RunScreen({
       .then(async (loaded) => {
         if (cancelled) return;
         setRun(loaded);
+        if (!commentSeeded.current) {
+          commentSeeded.current = true;
+          setCommentDraft(loaded.comment);
+        }
         const firstActionable =
           loaded.steps.find((s) => s.status === "pending" || s.status === "running") ??
           loaded.steps[0];
@@ -60,6 +69,15 @@ export function RunScreen({
   }, [store, testCaseId, runId]);
 
   const readOnly = !run || run.status !== "in_progress";
+
+  // Autosave while typing. The side panel closes whenever the user clicks
+  // away from it, which can happen mid-sentence and takes the component with
+  // it — waiting for blur would lose exactly the long comment worth keeping.
+  useEffect(() => {
+    if (!run || readOnly || commentDraft === run.comment) return;
+    const timer = setTimeout(() => void saveComment(commentDraft), 700);
+    return () => clearTimeout(timer);
+  }, [commentDraft, run, readOnly]);
 
   async function handleMark(step: RunStep, status: "success" | "failed" | "warning" | "skipped") {
     if (!run) return;
@@ -102,10 +120,22 @@ export function RunScreen({
     }
   }
 
+  async function saveComment(text: string) {
+    if (!run || text === run.comment) return;
+    try {
+      setRun(await store.updateRun(run.testCaseId, run.id, { comment: text }));
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   async function finishRun(status: "passed" | "failed" | "aborted") {
     if (!run) return;
     setError(null);
     try {
+      // Land the comment first: report.md and feedback.md are rendered by
+      // finishRun, so a comment saved after it would not appear in either.
+      await saveComment(commentDraft);
       const updated = await store.finishRun(run.testCaseId, run.id, status);
       setRun(updated);
     } catch (e) {
@@ -124,14 +154,19 @@ export function RunScreen({
 
   const passCount = run.steps.filter((s) => s.status === "success").length;
   const failCount = run.steps.filter((s) => s.status === "failed").length;
-  const hasFeedbackSignal = run.steps.some(
-    (s) =>
-      s.status === "failed" ||
-      s.status === "warning" ||
-      s.comment.trim().length > 0 ||
-      s.notes.length > 0 ||
-      !!s.automatedResult?.error,
-  );
+  // Must mirror renderRunFeedback's own test, including the run-level
+  // comment — a banner promising a feedback.md that was never written is
+  // worse than no banner.
+  const hasFeedbackSignal =
+    run.comment.trim().length > 0 ||
+    run.steps.some(
+      (s) =>
+        s.status === "failed" ||
+        s.status === "warning" ||
+        s.comment.trim().length > 0 ||
+        s.notes.length > 0 ||
+        !!s.automatedResult?.error,
+    );
 
   return (
     <div className="flex h-full flex-col">
@@ -141,9 +176,19 @@ export function RunScreen({
         onSettings={onSettings}
         actions={<RunStatusBadge status={run.status} />}
       />
-      <div className="border-b border-slate-200 px-3 py-2 text-xs text-slate-500">
-        v{run.testCaseVersion} · {passCount}/{run.steps.length} passed
-        {failCount > 0 && <span className="text-red-600"> · {failCount} failed</span>}
+      <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2 text-xs text-slate-500">
+        {run.tier === "quick" && (
+          <span
+            className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
+            title="Only the steps marked Kind: quick are in this run"
+          >
+            quick
+          </span>
+        )}
+        <span>
+          v{run.testCaseVersion} · {passCount}/{run.steps.length} passed
+          {failCount > 0 && <span className="text-red-600"> · {failCount} failed</span>}
+        </span>
       </div>
       {error && <p className="px-3 pt-2 text-sm text-red-600">{error}</p>}
       {readOnly && hasFeedbackSignal && (
@@ -173,19 +218,38 @@ export function RunScreen({
       </div>
 
       {!readOnly && (
-        <div className="flex gap-2 border-t border-slate-200 p-3">
-          <button
-            onClick={() => finishRun(failCount > 0 ? "failed" : "passed")}
-            className="flex-1 rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500"
-          >
-            Finish run
-          </button>
-          <button
-            onClick={() => finishRun("aborted")}
-            className="rounded border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-          >
-            Abort
-          </button>
+        <div className="space-y-2 border-t border-slate-200 p-3">
+          <textarea
+            value={commentDraft}
+            onChange={(e) => setCommentDraft(e.target.value)}
+            onBlur={() => void saveComment(commentDraft)}
+            rows={2}
+            placeholder="Comment on the whole run (optional) — anything that isn't about one step"
+            className="w-full resize-y rounded border border-slate-300 px-2 py-1.5 text-xs"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={() => finishRun(failCount > 0 ? "failed" : "passed")}
+              className="flex-1 rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+            >
+              Finish run
+            </button>
+            <button
+              onClick={() => finishRun("aborted")}
+              className="rounded border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              Abort
+            </button>
+          </div>
+        </div>
+      )}
+
+      {readOnly && run.comment.trim() && (
+        <div className="border-t border-slate-200 p-3">
+          <h2 className="mb-1 text-xs font-semibold uppercase text-slate-400">
+            Comment on this run
+          </h2>
+          <Markdown text={run.comment} className="text-xs text-slate-600" />
         </div>
       )}
     </div>

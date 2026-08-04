@@ -24,6 +24,20 @@ $ARGUMENTS is the scope: a ticket id, a branch, a feature name, or a
 free-text description. If it is empty, ask what to cover before doing
 anything else.
 
+**`--quick` writes a smaller case.** Authoring is the expensive part, and a
+developer checking their own branch does not need the full article. In quick
+mode: cover the happy path only, skip building or refreshing the app map
+(read just the screens the path touches), keep variables to what the path
+cannot run without, and mark every step `Kind: quick`. Say in your report
+that the case is quick-only and that `/enloop:write` without the flag will
+extend it.
+
+Without the flag you write the full case — and if a quick case for this
+scope already exists, **extend it** with a new version rather than starting
+a second case: keep its steps and their `Kind: quick` marks, and add the
+edge cases, error states and cleanup around them. Two cases for one feature
+is the outcome the tiering exists to avoid.
+
 ## 1. Resolve where things live
 
 Three paths. Never hardcode any of them.
@@ -195,7 +209,8 @@ Follow the grammar from step 2 and the contract from step 3. Structure:
   missing entry costs them a debugging session. The run screen shows the
   section collapsed by default, so listing what is usually already running
   costs nothing.
-- **`# Steps`** — per the contract. Cleanup steps at the end.
+- **`# Steps`** — per the contract, including `Kind: quick` on the core
+  path (contract rule 3b). Cleanup steps at the end.
 
 Write it to a scratch file first. It is not going into the cases folder
 until it parses and passes the reject list.
@@ -219,6 +234,10 @@ that:
   counts match what you intended,
 - asserts `doc.project` is the project name from step 1, and that
   `doc.title` starts with it,
+- asserts the steps you marked `Kind: quick` came back with `quick: true`,
+  and that `filterToQuickSteps` on your text still parses — a quick run
+  freezes that filtered document, so a case whose quick subset does not
+  parse on its own is broken in a way a full parse will not show,
 - asserts every step you gave a `Where:`/`Selector:`/`### Note` actually
   came back with those fields populated (a mis-indented header line
   silently becomes body prose — this check is what catches it). Note that
@@ -276,6 +295,8 @@ Tell the user:
 - The case title (with its project prefix) and its id, so they can find it
   in the Library. It sorts to the top of the list — the Library is ordered
   by last update.
+- How many steps it has, and how many are marked `Kind: quick` — so they
+  know a quick run is available and what it covers.
 - **The absolute path you wrote to.** One line, so a misplaced case is
   caught here rather than as an empty Library later.
 - What scope it covers (branch/ticket) and how many steps.

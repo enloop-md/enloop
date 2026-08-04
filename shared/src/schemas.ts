@@ -5,6 +5,11 @@ import { z } from "zod";
 // with `field?: T | undefined` even though parsing always fills the
 // default), which fights every consumer that expects a fully-populated
 // object. Every writer in this codebase supplies fields explicitly.
+//
+// The exception is a field ADDED to an already-written on-disk shape, where
+// no default means every existing file fails to parse. `.default()` is the
+// migration tool there and only there — verified in zod 3.23.8 that the
+// z.infer output of `z.string().default("")` is a plain `string`.
 
 export const stepTypeSchema = z.enum(["manual", "automated"]);
 
@@ -44,6 +49,10 @@ export const stepSchema = z.object({
    * generated class name by naming a looser alternative after the exact one.
    * Empty when the step declares none. */
   selectors: z.array(z.string()),
+  /** Marked `Kind: quick` — part of the core happy path. A quick run
+   * executes only these; a full run executes every step. Authored once, in
+   * full, so the quick subset costs nothing extra to maintain. */
+  quick: z.boolean(),
   /** Where the tester should be standing before doing this step — a route,
    * screen name, or other surface, e.g. `Where: /admin/sync-console`.
    * Keeps "which app/tab am I in?" out of the instructions prose. */
@@ -166,6 +175,11 @@ export const runStepStateSchema = z.object({
 
 export const runStatusSchema = z.enum(["in_progress", "passed", "failed", "aborted"]);
 
+/** How much of the case a run covers. `quick` executes only the steps
+ * marked `Kind: quick`; `full` executes all of them. Recorded on the run
+ * because "it passed" means different things for each. */
+export const runTierSchema = z.enum(["quick", "full"]);
+
 /** On-disk shape of `run.json` — run-level status plus per-step state only.
  * `testCaseTitle` is a denormalized convenience copy for cheap listing;
  * `case.md` next to it remains the source of truth for step definitions. */
@@ -175,6 +189,13 @@ export const runFileSchema = z.object({
   testCaseVersion: z.number().int().positive(),
   testCaseTitle: z.string(),
   status: runStatusSchema,
+  /** Free text about the run as a whole, not any one step — "ran against an
+   * old build", "felt slow throughout". Defaulted so runs written before
+   * this field existed still parse. */
+  comment: z.string().default(""),
+  /** Defaulted to `full`: every run recorded before tiers existed executed
+   * the whole case, so that is the truthful value for them. */
+  tier: runTierSchema.default("full"),
   startedAt: z.string(),
   finishedAt: z.string().nullable(),
   steps: z.array(runStepStateSchema),
@@ -202,6 +223,8 @@ export const runSchema = z.object({
   testCaseVersion: z.number().int().positive(),
   testCaseTitle: z.string(),
   status: runStatusSchema,
+  comment: z.string(),
+  tier: runTierSchema,
   startedAt: z.string(),
   finishedAt: z.string().nullable(),
   /** From the frozen `case.md`, so a tester can see what had to be true

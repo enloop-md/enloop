@@ -146,6 +146,38 @@ only text that could not be a label is treated as a selector. The one
 thing to avoid is inventing a selector for prose value; the same
 never-invent rule applies here as to `Selector:`.
 
+## 3b. Mark the core path with `Kind: quick`
+
+A case is authored once, in full. `Kind: quick` on a step says it is part of
+the core path, and a **quick run** executes only the marked steps — the
+version a developer runs against their own branch in two minutes, without
+anyone writing a second case.
+
+Mark a step when a failure there means the feature does not work at all:
+
+    ## Sync the contact
+    Where: /admin/sync-console
+    Kind: quick
+    Selector: #sync-crm-mailer-btn
+    Click `Sync CRM → Mailer`.
+
+Do not mark: edge cases, error states, permission variants, empty states,
+regression checks for old bugs, or anything about a second actor. Those are
+why the full case exists.
+
+Cleanup steps are the one judgement call. Mark them if the quick path leaves
+state behind — a quick run that cannot be repeated is worse than a slow one,
+and rule 8 does not stop applying because the run was short.
+
+Aim for **3–7 marked steps**. One is not a path; if half the case is marked,
+nothing has been decided and a quick run costs what a full one does. Suite
+prep steps are never filtered, so do not mark them to "make sure they run" —
+they always do.
+
+A case with no marks is full-only, which is a fine answer for a case that is
+all edge cases. The run screen only offers the choice when a case actually
+distinguishes the two.
+
 ## 4. `### Expected` is pass criteria only
 
 Bullets. Observable. Binary. A tester reading only the Expected block must
@@ -237,6 +269,9 @@ Before writing the file, check every step. Any hit means fix it:
 - [ ] A UI step has no `Selector:`
 - [ ] Any step has no `Where:`
 - [ ] A `Where:` is prose where the step could have named a route
+- [ ] No step carries `Kind: quick`, in a case that has a core path
+- [ ] More than half the steps are marked `Kind: quick`
+- [ ] An edge case, error state or permission variant is marked `Kind: quick`
 - [ ] A service the tester must start is missing from `# Prerequisites`,
       or is listed without the command that starts it
 - [ ] `### Expected` is prose rather than bullets

@@ -16,6 +16,7 @@ import type {
   runFileSchema,
   runStepSchema,
   runStatusSchema,
+  runTierSchema,
   runSchema,
   stepPatchSchema,
   freeRunFileSchema,
@@ -58,6 +59,8 @@ export type RunFile = z.infer<typeof runFileSchema>;
 /** Composed step: definition (from case.md) + state (from run.json). */
 export type RunStep = z.infer<typeof runStepSchema>;
 export type RunStatus = z.infer<typeof runStatusSchema>;
+/** How much of a case a run covers — see `runTierSchema`. */
+export type RunTier = z.infer<typeof runTierSchema>;
 /** Composed run: case.md + run.json merged — what store callers see. */
 export type Run = z.infer<typeof runSchema>;
 export type StepPatch = z.infer<typeof stepPatchSchema>;
@@ -110,6 +113,9 @@ export interface RunSummary {
   testCaseVersion: number;
   testCaseTitle: string;
   status: RunStatus;
+  /** Quick and full runs are different evidence; a history that cannot tell
+   * them apart reads a quick pass as a full one. */
+  tier: RunTier;
   startedAt: string;
   finishedAt: string | null;
   stepCount: number;

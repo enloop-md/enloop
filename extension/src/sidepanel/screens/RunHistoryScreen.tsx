@@ -71,6 +71,11 @@ export function RunHistoryScreen({
                     <span className="flex-1 truncate text-sm font-medium text-slate-800">
                       {entry.run.testCaseTitle}
                     </span>
+                    {entry.run.tier === "quick" && (
+                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                        quick
+                      </span>
+                    )}
                     <RunStatusBadge status={entry.run.status} />
                   </div>
                   <div className="text-xs text-slate-400">

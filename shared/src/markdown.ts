@@ -18,7 +18,7 @@ import type {
  * v1.md/v2.md version history, which tracks edits to a case's *content*
  * under this same grammar.
  */
-export const CURRENT_FORMAT_VERSION = "0.0.3";
+export const CURRENT_FORMAT_VERSION = "0.0.4";
 
 /**
  * Grammar (see README-less by design — this comment is the spec). The very
@@ -85,16 +85,17 @@ export const CURRENT_FORMAT_VERSION = "0.0.3";
  *                                                 this step, so "which app
  *                                                 am I in?" stays out of the
  *                                                 instructions prose)
- *
- *   A `Where:` that is a route (`/admin/x`), an absolute URL, or a local
- *   address (`localhost:3000/admin`) gets a Go control in the run screen
- *   that navigates the tab the run is using. A bare route resolves against
- *   whatever page is open, which is right when the tester is already in
- *   the app and refuses to guess when they are not — so a case that has to
- *   be certain declares a `BASE_URL` variable and writes
- *   `Where: %BASE_URL%/admin/x`, which substitutes to an absolute URL
- *   before the run starts. Prose (`the CRM's web console → Contacts`) is
- *   left alone; it names a place, not an address.
+ *   Kind: quick                                 (optional — marks this step
+ *                                                 as part of the core happy
+ *                                                 path. A "quick" run
+ *                                                 executes only the marked
+ *                                                 steps; a "full" run
+ *                                                 executes every step. A case
+ *                                                 is authored once, in full,
+ *                                                 and the marks pick out the
+ *                                                 subset worth running during
+ *                                                 development. `Kind:` with
+ *                                                 any other value is ignored.)
  *   Selector: #login-button                     (optional — scrolls this
  *                                                 into view and flashes it
  *                                                 in the page when the step
@@ -107,9 +108,19 @@ export const CURRENT_FORMAT_VERSION = "0.0.3";
  *                                                 the page wins)
  *   Free text instructions (manual step — no code fence found).
  *
- *   `Where:` and `Selector:` form a header block directly under the step
- *   title and may appear in either order; the first line that is neither
- *   ends the header and begins the instructions.
+ *   `Where:`, `Selector:` and `Kind:` form a header block directly under
+ *   the step title and may appear in any order; the first line that is none
+ *   of them ends the header and begins the instructions.
+ *
+ *   A `Where:` that is a route (`/admin/x`), an absolute URL, or a local
+ *   address (`localhost:3000/admin`) gets a Go control in the run screen
+ *   that navigates the tab the run is using. A bare route resolves against
+ *   whatever page is open, which is right when the tester is already in
+ *   the app and refuses to guess when they are not — so a case that has to
+ *   be certain declares a `BASE_URL` variable and writes
+ *   `Where: %BASE_URL%/admin/x`, which substitutes to an absolute URL
+ *   before the run starts. Prose (`the CRM's web console → Contacts`) is
+ *   left alone; it names a place, not an address.
  *
  *   A single `Selector:` line is always one selector, even when it contains
  *   commas — `a, b` is a CSS selector *group*, and `querySelector` returns
@@ -351,6 +362,7 @@ const FENCE_RE = /```([^\n]*)\n([\s\S]*?)```/;
 const SUBSECTION_RE = /^###\s+(Expected|Note)\s*$/i;
 const SELECTOR_RE = /^Selector:\s*(.*)$/i;
 const WHERE_RE = /^Where:\s*(.*)$/i;
+const KIND_RE = /^Kind:\s*(.*)$/i;
 
 /** Splits a step body into its lead text and any `### Expected` / `### Note`
  * subsections. They may appear in either order, and either may be absent. */
@@ -393,19 +405,22 @@ function parseOneStep(title: string, body: string, index: number): Step {
   let i = 0;
   while (i < lines.length && lines[i].trim() === "") i++;
 
-  // `Selector:`/`Where:` form a small header block at the top of a step, in
-  // either order. The first line that is neither ends the header. `Selector:`
-  // may repeat: each line is one candidate, kept in document order, and the
-  // highlighter walks them until one matches.
+  // `Selector:`/`Where:`/`Kind:` form a small header block at the top of a
+  // step, in any order. The first line that is none of them ends the header.
+  // `Selector:` may repeat: each line is one candidate, kept in document
+  // order, and the highlighter walks them until one matches.
   const selectors: string[] = [];
   let where: string | undefined;
+  let quick = false;
   for (; i < lines.length; i++) {
     const selectorMatch = SELECTOR_RE.exec(lines[i]);
     const whereMatch = WHERE_RE.exec(lines[i]);
+    const kindMatch = KIND_RE.exec(lines[i]);
     if (selectorMatch) {
       const candidate = selectorMatch[1].trim();
       if (candidate) selectors.push(candidate);
     } else if (whereMatch) where = whereMatch[1].trim() || undefined;
+    else if (kindMatch) quick = kindMatch[1].trim().toLowerCase() === "quick";
     else break;
   }
   const bodyAfterHeader = lines.slice(i).join("\n");
@@ -436,6 +451,7 @@ function parseOneStep(title: string, body: string, index: number): Step {
     script,
     selectors,
     where,
+    quick,
     note,
   };
 }
@@ -514,10 +530,21 @@ export function renderRunReport(doc: TestCaseVersion, run: RunFile): string {
   lines.push("");
   if (doc.project) lines.push(`- Project: ${doc.project}`);
   lines.push(`- Version: v${run.testCaseVersion}`);
+  // A quick run and a full run are not the same evidence — a report that
+  // does not say which one it was invites "but it passed" about a pass that
+  // only ever covered the happy path.
+  lines.push(`- Coverage: ${run.tier === "quick" ? "quick (core steps only)" : "full"}`);
   lines.push(`- Status: ${run.status}`);
   lines.push(`- Started: ${run.startedAt}`);
   lines.push(`- Finished: ${run.finishedAt ?? "—"}`);
   lines.push("");
+  if (run.comment.trim()) {
+    // Above the steps, because it is context for all of them.
+    lines.push("## Tester's note on this run");
+    lines.push("");
+    lines.push(run.comment.trim());
+    lines.push("");
+  }
   lines.push("## Steps");
   lines.push("");
 
@@ -570,6 +597,12 @@ function hasStepSignal(state: RunStepState): boolean {
  * `feedback.md` alongside `report.md` whenever a run finishes — but only
  * when there's something to act on. A clean silent pass returns `null` so
  * callers skip the write rather than producing empty-handoff noise.
+ *
+ * A run-level comment counts as something to act on by itself. "Passed, but
+ * the whole flow felt slow" is exactly the kind of finding that never
+ * attaches to one step, and before the run comment existed it had nowhere
+ * to go — so a run that passed while worrying the tester produced no
+ * handoff at all.
  */
 export function renderRunFeedback(doc: TestCaseVersion, run: RunFile): string | null {
   const byId = new Map(run.steps.map((s) => [s.stepId, s]));
@@ -579,7 +612,8 @@ export function renderRunFeedback(doc: TestCaseVersion, run: RunFile): string | 
       (s): s is { step: Step; index: number; state: RunStepState } => !!s.state && hasStepSignal(s.state),
     );
 
-  if (signalSteps.length === 0) return null;
+  const runComment = run.comment.trim();
+  if (signalSteps.length === 0 && !runComment) return null;
 
   const failedCount = run.steps.filter((s) => s.status === "failed").length;
   const warningCount = run.steps.filter((s) => s.status === "warning").length;
@@ -614,15 +648,28 @@ export function renderRunFeedback(doc: TestCaseVersion, run: RunFile): string | 
   lines.push(`# Feedback: ${doc.title} (v${run.testCaseVersion}, run ${run.id})`);
   lines.push("");
   if (doc.project) lines.push(`Project: **${doc.project}**`);
-  lines.push(`Human verification run finished ${run.finishedAt ?? "—"} with status **${run.status}**.`);
+  lines.push(
+    `Human verification run finished ${run.finishedAt ?? "—"} with status **${run.status}**` +
+      `${run.tier === "quick" ? ", covering the quick (core) steps only" : ""}.`,
+  );
   lines.push(`${failedCount} failed, ${warningCount} warnings, ${noteCount} feedback notes.`);
   lines.push("");
+  const hasActionItems =
+    bugItems.length + featureItems.length + docsItems.length + failedItems.length > 0;
   lines.push(
-    "This file was written by a human tester reviewing the feature. Address the " +
-      "action items below. Step-by-step detail follows for context.",
+    hasActionItems
+      ? "This file was written by a human tester reviewing the feature. Address the " +
+          "action items below. Step-by-step detail follows for context."
+      : "This file was written by a human tester reviewing the feature. Nothing " +
+          "failed; what follows is what they wanted you to know anyway.",
   );
-  lines.push("");
-  lines.push("## Action items");
+
+  if (runComment) {
+    lines.push("");
+    lines.push("## The tester's own words on this run");
+    lines.push("");
+    lines.push(runComment);
+  }
 
   const actionSections: Array<[string, string[]]> = [
     ["Bugfix required", bugItems],
@@ -630,15 +677,23 @@ export function renderRunFeedback(doc: TestCaseVersion, run: RunFile): string | 
     ["Docs updates", docsItems],
     ["Failed steps", failedItems],
   ];
-  for (const [heading, items] of actionSections) {
-    if (items.length === 0) continue;
+  // A comment-only handoff has nothing to list, and an empty "Action items"
+  // heading reads as a bug in this renderer rather than as an all-clear.
+  if (hasActionItems) {
     lines.push("");
-    lines.push(`### ${heading}`);
-    lines.push(...items);
+    lines.push("## Action items");
+    for (const [heading, items] of actionSections) {
+      if (items.length === 0) continue;
+      lines.push("");
+      lines.push(`### ${heading}`);
+      lines.push(...items);
+    }
   }
 
-  lines.push("");
-  lines.push("## Step detail");
+  if (signalSteps.length > 0) {
+    lines.push("");
+    lines.push("## Step detail");
+  }
 
   for (const { step, index, state } of signalSteps) {
     lines.push("");
@@ -715,6 +770,58 @@ function mergeTopLevelSection(
 
 function prefixStepHeadings(stepsRaw: string): string {
   return stepsRaw.replace(/^##\s+/gm, "## Prep: ");
+}
+
+/** True when a step body's header block carries `Kind: quick`. Reads only
+ * the header — the same lines `parseOneStep` reads — so a `Kind:` line in
+ * the instructions prose is not a marker. */
+function stepBodyIsQuick(body: string): boolean {
+  for (const line of body.split("\n")) {
+    if (line.trim() === "") continue;
+    const kindMatch = KIND_RE.exec(line);
+    if (kindMatch) return kindMatch[1].trim().toLowerCase() === "quick";
+    if (!SELECTOR_RE.test(line) && !WHERE_RE.test(line)) return false;
+  }
+  return false;
+}
+
+/** Number of steps a quick run of this document would execute. */
+export function countQuickSteps(markdown: string): number {
+  const stepsRaw = extractSectionRaw(markdown.replace(/\r\n/g, "\n"), "Steps");
+  if (!stepsRaw) return 0;
+  return splitTopSections(stepsRaw, 2).sections.filter((s) => stepBodyIsQuick(s.content)).length;
+}
+
+/**
+ * Drops every step not marked `Kind: quick`, returning the document a quick
+ * run should freeze.
+ *
+ * This is text surgery on purpose, applied **before** the case is parsed and
+ * before a suite is merged in. Filtering the text rather than the parsed
+ * steps keeps two properties that matter:
+ *
+ * - The frozen `case.md` is exactly what was executed. A run never carries
+ *   definitions for steps it skipped, so nothing downstream has to know that
+ *   a step was filtered out.
+ * - Step ids stay contiguous. Ids are positional (`step-${index + 1}`), so
+ *   removing steps after parsing would leave gaps between the run's step ids
+ *   and the frozen document's, and every join between `run.json` and
+ *   `case.md` goes through those ids.
+ *
+ * Called before `buildRunSource`, so a suite's prep steps are never filtered
+ * — a quick run that skips logging in is not a run.
+ */
+export function filterToQuickSteps(markdown: string): string {
+  const normalized = markdown.replace(/\r\n/g, "\n");
+  const range = sectionRange(normalized, "Steps");
+  if (!range) return normalized;
+
+  const stepsBody = normalized.slice(range.start, range.end);
+  const kept = splitTopSections(stepsBody, 2)
+    .sections.filter((s) => stepBodyIsQuick(s.content))
+    .map((s) => `## ${s.heading}\n${s.content}`.trim());
+
+  return normalized.slice(0, range.start) + kept.join("\n\n") + "\n\n" + normalized.slice(range.end);
 }
 
 /**

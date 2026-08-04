@@ -1,6 +1,7 @@
 import {
   buildRunSource,
   caseBookkeepingSchema,
+  filterToQuickSteps,
   freeRunFileSchema,
   newFreeRunId,
   newRunId,
@@ -20,6 +21,7 @@ import {
   type RunFile,
   type RunStatus,
   type RunSummary,
+  type RunTier,
   type StepPatch,
   type SuiteSummary,
   type TestCaseMeta,
@@ -120,6 +122,7 @@ function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
       expected: step.expected,
       script: step.script,
       selectors: step.selectors,
+      quick: step.quick,
       status: state.status,
       comment: state.comment,
       notes: state.notes,
@@ -135,6 +138,8 @@ function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
     testCaseVersion: runFile.testCaseVersion,
     testCaseTitle: runFile.testCaseTitle,
     status: runFile.status,
+    comment: runFile.comment,
+    tier: runFile.tier,
     startedAt: runFile.startedAt,
     finishedAt: runFile.finishedAt,
     dependencies: doc.dependencies,
@@ -394,10 +399,13 @@ export class FsaDataStore implements DataStore {
     await writeJson(suiteDir, META_FILE, { archived } satisfies CaseBookkeeping);
   }
 
-  async getRunSource(testCaseId: string, version: number): Promise<string> {
+  async getRunSource(testCaseId: string, version: number, tier: RunTier = "full"): Promise<string> {
     const { dir: caseDir, suiteId } = await this.findCaseDir(testCaseId);
     const versionsDir = await getDir(caseDir, "versions");
-    const { text: caseMarkdown } = await readTextFile(versionsDir, versionFile(version));
+    const { text } = await readTextFile(versionsDir, versionFile(version));
+    // Filter before merging: a suite's prep steps are shared setup, not
+    // optional coverage, so a quick run keeps all of them.
+    const caseMarkdown = tier === "quick" ? filterToQuickSteps(text) : text;
     if (!suiteId) return caseMarkdown;
     const suiteDir = await getDir(await this.testCasesDir(true), suiteId);
     const suiteFile = await tryReadTextFile(suiteDir, SUITE_FILE);
@@ -431,6 +439,7 @@ export class FsaDataStore implements DataStore {
           testCaseVersion: runFile.testCaseVersion,
           testCaseTitle: runFile.testCaseTitle,
           status: runFile.status,
+          tier: runFile.tier,
           startedAt: runFile.startedAt,
           finishedAt: runFile.finishedAt,
           stepCount: runFile.steps.length,
@@ -460,8 +469,9 @@ export class FsaDataStore implements DataStore {
     testCaseId: string,
     version: number,
     variableValues: Record<string, string> = {},
+    tier: RunTier = "full",
   ): Promise<Run> {
-    const rawMarkdown = await this.getRunSource(testCaseId, version);
+    const rawMarkdown = await this.getRunSource(testCaseId, version, tier);
     const declared = parseCaseDocument(rawMarkdown, { version, createdAt: nowIso() });
     const resolvedValues = resolveVariableValues(declared.variables, variableValues);
     const substitutedMarkdown = substituteVariables(rawMarkdown, resolvedValues);
@@ -483,6 +493,8 @@ export class FsaDataStore implements DataStore {
       testCaseVersion: version,
       testCaseTitle: doc.title,
       status: "in_progress",
+      comment: "",
+      tier,
       startedAt: now,
       finishedAt: null,
       steps: doc.steps.map((s) => ({
@@ -522,6 +534,26 @@ export class FsaDataStore implements DataStore {
       createdAt: runFile.startedAt,
     });
     return composeRun(doc, runFile);
+  }
+
+  async updateRun(
+    testCaseId: string,
+    runId: string,
+    patch: { comment?: string },
+  ): Promise<Run> {
+    const runDir = await this.getRunDir(testCaseId, runId);
+    const [{ text: rawMarkdown }, runFile] = await Promise.all([
+      readTextFile(runDir, CASE_FILE),
+      readJson(runDir, RUN_FILE, runFileSchema),
+    ]);
+    const updated: RunFile = { ...runFile, comment: patch.comment ?? runFile.comment };
+    await writeJson(runDir, RUN_FILE, updated);
+
+    const doc = parseCaseDocument(rawMarkdown, {
+      version: updated.testCaseVersion,
+      createdAt: updated.startedAt,
+    });
+    return composeRun(doc, updated);
   }
 
   async finishRun(testCaseId: string, runId: string, status: RunStatus): Promise<Run> {
