@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
-import type { TestCaseSummary, TestCaseVersion } from "@tcm/shared";
+import type { RunSummary, TestCaseSummary, TestCaseVersion } from "@tcm/shared";
+import { ErrorNotice } from "../../components/ErrorNotice.js";
 import { Header } from "../../components/Header.js";
 import { Markdown } from "../../components/Markdown.js";
+import { RunStatusBadge } from "../../components/StatusBadge.js";
 import { useReadyStore } from "../store/DataStoreProvider.js";
+import { relativeTime } from "../../lib/time.js";
 
 export function SuiteDetailScreen({
   suiteId,
@@ -23,20 +26,26 @@ export function SuiteDetailScreen({
   const [doc, setDoc] = useState<TestCaseVersion | null>(null);
   const [cases, setCases] = useState<TestCaseSummary[] | null>(null);
   const [archived, setArchived] = useState(false);
+  const [runs, setRuns] = useState<RunSummary[] | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     let cancelled = false;
-    store
-      .getSuite(suiteId)
-      .then((s) => {
-        if (cancelled) return;
-        setDoc(s.doc);
-        setCases(s.cases);
-        setArchived(s.archived);
-      })
-      .catch((e) => !cancelled && setError(String(e)));
+    (async () => {
+      const s = await store.getSuite(suiteId);
+      if (cancelled) return;
+      setDoc(s.doc);
+      setCases(s.cases);
+      setArchived(s.archived);
+      // Runs are stored per case, so a suite's history is the union of its
+      // cases' histories. One listRuns walk is cheaper than one call per
+      // case, and it is already sorted newest-first.
+      const caseIds = new Set(s.cases.map((c) => c.id));
+      const all = await store.listRuns();
+      if (cancelled) return;
+      setRuns(all.filter((r) => caseIds.has(r.testCaseId)));
+    })().catch((e) => !cancelled && setError(e));
     return () => {
       cancelled = true;
     };
@@ -48,7 +57,7 @@ export function SuiteDetailScreen({
       await store.archiveSuite(suiteId, !archived);
       setArchived((a) => !a);
     } catch (e) {
-      setError(String(e));
+      setError(e);
     } finally {
       setBusy(false);
     }
@@ -58,7 +67,11 @@ export function SuiteDetailScreen({
     return (
       <div className="flex h-full flex-col">
         <Header title="Suite" onBack={onBack} onSettings={onSettings} />
-        <p className="p-3 text-sm text-slate-400">{error ?? "Loading…"}</p>
+        {error == null ? (
+          <p className="p-3 text-sm text-slate-400">Loading…</p>
+        ) : (
+          <ErrorNotice error={error} className="p-3" />
+        )}
       </div>
     );
   }
@@ -67,7 +80,7 @@ export function SuiteDetailScreen({
     <div className="flex h-full flex-col">
       <Header title={doc.title} onBack={onBack} onSettings={onSettings} />
       <div className="flex-1 overflow-y-auto p-3">
-        {error && <p className="mb-2 text-sm text-red-600">{error}</p>}
+        <ErrorNotice error={error} className="mb-2" />
         {doc.project && (
           <div className="mb-2 flex items-baseline gap-1.5 text-xs">
             <span className="font-medium text-slate-500">Project:</span>
@@ -86,6 +99,15 @@ export function SuiteDetailScreen({
             ))}
           </div>
         )}
+
+        <div className="mb-4">
+          <h2 className="mb-1 text-xs font-semibold uppercase text-slate-400">Runs</h2>
+          {!runs && <p className="text-xs text-slate-400">Loading…</p>}
+          {runs && runs.length === 0 && (
+            <p className="text-xs text-slate-400">No runs yet for the cases in this suite.</p>
+          )}
+          {runs && runs.length > 0 && <SuiteRuns runs={runs} />}
+        </div>
 
         {doc.steps.length > 0 && (
           <div className="mb-4">
@@ -157,5 +179,87 @@ export function SuiteDetailScreen({
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * How the suite has been doing, in the two resolutions that get asked for:
+ * the tally across every run of every case in it, and the last run in
+ * enough detail to say what happened without opening it. Step counts rather
+ * than just the verdict, because a passed run with two warnings and a
+ * passed run with none are different facts, and the badge alone hides that.
+ */
+function SuiteRuns({ runs }: { runs: RunSummary[] }) {
+  const tally = {
+    passed: runs.filter((r) => r.status === "passed").length,
+    failed: runs.filter((r) => r.status === "failed").length,
+    aborted: runs.filter((r) => r.status === "aborted").length,
+    inProgress: runs.filter((r) => r.status === "in_progress").length,
+  };
+  // listRuns sorts newest-first and filtering preserves that order.
+  const last = runs[0];
+  const undecided = last.stepCount - last.passCount - last.failCount - last.warnCount;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-slate-500">
+        <span className="font-medium text-slate-700">
+          {runs.length} run{runs.length === 1 ? "" : "s"}
+        </span>
+        <Tally count={tally.passed} label="passed" className="text-emerald-600" />
+        <Tally count={tally.failed} label="failed" className="text-red-600" />
+        <Tally count={tally.aborted} label="aborted" className="text-slate-400" />
+        <Tally count={tally.inProgress} label="in progress" className="text-sky-600" />
+      </div>
+
+      <div className="rounded border border-slate-200 p-2">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-semibold uppercase text-slate-400">Last run</span>
+          <span className="flex-1 text-[11px] text-slate-400">
+            {relativeTime(last.finishedAt ?? last.startedAt) || last.startedAt}
+          </span>
+          {last.tier === "quick" && (
+            <span
+              className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
+              title="Only the steps marked Kind: quick were run"
+            >
+              quick
+            </span>
+          )}
+          <RunStatusBadge status={last.status} />
+        </div>
+        <p className="mt-1 truncate text-sm text-slate-800">{last.testCaseTitle}</p>
+        <div className="mt-1 flex flex-wrap items-baseline gap-x-2 text-xs text-slate-500">
+          <span>
+            {last.stepCount} step{last.stepCount === 1 ? "" : "s"}
+          </span>
+          <Tally count={last.passCount} label="passed" className="text-emerald-600" />
+          <Tally count={last.warnCount} label="warning" className="text-amber-600" />
+          <Tally count={last.failCount} label="failed" className="text-red-600" />
+          {/* Pending or skipped. Worth naming: on an aborted run this is the
+              difference between "nothing went wrong" and "nobody got to it". */}
+          <Tally count={undecided} label="not run" className="text-slate-400" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Zero counts are left out rather than shown as "0 failed" — in a strip
+ * this narrow, the absence is the message. */
+function Tally({
+  count,
+  label,
+  className,
+}: {
+  count: number;
+  label: string;
+  className: string;
+}) {
+  if (count <= 0) return null;
+  return (
+    <span className={className}>
+      · {count} {label}
+    </span>
   );
 }

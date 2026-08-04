@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FreeRunFile, RunSummary } from "@tcm/shared";
+import { ErrorNotice } from "../../components/ErrorNotice.js";
 import { Header } from "../../components/Header.js";
 import { RunStatusBadge } from "../../components/StatusBadge.js";
 import { useReadyStore } from "../store/DataStoreProvider.js";
@@ -24,7 +25,7 @@ export function RunHistoryScreen({
   const store = useReadyStore();
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
   const [freeRuns, setFreeRuns] = useState<FreeRunFile[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,7 +35,7 @@ export function RunHistoryScreen({
         setRuns(r);
         setFreeRuns(f);
       })
-      .catch((e) => !cancelled && setError(String(e)));
+      .catch((e) => !cancelled && setError(e));
     return () => {
       cancelled = true;
     };
@@ -54,9 +55,9 @@ export function RunHistoryScreen({
     <div className="flex h-full flex-col">
       <Header title={testCaseId ? "Runs for this case" : "All runs"} onBack={onBack} onSettings={onSettings} />
       <div className="flex-1 overflow-y-auto">
-        {error && <p className="p-3 text-sm text-red-600">{error}</p>}
-        {!error && entries === null && <p className="p-3 text-sm text-slate-400">Loading…</p>}
-        {!error && entries !== null && entries.length === 0 && (
+        <ErrorNotice error={error} className="p-3" />
+        {error == null && entries === null && <p className="p-3 text-sm text-slate-400">Loading…</p>}
+        {error == null && entries !== null && entries.length === 0 && (
           <p className="p-3 text-sm text-slate-400">No runs yet.</p>
         )}
         <ul className="divide-y divide-slate-100">

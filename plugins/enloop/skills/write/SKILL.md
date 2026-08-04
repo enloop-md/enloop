@@ -155,6 +155,10 @@ Practically, for each step you intend to write:
 - Route → the router config or route attribute.
 - Visible label → the JSX/template/i18n entry. Quote it exactly, including
   capitalisation, in backticks.
+- Value the tester types → as `"**value**"`, quoted *and* bolded, exactly
+  as it should be entered (contract rule 6). Backticks are for labels to
+  find; quoted bold is for values to type, and the panel makes those
+  insertable into the page — including into selects.
 - Selector → `data-testid` first, then `id`, then a stable `aria-label`.
   Never a structural path. Where the element sits in a modal, drawer or
   portal, or its handle is new in this branch and may not be deployed

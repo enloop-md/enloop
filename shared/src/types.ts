@@ -121,4 +121,8 @@ export interface RunSummary {
   stepCount: number;
   passCount: number;
   failCount: number;
+  /** Steps the tester marked as a warning: passed, but with something worth
+   * saying. Counted here so a summary can show the whole verdict without
+   * loading the run — a run with warnings is not the same as a clean one. */
+  warnCount: number;
 }

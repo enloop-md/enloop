@@ -14,6 +14,13 @@ export default defineManifest({
     service_worker: "src/background/index.ts",
     type: "module",
   },
-  permissions: ["sidePanel", "scripting", "tabs"],
-  host_permissions: ["<all_urls>"],
+  // `storage` is for the panel's own breadcrumb (which screen it was on) and
+  // carries no install-time warning. Site access is deliberately *optional*:
+  // as a required `host_permissions` it made the install prompt say "read and
+  // change all your data on all websites", which is both the scariest warning
+  // Chrome shows and a lot to ask before the tester has seen the panel do
+  // anything. Requested per origin instead, at the moment a step first needs
+  // it — see lib/page-access.ts.
+  permissions: ["sidePanel", "scripting", "tabs", "storage"],
+  optional_host_permissions: ["<all_urls>"],
 });

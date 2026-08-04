@@ -1,5 +1,7 @@
 import type { DataStore, Run, RunStepStatus } from "@tcm/shared";
-import { getActiveTabId, runScriptInTab } from "./automation.js";
+import { runScriptInTab } from "./automation.js";
+import { describeError } from "./errors.js";
+import { getPageAccess, pageAccessMessage } from "./page-access.js";
 import { nowIso } from "./time.js";
 
 /** Statuses that allow the automated chain to keep advancing into the next step. */
@@ -60,10 +62,26 @@ export async function runAutomatedStep(store: DataStore, run: Run, stepId: strin
     startedAt: nowIso(),
   });
 
+  // Checked before injecting rather than after failing: a step that never
+  // ran because the page is a `chrome://` tab, or because this site has not
+  // been granted yet, is not evidence about the app. Saying which it was is
+  // what lets the run screen offer the one-click grant next to the step.
+  const access = await getPageAccess();
+  if (access.status !== "ready") {
+    return await store.updateStep(run.testCaseId, run.id, stepId, {
+      status: "failed",
+      automatedResult: {
+        status: "failed",
+        warnings: [],
+        error: `${pageAccessMessage(access)} The script was not run.`,
+      },
+      finishedAt: nowIso(),
+    });
+  }
+
   try {
-    const tabId = await getActiveTabId();
     const result = await withTimeout(
-      runScriptInTab(tabId, step.script ?? ""),
+      runScriptInTab(access.tabId, step.script ?? ""),
       AUTOMATED_STEP_TIMEOUT_MS,
       "Automated step timed out. If this step submits a form or otherwise navigates the page, the " +
         "action likely still happened — the page tearing down can prevent the result from reporting " +
@@ -77,7 +95,7 @@ export async function runAutomatedStep(store: DataStore, run: Run, stepId: strin
   } catch (e) {
     return await store.updateStep(run.testCaseId, run.id, stepId, {
       status: "failed",
-      automatedResult: { status: "failed", warnings: [], error: String(e) },
+      automatedResult: { status: "failed", warnings: [], error: describeError(e) },
       finishedAt: nowIso(),
     });
   }

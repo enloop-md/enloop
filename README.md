@@ -45,8 +45,55 @@ extension creates its layout inside:
 └── free-runs/           unscripted sessions
 ```
 
+A freshly connected folder is empty, and the Library offers to **load an
+example case** into it. It runs against a public practice site and exercises
+every control the panel has — Go, Highlight, values that type themselves into
+fields, an automated step, and the quick/full split — so the first thing you
+do is watch a run work rather than author one blind. It is an ordinary case
+file; delete it when it has served its purpose.
+
 After a rebuild, hit **reload** on `chrome://extensions` and reopen the side
 panel — a build alone does not refresh an already-loaded extension.
+
+### Storage: the connected folder
+
+Local files are the only storage today. The folder you pick **is** the
+database — the extension reads and writes it directly through the File System
+Access API, and there is no server, no account, and nothing uploaded. (A
+remote option is planned; `DataStore` is an interface with one implementation
+so far, so it can be added without touching the screens. Until then, sharing
+cases means sharing the folder — commit it, or put it on a synced drive.)
+
+Two things follow from that API, and both are Chrome's design rather than
+bugs:
+
+- **Permission lapses when Chrome restarts.** The panel opens on *Welcome
+  back* with a one-click **Reconnect** button. Your cases and runs are
+  untouched; only the extension's access to them has to be re-granted, and
+  Chrome requires a click to do it.
+- **Chrome only reports the folder's name**, not its path. If you keep a
+  folder per project, give them distinguishable names — two directories both
+  called `test-cases` are indistinguishable in the panel and in Settings.
+
+**Disconnect** in Settings forgets the folder; it never deletes anything.
+
+### Site access
+
+Installing asks for no site permissions at all. The panel needs access to a
+page only when a step acts on one — Highlight, an inserted value, an
+automated script — and asks then, for that site, once:
+
+> Enloop needs your permission to act on `app.example.com`. **Grant access**
+
+Grants are per origin and ignore the port, so `localhost:3000` and
+`localhost:8080` are one grant. Three pages can never be scripted no matter
+what is granted, and the panel says so rather than reporting a selector as
+missing: Chrome's own pages (`chrome://`, the extensions page), the Chrome
+Web Store, and local `file://` pages unless *Allow access to file URLs* is
+switched on for Enloop at `chrome://extensions`.
+
+If you are upgrading from a build that requested `<all_urls>` at install
+time, Chrome keeps what it already granted — nothing to re-approve.
 
 ### The case format
 
@@ -126,6 +173,18 @@ next step expects. A bare route resolves against whatever page is open and
 refuses rather than guesses when there is nothing to resolve against; write
 `Where: %BASE_URL%/admin/sync` when a case has to be certain.
 
+Every literal a tester must type is written in **double quotes** —
+`Put "Buy milk" in the task field`. The side panel turns each quoted value into
+a control: click it and the next input, textarea or **select** you click on the
+page receives the value, with the events a React- or Vue-controlled field needs
+to register the change. A select is matched by its visible option text, since
+that is what an author quotes. There's a copy fallback for anywhere the
+extension can't reach.
+
+The two marks are not interchangeable: backticks mean *find this* (a visible
+label, or a selector — which gets a Highlight control), double quotes mean
+*type this*. ``Set `Priority` to "High"`` reads correctly in both directions.
+
 `Kind: quick` on a step marks it as part of the core path. A case is authored
 **once, in full**; starting a run then offers **Quick** (only the marked steps)
 or **Full** (all of them), so a developer checking their own branch gets a
@@ -139,6 +198,14 @@ above the steps, and it counts as feedback signal on its own, so a run that
 passed while worrying the tester still produces a `feedback.md` for
 `/enloop:check` to read.
 
+A side panel closes whenever you click into the page you are testing, which
+during a run is constantly, and closing it destroys the panel. Reopening
+returns to the screen you were on — including mid-run — and after a browser
+restart, when that memory is deliberately dropped, the Library carries a
+**Resume** banner for a run still in progress. Nothing is ever only in the
+panel: every mark, note and comment is written to the run's folder as it
+happens.
+
 `# Prerequisites` is where services the tester must start themselves belong,
 with the command for each. The run screen renders Prerequisites and
 Dependencies together in a **"Before you start"** block, collapsed by default —
@@ -150,9 +217,13 @@ from several repos, so the skills also prefix the title with it — that is what
 makes a case findable in the side panel, which lists cases **most recently
 updated first**.
 
-Variables declared under `# Variables` are prompted for when a run starts, then
-every `%NAME%` placeholder in the document is substituted — title, instructions,
-selectors, and scripts included.
+Variables declared under `# Variables` resolve when a run starts — from their
+generator, or their default — and every `%NAME%` placeholder in the document is
+substituted with the result: title, instructions, selectors, and scripts
+included. The case screen shows the resolved values under **Start run** and
+lets you override any of them first, but it never stops the run to ask. A
+variable that ends up with no value is left alone, so the step reads `%NAME%`
+rather than a blank where a value should have been.
 
 **Suites** are folders with a `suite.md` holding shared setup; each case inside
 inherits the suite's prep steps (prefixed `Prep:`), variables, dependencies, and

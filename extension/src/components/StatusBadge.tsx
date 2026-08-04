@@ -17,6 +17,11 @@ const RUN_STYLES: Record<RunStatus, string> = {
 };
 
 export function StepStatusBadge({ status }: { status: RunStepStatus }) {
+  // `pending` is the absence of a result rather than a result. Badging it
+  // labels every step nobody has reached yet, which is most of the list for
+  // most of a run — and the badge that means "nothing has happened here"
+  // reads exactly like the ones that mean something did.
+  if (status === "pending") return null;
   return (
     <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${STEP_STYLES[status]}`}>
       {status}
