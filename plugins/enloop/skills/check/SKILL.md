@@ -84,6 +84,16 @@ Then read, always:
   (`success` / `failed` / `warning` / `skipped` / `pending`), free-text
   `comment`, typed `notes` (`bug` / `feature` / `docs` / `note`), `tasks`,
   and `automatedResult.error` for automated steps.
+- **`run.json`'s own `comment` and `tier`**, before any of the steps:
+  - `comment` is the tester's account of the run as a whole — "ran against
+    an old build", "felt slow throughout". It routinely reframes what the
+    step failures mean, and a run whose *only* signal is that comment still
+    produces a `feedback.md`. Read it first, not last.
+  - `tier` is `quick` or `full`. A quick run executed only the steps marked
+    `Kind: quick`, so a pass means the core path works — **never report it
+    as the case passing**. Say which tier you read. Its frozen `case.md`
+    contains only the steps that ran, so step numbers will not line up with
+    the case's own versions; go by step title, not by number.
 - **`case.md`** — the frozen text that was actually executed, with
   variables already substituted. Read it against `run.json`: a step's
   `### Expected` is the claim, its status is the verdict.

@@ -167,12 +167,31 @@ export function CaseDetailScreen({
           </div>
         )}
 
+        {version && version.steps.length > 0 && (
+          <h2 className="mb-1 flex items-baseline gap-2 text-xs font-semibold uppercase text-slate-400">
+            <span>Steps</span>
+            <span className="font-normal normal-case text-slate-400">
+              {version.steps.length} total
+              {version.steps.some((s) => s.quick) &&
+                ` · ${version.steps.filter((s) => s.quick).length} quick`}
+            </span>
+          </h2>
+        )}
+
         <ol className="space-y-2">
           {version?.steps.map((s, i) => (
             <li key={s.id} className="rounded border border-slate-200 p-2 text-sm">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-400">#{i + 1}</span>
                 <span className="flex-1 font-medium text-slate-800">{s.title}</span>
+                {s.quick && (
+                  <span
+                    className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
+                    title="Runs in a quick run as well as a full one"
+                  >
+                    quick
+                  </span>
+                )}
                 <span
                   className={`rounded px-1.5 py-0.5 text-[10px] ${
                     s.type === "automated"

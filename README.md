@@ -126,6 +126,19 @@ next step expects. A bare route resolves against whatever page is open and
 refuses rather than guesses when there is nothing to resolve against; write
 `Where: %BASE_URL%/admin/sync` when a case has to be certain.
 
+`Kind: quick` on a step marks it as part of the core path. A case is authored
+**once, in full**; starting a run then offers **Quick** (only the marked steps)
+or **Full** (all of them), so a developer checking their own branch gets a
+two-minute run without anyone writing a second case. Suite prep steps always
+run. The tier is recorded on the run and shown in the report, the run header and
+run history — a quick pass and a full pass are not the same evidence.
+
+Before finishing a run you can leave a **comment on the run as a whole** —
+"ran against an old build", "felt slow throughout". It lands in `report.md`
+above the steps, and it counts as feedback signal on its own, so a run that
+passed while worrying the tester still produces a `feedback.md` for
+`/enloop:check` to read.
+
 `# Prerequisites` is where services the tester must start themselves belong,
 with the command for each. The run screen renders Prerequisites and
 Dependencies together in a **"Before you start"** block, collapsed by default —

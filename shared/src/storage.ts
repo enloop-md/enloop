@@ -4,6 +4,7 @@ import type {
   Run,
   RunStatus,
   RunSummary,
+  RunTier,
   StepPatch,
   SuiteSummary,
   TestCaseMeta,
@@ -44,7 +45,7 @@ export interface TestCaseStore {
   /** Raw Markdown a run should freeze: the case's own version merged with
    * its suite's prep steps/variables (see `buildRunSource`), or just the
    * case's own version text when it isn't in a suite. */
-  getRunSource(testCaseId: string, version: number): Promise<string>;
+  getRunSource(testCaseId: string, version: number, tier?: RunTier): Promise<string>;
 }
 
 /** Everything that reads/writes runs. Same swap-later story as TestCaseStore. */
@@ -57,9 +58,22 @@ export interface RunStore {
    * generator or default — see `resolveVariableValues`. The version's raw
    * Markdown has every `%NAME%` placeholder substituted with the resolved
    * value *before* being frozen as the run's `case.md`.
+   *
+   * `tier` defaults to `full`. A `quick` run freezes only the steps marked
+   * `Kind: quick` (plus any suite prep steps, which are never filtered), so
+   * the frozen `case.md` is exactly what was executed.
    */
-  createRun(testCaseId: string, version: number, variableValues?: Record<string, string>): Promise<Run>;
+  createRun(
+    testCaseId: string,
+    version: number,
+    variableValues?: Record<string, string>,
+    tier?: RunTier,
+  ): Promise<Run>;
   updateStep(testCaseId: string, runId: string, stepId: string, patch: StepPatch): Promise<Run>;
+  /** Run-level fields that are not step state — currently the tester's
+   * comment on the run as a whole. Saved as it is typed rather than handed
+   * to `finishRun`, so closing the panel mid-sentence does not lose it. */
+  updateRun(testCaseId: string, runId: string, patch: { comment?: string }): Promise<Run>;
   finishRun(testCaseId: string, runId: string, status: RunStatus): Promise<Run>;
 }
 
