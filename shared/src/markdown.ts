@@ -793,6 +793,162 @@ function prefixStepHeadings(stepsRaw: string): string {
   return stepsRaw.replace(/^##\s+/gm, "## Prep: ");
 }
 
+/**
+ * A Markdown link whose href is a selector rather than a place to go —
+ * `[the Sync button](#sync-crm-btn)`, `[the row](selector:[data-testid=row])`.
+ * In the panel these are Highlight controls; in a file someone reads, they
+ * are links to nowhere, so the label is all that survives.
+ */
+const SELECTOR_LINK_RE = /\[([^\]\n]+)\]\((?:#[A-Za-z_-][\w-]*|selector:[^)\n]+)\)/g;
+
+function proseForReader(text: string, values: Record<string, string>): string {
+  return substituteVariables(text, values).replace(SELECTOR_LINK_RE, "$1");
+}
+
+/**
+ * The case as a document for a person, rather than as something the
+ * extension executes.
+ *
+ * A case file is written for two audiences at once and the second one has
+ * always come off worse: hand `v3.md` to a manual tester, a reviewer, or a
+ * ticket, and they get `Selector: [data-testid="sync"]` lines, `Kind: quick`
+ * markers, `%BASE_URL%` placeholders, and steps whose entire content is a
+ * block of JavaScript. None of that is wrong — it is just addressed to the
+ * panel, not to them.
+ *
+ * What this strips, and why each one:
+ *
+ * - **Automated steps.** A fenced script is not an instruction; a person
+ *   cannot carry it out. They are listed by title at the end instead of
+ *   vanishing, because "this was checked, by a script" is worth knowing and
+ *   a silently shortened case reads as if the coverage was never there.
+ * - **`Selector:` and `Kind:`.** Both address the panel — one is what
+ *   Highlight flashes, the other picks the quick subset. A reader executing
+ *   by hand needs the step's words, not its handles.
+ * - **`@version`**, the grammar's format version, which says nothing about
+ *   the case.
+ * - **`%VAR%` placeholders that have a literal default**, substituted so
+ *   the reader sees the address they should open rather than a variable
+ *   name. Variables with a generator, or with no value at all, cannot be
+ *   resolved outside a run and are listed as things to decide first.
+ *
+ * What it deliberately keeps: `"**quoted values**"`, which read as quoted
+ * emphasis in any Markdown viewer, and selectors written as inline code in
+ * prose, since removing those mid-sentence leaves a sentence with a hole in
+ * it — the one place where being addressed to the panel costs a reader
+ * nothing.
+ */
+export function renderReadableCase(
+  doc: TestCaseVersion,
+  opts: { exportedAt?: string } = {},
+): string {
+  const runnable = doc.steps.filter((s) => s.type !== "automated");
+  const automated = doc.steps.filter((s) => s.type === "automated");
+
+  const resolved: Record<string, string> = {};
+  const undecided: TestCaseVariable[] = [];
+  for (const variable of doc.variables) {
+    if (variable.defaultValue?.trim()) resolved[variable.name] = variable.defaultValue.trim();
+    else undecided.push(variable);
+  }
+  const prose = (text: string) => proseForReader(text, resolved);
+
+  const lines: string[] = [];
+  lines.push(`# ${prose(doc.title)}`);
+  lines.push("");
+  if (doc.project) lines.push(`- Project: ${doc.project}`);
+  if (doc.author) lines.push(`- Author: ${doc.author}`);
+  if (doc.tags.length > 0) lines.push(`- Tags: ${doc.tags.join(", ")}`);
+  lines.push(
+    `- Case version: v${doc.version}${
+      opts.exportedAt ? ` (exported ${opts.exportedAt.slice(0, 10)})` : ""
+    }`,
+  );
+  lines.push("");
+
+  if (doc.description.trim()) {
+    lines.push(prose(doc.description.trim()));
+    lines.push("");
+  }
+
+  if (doc.dependencies.length > 0 || doc.prerequisites.length > 0) {
+    lines.push("## Before you start");
+    lines.push("");
+    if (doc.prerequisites.length > 0) {
+      for (const item of doc.prerequisites) lines.push(`- ${prose(item)}`);
+      lines.push("");
+    }
+    if (doc.dependencies.length > 0) {
+      lines.push("These must already be true, and are not yours to arrange:");
+      lines.push("");
+      for (const item of doc.dependencies) lines.push(`- ${prose(item)}`);
+      lines.push("");
+    }
+  }
+
+  if (undecided.length > 0) {
+    lines.push("## Decide these first");
+    lines.push("");
+    for (const variable of undecided) {
+      const description = variable.description.trim();
+      lines.push(`- **${variable.name}** — ${description || "no description given"}`);
+    }
+    lines.push("");
+    lines.push(
+      "They appear below as `%NAME%`. Write down what you used, so a rerun means the same thing.",
+    );
+    lines.push("");
+  }
+
+  lines.push("## Steps");
+  lines.push("");
+
+  if (runnable.length === 0) {
+    lines.push("*Every step in this case is automated — there is nothing here to do by hand.*");
+    lines.push("");
+  }
+
+  runnable.forEach((step, index) => {
+    lines.push(`### ${index + 1}. ${prose(step.title)}`);
+    lines.push("");
+    if (step.where) {
+      lines.push(`**Where:** ${prose(step.where)}`);
+      lines.push("");
+    }
+    if (step.instructions?.trim()) {
+      lines.push(prose(step.instructions.trim()));
+      lines.push("");
+    }
+    if (step.expected?.trim()) {
+      lines.push("**Expected**");
+      lines.push("");
+      lines.push(prose(step.expected.trim()));
+      lines.push("");
+    }
+    if (step.note?.trim()) {
+      lines.push("**Note**");
+      lines.push("");
+      lines.push(prose(step.note.trim()));
+      lines.push("");
+    }
+  });
+
+  if (automated.length > 0) {
+    lines.push("---");
+    lines.push("");
+    lines.push(
+      `*${automated.length} automated step${automated.length === 1 ? "" : "s"} ` +
+        `omitted — ${automated.length === 1 ? "it runs" : "they run"} as a script in the Enloop ` +
+        `extension rather than by hand:*`,
+    );
+    lines.push("");
+    for (const step of automated) lines.push(`- *${prose(step.title)}*`);
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
 /** True when a step body's header block carries `Kind: quick`. Reads only
  * the header — the same lines `parseOneStep` reads — so a `Kind:` line in
  * the instructions prose is not a marker. */

@@ -22,6 +22,100 @@ function matchesQuery(query: string, title: string, tags: string[], project = ""
   );
 }
 
+interface SuiteGroup {
+  suite: SuiteSummary;
+  cases: TestCaseSummary[];
+  suiteMatches: boolean;
+  project: string;
+  updatedAt: string;
+}
+
+interface ProjectGroup {
+  /** `@project`, or `""` for everything that declares none. */
+  project: string;
+  suiteGroups: SuiteGroup[];
+  /** Cases in this project that are not in one of its suites. */
+  ungrouped: TestCaseSummary[];
+  caseCount: number;
+  updatedAt: string;
+}
+
+/**
+ * Which project a suite belongs to.
+ *
+ * `@project` in `suite.md` is the answer when it is there. A suite written
+ * before the tag existed still belongs somewhere, though, and its cases know:
+ * if every one of them declares the same project, so does the suite. Cases
+ * that disagree are left alone rather than guessed at — a suite that spans
+ * two apps is unusual enough to be worth seeing as unfiled.
+ */
+function suiteProject(suite: SuiteSummary, cases: TestCaseSummary[]): string {
+  if (suite.project) return suite.project;
+  const declared = new Set(cases.map((c) => c.project).filter(Boolean));
+  return declared.size === 1 ? [...declared][0] : "";
+}
+
+/**
+ * The band that separates one app's cases from another's.
+ *
+ * Sticky, because the whole point is knowing which app the row under your
+ * cursor belongs to after scrolling past the header that said so. Quiet,
+ * because it is a divider and not a destination: there is no project screen
+ * to open, and nothing here should look like it offers one.
+ */
+function ProjectHeader({ group }: { group: ProjectGroup }) {
+  return (
+    <div className="sticky top-0 z-10 flex items-baseline gap-2 border-y border-slate-200 bg-slate-100/95 px-3 py-1 backdrop-blur">
+      <span
+        className={`truncate text-[11px] font-semibold uppercase tracking-wide ${
+          group.project ? "text-slate-600" : "text-slate-400"
+        }`}
+      >
+        {group.project || "No project"}
+      </span>
+      <span className="ml-auto shrink-0 text-[10px] text-slate-400">
+        {group.caseCount} case{group.caseCount === 1 ? "" : "s"}
+      </span>
+    </div>
+  );
+}
+
+/** One case. Identical inside a suite and outside one but for the indent,
+ * which is the only thing that was ever different about the two copies of
+ * this markup. */
+function CaseRow({
+  testCase,
+  indented = false,
+  onOpen,
+}: {
+  testCase: TestCaseSummary;
+  indented?: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      onClick={onOpen}
+      className={`flex w-full flex-col gap-1 py-2 pr-3 text-left hover:bg-slate-50 ${
+        indented ? "pl-8" : "pl-3"
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <span className="truncate text-sm font-medium text-slate-800">{testCase.title}</span>
+        {testCase.archived && (
+          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
+            archived
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-2 text-xs text-slate-400">
+        <span>v{testCase.currentVersion}</span>
+        <span className="whitespace-nowrap">{relativeTime(testCase.updatedAt)}</span>
+        {testCase.tags.length > 0 && <span className="truncate">{testCase.tags.join(", ")}</span>}
+      </div>
+    </button>
+  );
+}
+
 type Unfinished =
   | { kind: "run"; id: string; testCaseId: string; title: string; done: number; total: number }
   | { kind: "freeRun"; id: string; title: string };
@@ -246,7 +340,13 @@ export function LibraryScreen({
         const shownCases = suiteMatches
           ? allCases
           : allCases.filter((c) => matchesQuery(q, c.title, c.tags, c.project));
-        return { suite: s, cases: shownCases, suiteMatches, updatedAt: newestCaseAt(allCases) };
+        return {
+          suite: s,
+          cases: shownCases,
+          suiteMatches,
+          project: suiteProject(s, allCases),
+          updatedAt: newestCaseAt(allCases),
+        };
       })
       .filter((g) => g.suiteMatches || g.cases.length > 0)
       .sort(
@@ -256,18 +356,47 @@ export function LibraryScreen({
 
     const shownUngrouped = ungrouped.filter((c) => matchesQuery(q, c.title, c.tags, c.project));
 
-    return { suiteGroups, ungrouped: shownUngrouped };
+    const byProject = new Map<string, ProjectGroup>();
+    const bucket = (project: string): ProjectGroup => {
+      const existing = byProject.get(project);
+      if (existing) return existing;
+      const created: ProjectGroup = { project, suiteGroups: [], ungrouped: [], caseCount: 0, updatedAt: "" };
+      byProject.set(project, created);
+      return created;
+    };
+    // Suites first within a project, then its loose cases — the same order
+    // the screen had before there were projects to nest them under.
+    for (const g of suiteGroups) {
+      const group = bucket(g.project);
+      group.suiteGroups.push(g);
+      group.caseCount += g.cases.length;
+      if (g.updatedAt > group.updatedAt) group.updatedAt = g.updatedAt;
+    }
+    for (const c of shownUngrouped) {
+      const group = bucket(c.project);
+      group.ungrouped.push(c);
+      group.caseCount += 1;
+      if (c.updatedAt > group.updatedAt) group.updatedAt = c.updatedAt;
+    }
+
+    const projects = [...byProject.values()].sort((a, b) => {
+      // Whatever declares no project sorts last however recent it is: it is
+      // the leftovers pile, and a pile that jumps to the top every time
+      // something lands in it is worse than one that stays where you left it.
+      if (!a.project !== !b.project) return a.project ? -1 : 1;
+      return b.updatedAt.localeCompare(a.updatedAt) || a.project.localeCompare(b.project);
+    });
+
+    // One bucket labels nothing — a folder holding a single project, or one
+    // holding none, would gain a header that every row is already under.
+    return { projects, showProjectHeaders: projects.length > 1 };
   }, [cases, suites, query, showArchived]);
 
   // "Nothing here yet" and "nothing matches that search" are different
   // situations with different answers, and the onboarding one must not fire
   // for a tester who mistyped a tag.
   const libraryEmpty = cases !== null && suites !== null && cases.length === 0 && suites.length === 0;
-  const noMatches =
-    !libraryEmpty &&
-    groups !== null &&
-    groups.suiteGroups.length === 0 &&
-    groups.ungrouped.length === 0;
+  const noMatches = !libraryEmpty && groups !== null && groups.projects.length === 0;
 
   return (
     <div className="flex h-full flex-col">
@@ -342,82 +471,58 @@ export function LibraryScreen({
         )}
         {error == null && libraryEmpty && <FirstRun busy={busy} onLoadExample={loadExample} />}
 
-        {groups?.suiteGroups.map(({ suite, cases: suiteCases }) => (
-          <div key={suite.id} className="border-b border-slate-100">
-            <button
-              onClick={() => onOpenSuite(suite.id)}
-              className="flex w-full items-center gap-2 bg-slate-50 px-3 py-2 text-left hover:bg-slate-100"
-            >
-              <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-700">
-                suite
-              </span>
-              <span className="flex-1 truncate text-sm font-medium text-slate-800">{suite.title}</span>
-              {suite.archived && (
-                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
-                  archived
-                </span>
-              )}
-              <span className="text-xs text-slate-400">
-                {suite.caseCount} case{suite.caseCount === 1 ? "" : "s"}
-              </span>
-            </button>
+        {groups?.projects.map((project) => (
+          // Prefixed so the no-project group has a key of its own that no
+          // real project name can collide with.
+          <div key={`project:${project.project}`}>
+            {groups.showProjectHeaders && <ProjectHeader group={project} />}
+
+            {project.suiteGroups.map(({ suite, cases: suiteCases }) => (
+              <div key={suite.id} className="border-b border-slate-100">
+                <button
+                  onClick={() => onOpenSuite(suite.id)}
+                  className="flex w-full items-center gap-2 bg-slate-50 px-3 py-2 text-left hover:bg-slate-100"
+                >
+                  <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-700">
+                    suite
+                  </span>
+                  <span className="flex-1 truncate text-sm font-medium text-slate-800">
+                    {suite.title}
+                  </span>
+                  {suite.archived && (
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
+                      archived
+                    </span>
+                  )}
+                  <span className="text-xs text-slate-400">
+                    {suite.caseCount} case{suite.caseCount === 1 ? "" : "s"}
+                  </span>
+                </button>
+                <ul className="divide-y divide-slate-100">
+                  {suiteCases.map((c) => (
+                    <li key={c.id}>
+                      <CaseRow testCase={c} indented onOpen={() => onOpenCase(c.id)} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+
+            {project.suiteGroups.length > 0 && project.ungrouped.length > 0 && (
+              <div className="bg-slate-50 px-3 py-1 text-xs font-semibold uppercase text-slate-400">
+                Ungrouped
+              </div>
+            )}
+
             <ul className="divide-y divide-slate-100">
-              {suiteCases.map((c) => (
+              {project.ungrouped.map((c) => (
                 <li key={c.id}>
-                  <button
-                    onClick={() => onOpenCase(c.id)}
-                    className="flex w-full flex-col gap-1 py-2 pl-8 pr-3 text-left hover:bg-slate-50"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium text-slate-800">{c.title}</span>
-                      {c.archived && (
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
-                          archived
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-slate-400">
-                      <span>v{c.currentVersion}</span>
-                      <span className="whitespace-nowrap">{relativeTime(c.updatedAt)}</span>
-                      {c.tags.length > 0 && <span className="truncate">{c.tags.join(", ")}</span>}
-                    </div>
-                  </button>
+                  <CaseRow testCase={c} onOpen={() => onOpenCase(c.id)} />
                 </li>
               ))}
             </ul>
           </div>
         ))}
-
-        {groups && groups.suiteGroups.length > 0 && groups.ungrouped.length > 0 && (
-          <div className="bg-slate-50 px-3 py-1 text-xs font-semibold uppercase text-slate-400">
-            Ungrouped
-          </div>
-        )}
-
-        <ul className="divide-y divide-slate-100">
-          {groups?.ungrouped.map((c) => (
-            <li key={c.id}>
-              <button
-                onClick={() => onOpenCase(c.id)}
-                className="flex w-full flex-col gap-1 px-3 py-2 text-left hover:bg-slate-50"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="truncate text-sm font-medium text-slate-800">{c.title}</span>
-                  {c.archived && (
-                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
-                      archived
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <span>v{c.currentVersion}</span>
-                  <span className="whitespace-nowrap">{relativeTime(c.updatedAt)}</span>
-                  {c.tags.length > 0 && <span className="truncate">{c.tags.join(", ")}</span>}
-                </div>
-              </button>
-            </li>
-          ))}
-        </ul>
       </div>
     </div>
   );
