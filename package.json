@@ -4,11 +4,14 @@
   "version": "0.1.0",
   "workspaces": [
     "shared",
-    "extension"
+    "extension",
+    "viewer"
   ],
   "scripts": {
     "dev": "npm run dev -w extension",
+    "dev:viewer": "npm run dev -w viewer",
     "build": "npm run build -w extension",
-    "typecheck": "npm run typecheck -w shared && npm run typecheck -w extension"
+    "build:viewer": "npm run build -w viewer",
+    "typecheck": "npm run typecheck -w shared && npm run typecheck -w extension && npm run typecheck -w viewer"
   }
 }
