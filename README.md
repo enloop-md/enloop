@@ -13,6 +13,10 @@ you like.
 
 - **The extension** runs cases: step-by-step, marking pass/fail, executing
   automated steps in the page, capturing notes, and writing a run report.
+- **[The viewer](#the-viewer)** shares them: send anyone a link and they read
+  the case in a browser — steps to tick off, values to copy, variables to fill
+  in — with no install and no account. The case rides inside the link, so
+  there is still nothing uploaded anywhere.
 - **The skills** close the loop: `/enloop:setup` prepares an app repo once,
   `/enloop:write` writes a case for a real feature or ticket from inside the
   app repo being tested, and `/enloop:check` triages the finished run back in
@@ -254,14 +258,58 @@ inherits the suite's prep steps (prefixed `Prep:`), variables, dependencies, and
 prerequisites when a run starts.
 
 A case screen can also hand the case to someone who will never open the
-extension. **Download → Markdown** saves the file exactly as authored — for a
-repo, a PR, or another Enloop folder. **Simplified** rewrites it for a person
-reading it: automated steps are dropped (and listed by title at the end, so the
-coverage is not silently missing), `Selector:` and `Kind:` lines go, `%VAR%`
-placeholders with a literal default are filled in, and a case that lives in a
-suite carries the suite's prep steps with it. What survives is the case as
-instructions — which is all a manual tester, a reviewer, or a ticket ever
-wanted from it.
+extension — **Share v*N*** at the bottom, with four downloads and a link.
+
+The **full/simplified** axis is how much of the machinery the recipient sees.
+Full is the case as authored, selectors and scripts included. **Simplified**
+rewrites it for a person carrying it out by hand: automated steps are dropped
+(and listed by title at the end, so the coverage is not silently missing),
+`Selector:` and `Kind:` lines go, and `%VAR%` placeholders with a literal
+default are filled in.
+
+The **Markdown/HTML** axis is who they are. Markdown is the file — for a repo,
+a PR, another Enloop folder, or Claude Code. HTML is [a page](#the-viewer): one
+self-contained file, opened by double-clicking it, with the steps tickable and
+the values copyable. Everything except the raw Markdown carries a suite's prep
+steps along with the case, since a reader handed the case alone would be
+missing the setup it assumes.
+
+### The viewer
+
+<https://ryabenko-pro.github.io/enloop/>
+
+The same page, online, for people who should not have to install anything: send
+a link and they read the case in a browser, tick steps off as they go, copy the
+values into their own app, and fill in the variables — every `%NAME%` in the
+document updates as they type.
+
+**The case travels inside the link.** There is no server, no account and no
+upload: the case is base64url-encoded into `?c=`, and the page decodes and
+parses it on the reader's own device. The viewer also accepts the same payload
+as `#c=`, which is never sent to a host at all — worth using when a case names
+internal URLs. Either way, the page you send is the page they get, forever;
+nothing can be taken down or expire.
+
+**Copy link** on the case screen puts that link on your clipboard. Every case
+file the extension writes also ends with a comment carrying its own link:
+
+```markdown
+<!-- enloop:viewer
+Read this case in a browser — tick off steps, copy the values, fill in the
+variables. The link below carries the case itself; nothing is uploaded.
+
+https://ryabenko-pro.github.io/enloop/?c=IyBTaWduIGluIHdpdGgg…
+-->
+```
+
+An HTML comment, so it is invisible on GitHub and in any preview but plainly
+readable in the raw file — which is where someone handed a case file is
+looking. It is regenerated on every write and stripped before the file is
+parsed, so it never reaches the case model, a run, or an export; it is not
+yours to maintain, and editing it does nothing.
+
+Opened with no case, the viewer offers a box to paste one into — which is also
+the way in for a case too long to fit in a link.
 
 ---
 
@@ -565,6 +613,7 @@ re-explaining the goal in the prompt.
 
 ```
 extension/          Chrome extension (React + Vite, side panel)
+viewer/             the online viewer (static page, GitHub Pages)
 shared/             parser, schemas, id/variable helpers — the grammar lives here
 plugins/enloop/     the distributable skill plugin
 .claude/skills/     enloop-demo (this repo only)
@@ -572,13 +621,29 @@ plugins/enloop/     the distributable skill plugin
 private/            local connected-folder data (git-ignored)
 ```
 
+The case *page* — markup, styles and behaviour — lives in
+[`shared/src/html.ts`](shared/src/html.ts), not in the viewer. The viewer
+renders it from a link and the extension inlines it into a downloadable file,
+and the promise of a shared link is that both show the same thing, so there is
+deliberately only one of it. The behaviour is serialized into the standalone
+file with `Function.prototype.toString`, which is why `attachCasePage` must
+stay self-contained — a reference to anything outside its own body throws in
+the downloaded file, where the surrounding module does not exist.
+
 Development:
 
 ```bash
 npm run dev         # extension with HMR
+npm run dev:viewer  # viewer on http://localhost:5174
 npm run build       # production build to extension/dist
-npm run typecheck   # shared + extension
+npm run build:viewer
+npm run typecheck   # shared + extension + viewer
 ```
+
+The viewer deploys to GitHub Pages from `master` on any change under `viewer/`
+or `shared/` — see [`.github/workflows/pages.yml`](.github/workflows/pages.yml).
+It needs **Settings → Pages → Source: GitHub Actions** switched on once in the
+repo.
 
 ## Contributing
 
