@@ -12,7 +12,9 @@ import {
   renderRunReport,
   resolveVariableValues,
   runFileSchema,
+  stripViewerComment,
   substituteVariables,
+  withViewerComment,
   type CaseBookkeeping,
   type DataStore,
   type FreeRun,
@@ -265,11 +267,15 @@ export class FsaDataStore implements DataStore {
     return readVersion(versionsDir, version);
   }
 
+  /** The authored text, with the generated viewer-link comment taken back
+   * out — it is regenerated on every write, so an editor that showed it
+   * would be inviting someone to hand-edit a line that is about to be
+   * overwritten, and an export that kept it could carry a stale link. */
   async getVersionSource(id: string, version: number): Promise<string> {
     const { dir: caseDir } = await this.findCaseDir(id);
     const versionsDir = await getDir(caseDir, "versions");
     const { text } = await readTextFile(versionsDir, versionFile(version));
-    return text;
+    return stripViewerComment(text);
   }
 
   async createTestCase(bodyMarkdown: string, suiteId?: string): Promise<TestCaseMeta> {
@@ -279,7 +285,7 @@ export class FsaDataStore implements DataStore {
     const parentDir = suiteId ? await getDir(casesDir, suiteId, { create: true }) : casesDir;
     const caseDir = await getDir(parentDir, id, { create: true });
     const versionsDir = await getDir(caseDir, "versions", { create: true });
-    await writeTextFile(versionsDir, versionFile(1), bodyMarkdown);
+    await writeTextFile(versionsDir, versionFile(1), withViewerComment(bodyMarkdown));
     await writeJson(caseDir, META_FILE, { archived: false } satisfies CaseBookkeeping);
     return this.getTestCase(id);
   }
@@ -291,7 +297,10 @@ export class FsaDataStore implements DataStore {
     const nextVersion = (versions[versions.length - 1] ?? 0) + 1;
     // Validate before writing so a typo never lands as a broken version.
     parseCaseDocument(bodyMarkdown, { version: nextVersion, createdAt: nowIso() });
-    await writeTextFile(versionsDir, versionFile(nextVersion), bodyMarkdown);
+    // The link comment is appended on the way to disk rather than being the
+    // author's to maintain: it encodes the file, so anything else would mean
+    // a link that quietly stops matching the case it is attached to.
+    await writeTextFile(versionsDir, versionFile(nextVersion), withViewerComment(bodyMarkdown));
     return readVersion(versionsDir, nextVersion);
   }
 

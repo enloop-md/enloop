@@ -1,9 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   generateVariableValue,
   parseCaseDocument,
+  renderCasePage,
   renderReadableCase,
   VARIABLE_GENERATOR_LABELS,
+  viewerLink,
+  withViewerComment,
   type RunTier,
   type TestCaseMeta,
   type TestCaseVariable,
@@ -50,6 +53,8 @@ export function CaseDetailScreen({
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [edited, setEdited] = useState<Record<string, string>>({});
   const [valuesOpen, setValuesOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -127,35 +132,77 @@ export function CaseDetailScreen({
   }
 
   /**
-   * Two exports, because they answer two different questions.
+   * Four exports along two axes, because "send someone this case" turns out
+   * to be two questions, not one.
    *
-   * "Markdown" is the file itself, byte for byte — what you want in a repo,
-   * a PR, or another Enloop folder. "Simplified" is the case rewritten for
-   * someone who is going to read it: no selectors, no scripts, defaults
-   * filled in. That one is built from the *run* source, so a case inside a
-   * suite carries the suite's prep steps with it — a reader handed the case
-   * alone would otherwise be missing the setup it assumes.
+   * **Markdown or HTML** is who the recipient is. Markdown is the file — for
+   * a repo, a PR, another Enloop folder, or Claude Code. HTML is a page: one
+   * self-contained file with the steps tickable, the values copyable and the
+   * variables fillable, which opens in any browser by double-clicking it and
+   * needs neither this extension nor a network.
+   *
+   * **Full or simplified** is how much of the machinery the recipient should
+   * see. Full is the case as authored, selectors and scripts included.
+   * Simplified is it rewritten for someone carrying it out by hand: no
+   * selectors, no scripts, defaults filled in, automated steps listed at the
+   * end rather than standing in the sequence as things to do.
+   *
+   * Everything except the raw Markdown is built from the *run* source, so a
+   * case inside a suite carries the suite's prep steps with it — a reader
+   * handed the case alone would otherwise be missing the setup it assumes.
+   * The raw Markdown is the exception on purpose: it is the file, and a file
+   * that quietly gained its suite's steps would no longer round-trip.
    */
-  async function download(kind: "source" | "readable") {
+  async function download(kind: "source" | "readable" | "html-full" | "html-simple") {
     if (!meta || selectedVersion == null) return;
     setBusy(true);
     setError(null);
+    setMenuOpen(false);
     try {
       const slug = fileSlug(meta.title);
+      const exportedAt = new Date().toISOString();
+
       if (kind === "source") {
         const source = await store.getVersionSource(testCaseId, selectedVersion);
-        downloadTextFile(`${slug}-v${selectedVersion}.md`, source);
-      } else {
-        const runSource = await store.getRunSource(testCaseId, selectedVersion);
-        const merged = parseCaseDocument(runSource, {
-          version: selectedVersion,
-          createdAt: new Date().toISOString(),
-        });
-        downloadTextFile(
-          `${slug}-v${selectedVersion}-simplified.md`,
-          renderReadableCase(merged, { exportedAt: new Date().toISOString() }),
-        );
+        downloadTextFile(`${slug}-v${selectedVersion}.md`, withViewerComment(source));
+        return;
       }
+
+      const runSource = await store.getRunSource(testCaseId, selectedVersion);
+      const merged = parseCaseDocument(runSource, { version: selectedVersion, createdAt: exportedAt });
+
+      if (kind === "readable") {
+        const readable = renderReadableCase(merged, { exportedAt });
+        downloadTextFile(`${slug}-v${selectedVersion}-simplified.md`, withViewerComment(readable));
+        return;
+      }
+
+      const simplified = kind === "html-simple";
+      downloadTextFile(
+        `${slug}-v${selectedVersion}${simplified ? "-simplified" : ""}.html`,
+        renderCasePage(merged, { simplified, exportedAt, viewerUrl: viewerLink(runSource) }),
+        "text/html",
+      );
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** The same page the HTML download produces, as a link instead of a file —
+   * the case travels inside it, so there is nothing to host and nothing to
+   * upload. */
+  async function copyViewerLink() {
+    if (selectedVersion == null) return;
+    setBusy(true);
+    setError(null);
+    setMenuOpen(false);
+    try {
+      const runSource = await store.getRunSource(testCaseId, selectedVersion);
+      await navigator.clipboard.writeText(viewerLink(runSource));
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
     } catch (e) {
       setError(e);
     } finally {
@@ -377,27 +424,130 @@ export function CaseDetailScreen({
               {meta.archived ? "Unarchive" : "Archive"}
             </button>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400">Download v{selectedVersion}</span>
-            <button
-              onClick={() => void download("source")}
-              disabled={busy}
-              title="The case file exactly as authored — selectors, scripts and all"
-              className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-            >
-              ⤓ Markdown
-            </button>
-            <button
-              onClick={() => void download("readable")}
-              disabled={busy}
-              title="For a person to read: no selectors or scripts, defaults filled in, suite prep steps included"
-              className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-            >
-              ⤓ Simplified
-            </button>
-          </div>
+          <ShareMenu
+            version={selectedVersion}
+            busy={busy}
+            copied={copied}
+            open={menuOpen}
+            onToggle={() => setMenuOpen((o) => !o)}
+            onClose={() => setMenuOpen(false)}
+            onDownload={(kind) => void download(kind)}
+            onCopyLink={() => void copyViewerLink()}
+          />
         </div>
       </div>
+    </div>
+  );
+}
+
+type DownloadKind = "source" | "readable" | "html-full" | "html-simple";
+
+const DOWNLOADS: Array<{ kind: DownloadKind; label: string; hint: string }> = [
+  {
+    kind: "html-full",
+    label: "HTML page — full",
+    hint: "One self-contained file: tick off steps, copy values, no extension needed",
+  },
+  {
+    kind: "html-simple",
+    label: "HTML page — simplified",
+    hint: "The same page for a manual tester: no selectors or scripts",
+  },
+  {
+    kind: "source",
+    label: "Markdown — as authored",
+    hint: "The case file itself, for a repo, a PR, or another Enloop folder",
+  },
+  {
+    kind: "readable",
+    label: "Markdown — simplified",
+    hint: "For a person to read: defaults filled in, suite prep steps included",
+  },
+];
+
+/**
+ * Handing this case to someone who is not sitting in front of this panel.
+ *
+ * Four downloads and a link is too many controls to lay out flat in a
+ * 400px-wide panel, and they are all the same decision anyway — so they
+ * collapse into one button. It opens upward because it lives at the bottom
+ * of the screen.
+ */
+function ShareMenu({
+  version,
+  busy,
+  copied,
+  open,
+  onToggle,
+  onClose,
+  onDownload,
+  onCopyLink,
+}: {
+  version: number | null;
+  busy: boolean;
+  copied: boolean;
+  open: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+  onDownload: (kind: DownloadKind) => void;
+  onCopyLink: () => void;
+}) {
+  const container = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!container.current?.contains(event.target as Node)) onClose();
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open, onClose]);
+
+  return (
+    <div ref={container} className="relative flex items-center gap-2">
+      <span className="text-xs text-slate-400">Share v{version}</span>
+      <button
+        onClick={onToggle}
+        disabled={busy}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+      >
+        ⤓ Download <span className="text-[9px] text-slate-400">▾</span>
+      </button>
+      <button
+        onClick={onCopyLink}
+        disabled={busy}
+        title="A link to the online viewer with this case inside it — nothing is uploaded"
+        className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+      >
+        {copied ? "✓ Copied" : "🔗 Copy link"}
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute bottom-full left-0 z-10 mb-1 w-full overflow-hidden rounded border border-slate-200 bg-white shadow-lg"
+        >
+          {DOWNLOADS.map((item) => (
+            <button
+              key={item.kind}
+              role="menuitem"
+              onClick={() => onDownload(item.kind)}
+              className="block w-full border-b border-slate-100 px-3 py-2 text-left last:border-b-0 hover:bg-slate-50"
+            >
+              <span className="block text-xs font-medium text-slate-700">{item.label}</span>
+              <span className="block text-[10px] leading-snug text-slate-400">{item.hint}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
