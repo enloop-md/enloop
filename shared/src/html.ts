@@ -716,6 +716,10 @@ export function attachCasePage(root: Document | HTMLElement): void {
     for (const span of Array.from(scope.querySelectorAll<HTMLElement>(".var"))) {
       const name = span.dataset.var;
       if (!name) continue;
+      // Except in the values panel: a variable's own description names the
+      // placeholder ("every %BASE_URL% in the case is replaced with this"),
+      // and substituting it there makes the sentence describe itself.
+      if (span.closest(".var-row")) continue;
       const value = values[name];
       span.textContent = value ? value : "%" + name + "%";
       if (value) span.removeAttribute("data-unset");
