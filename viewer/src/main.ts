@@ -63,13 +63,13 @@ function readParam(): string | null {
   return new URLSearchParams(hash).get(VIEWER_CASE_PARAM);
 }
 
-function say(message: string): void {
+function say(message: string, ms = 1400): void {
   document.querySelector(".copied")?.remove();
   const toast = document.createElement("div");
   toast.className = "copied";
   toast.textContent = message;
   document.body.appendChild(toast);
-  window.setTimeout(() => toast.remove(), 1400);
+  window.setTimeout(() => toast.remove(), ms);
 }
 
 function download(filename: string, text: string, type: string): void {
@@ -236,6 +236,90 @@ pasteBox.addEventListener("keydown", (event) => {
     const text = pasteBox.value.trim();
     if (text) open(text);
   }
+});
+
+/**
+ * Dropping a case file on the page opens it.
+ *
+ * The shortest route in for the people this viewer is for: a case arrives as
+ * a file — attached to a ticket, pulled out of a repo, saved from the
+ * extension — and "drag it onto the page" beats opening it in an editor,
+ * selecting all, and pasting. It works while a case is already on screen too,
+ * which makes it the way to move from one case to the next.
+ *
+ * Guarded on `Files` rather than on any drag at all: dragging *text* into the
+ * paste box is a native behaviour worth keeping, and preventing the default
+ * for everything would break it.
+ */
+const MAX_DROP_BYTES = 1_000_000;
+const CASE_FILE_NAME = /\.(md|markdown|txt)$/i;
+
+let dragDepth = 0;
+
+function draggingFiles(event: DragEvent): boolean {
+  return Array.from(event.dataTransfer?.types ?? []).includes("Files");
+}
+
+function showDropTarget(on: boolean): void {
+  document.body.classList.toggle("dropping", on);
+}
+
+/** An error that must not cost someone the case they already have open: the
+ * landing screen would replace it, so a case on screen gets a toast instead. */
+function refuseDrop(message: string): void {
+  if (source) say(message, 3000);
+  else showLanding(pasteBox.value, message);
+}
+
+async function openDroppedFile(file: File): Promise<void> {
+  if (file.size > MAX_DROP_BYTES) {
+    refuseDrop(
+      `${file.name} is ${Math.round(file.size / 1024)} KB — far larger than any case file. ` +
+        "Drop the case's Markdown itself.",
+    );
+    return;
+  }
+  if (!CASE_FILE_NAME.test(file.name) && !file.type.startsWith("text/")) {
+    refuseDrop(`${file.name} does not look like a case file. Drop the case's Markdown (.md).`);
+    return;
+  }
+  try {
+    open(await file.text());
+  } catch {
+    refuseDrop(`Could not read ${file.name}.`);
+  }
+}
+
+window.addEventListener("dragenter", (event) => {
+  if (!draggingFiles(event)) return;
+  event.preventDefault();
+  dragDepth++;
+  showDropTarget(true);
+});
+
+window.addEventListener("dragover", (event) => {
+  if (!draggingFiles(event)) return;
+  // Without this the browser navigates to the file on drop, which throws the
+  // page away — and with it whatever the reader had already ticked off.
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+});
+
+// Every child element the pointer crosses fires its own dragleave, so the
+// overlay can only come down on the one that balances the first dragenter.
+window.addEventListener("dragleave", (event) => {
+  if (!draggingFiles(event)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) showDropTarget(false);
+});
+
+window.addEventListener("drop", (event) => {
+  if (!draggingFiles(event)) return;
+  event.preventDefault();
+  dragDepth = 0;
+  showDropTarget(false);
+  const file = event.dataTransfer?.files?.[0];
+  if (file) void openDroppedFile(file);
 });
 
 // Back/forward between links, and someone editing the address bar by hand.
