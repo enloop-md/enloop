@@ -61,6 +61,31 @@
   color: var(--muted);
 }
 
+/* The drop target, drawn over everything while a file is being dragged in.
+   `pointer-events: none` matters: an overlay that swallowed the pointer would
+   swallow the drop with it. */
+body.dropping::after {
+  content: "Drop the case file to open it";
+  position: fixed;
+  inset: 10px;
+  z-index: 50;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.88);
+  color: var(--accent);
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+@media (prefers-color-scheme: dark) {
+  body.dropping::after {
+    background: rgba(11, 17, 32, 0.88);
+  }
+}
+
 .landing {
   max-width: 46rem;
   margin: 0 auto;

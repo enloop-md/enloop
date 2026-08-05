@@ -308,8 +308,11 @@ looking. It is regenerated on every write and stripped before the file is
 parsed, so it never reaches the case model, a run, or an export; it is not
 yours to maintain, and editing it does nothing.
 
-Opened with no case, the viewer offers a box to paste one into — which is also
-the way in for a case too long to fit in a link.
+**Drop a case file anywhere on the page** and it opens — the shortest route in
+when the case arrived as a file rather than a link, and the way to move from
+one case to the next without going back anywhere. Opened with no case, the
+viewer also offers a box to paste one into, which is the way in for a case too
+long to fit in a link.
 
 ---
 
