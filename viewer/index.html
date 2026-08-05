@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Enloop — test case viewer</title>
+    <meta
+      name="description"
+      content="Open an Enloop test case in the browser: tick off steps, copy the values, fill in the variables. The case travels in the link; nothing is uploaded."
+    />
+  </head>
+  <body>
+    <!-- The toolbar is written by main.ts once a case is on screen; it makes
+         no sense before there is something to copy or download. -->
+    <div id="toolbar" class="toolbar-bar no-print" hidden></div>
+
+    <main id="case-root"></main>
+
+    <section id="landing" class="landing" hidden>
+      <h1>Enloop test case viewer</h1>
+      <p class="lede">
+        Paste a case file below, or open a link someone sent you. Steps tick
+        off, values copy to the clipboard, and <code>%VARIABLES%</code> fill in
+        as you type.
+      </p>
+      <p id="landing-error" class="error" hidden></p>
+      <textarea
+        id="paste"
+        spellcheck="false"
+        placeholder="# Case title&#10;@project Your app&#10;&#10;# Steps&#10;&#10;## First step&#10;What the tester does."
+      ></textarea>
+      <div class="landing-actions">
+        <button type="button" id="show-case" class="primary">Open this case</button>
+        <button type="button" id="load-example" class="ghost">Try the example case</button>
+      </div>
+      <p class="fine">
+        This page runs entirely in your browser. A case you open here is read
+        out of the link or the box above and parsed on this device — there is
+        no server behind this page and nothing is uploaded.
+        <a href="https://github.com/ryabenko-pro/enloop" target="_blank" rel="noopener noreferrer"
+          >Enloop on GitHub</a
+        >
+      </p>
+    </section>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
