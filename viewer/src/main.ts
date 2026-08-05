@@ -122,7 +122,7 @@ function renderToolbar(doc: TestCaseVersion, markdown: string): void {
 
   const brand = document.createElement("a");
   brand.className = "brand";
-  brand.href = "https://github.com/ryabenko-pro/enloop";
+  brand.href = "https://github.com/enloop-me/enloop";
   brand.target = "_blank";
   brand.rel = "noopener noreferrer";
   brand.textContent = "Enloop";

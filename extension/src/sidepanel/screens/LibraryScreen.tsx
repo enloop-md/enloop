@@ -11,7 +11,7 @@ import { Header } from "../../components/Header.js";
 import { useReadyStore } from "../store/DataStoreProvider.js";
 import { relativeTime } from "../../lib/time.js";
 
-const DOCS_URL = "https://github.com/ryabenko-pro/enloop#readme";
+const DOCS_URL = "https://github.com/enloop-me/enloop#readme";
 
 function matchesQuery(query: string, title: string, tags: string[], project = ""): boolean {
   if (!query) return true;

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useDataStore } from "../store/DataStoreProvider.js";
 
-const DOCS_URL = "https://github.com/ryabenko-pro/enloop#readme";
+const DOCS_URL = "https://github.com/enloop-me/enloop#readme";
 
 /**
  * The first thing anyone sees, and — because Chrome drops File System Access
