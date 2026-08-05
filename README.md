@@ -24,16 +24,40 @@ you like.
 
 ## Part 1 — The extension
 
-### Build and load
+### Install
+
+Enloop is not in the Chrome Web Store. Both paths below install it as an
+**unpacked extension**, which Chrome allows on any profile with Developer mode
+switched on.
+
+**A. From a release — no build tools needed.**
+
+1. Download `enloop-<version>.zip` from the
+   [latest release](https://github.com/ryabenko-pro/enloop/releases/latest).
+2. Unzip it somewhere you intend to keep — `~/enloop-extension`, say. Chrome
+   loads an unpacked extension from that path every time it starts, so moving
+   or deleting the folder later disables it.
+3. Open `chrome://extensions`, switch on **Developer mode** (top right).
+4. **Load unpacked** → select the unzipped folder — the one with
+   `manifest.json` directly inside it, not its parent.
+
+To update: download the new zip, replace the folder's contents, and press
+**Reload** on the Enloop card at `chrome://extensions`.
+
+**B. From source**, which is what you want if you intend to change anything:
 
 ```bash
 npm install
 npm run build
 ```
 
-Then in Chrome: `chrome://extensions` → enable **Developer mode** → **Load
-unpacked** → select `extension/dist`. Open the side panel from the extension's
-toolbar icon.
+Then `chrome://extensions` → **Developer mode** → **Load unpacked** → select
+**`extension/dist`** (the build output, not the repo root and not
+`extension/`).
+
+Either way, open the side panel from the extension's toolbar icon. Installing
+asks for no site permissions — see [Site access](#site-access) for what gets
+asked for later, and when.
 
 On first run the panel asks you to connect a folder. Pick any directory; the
 extension creates its layout inside:
@@ -228,6 +252,16 @@ rather than a blank where a value should have been.
 **Suites** are folders with a `suite.md` holding shared setup; each case inside
 inherits the suite's prep steps (prefixed `Prep:`), variables, dependencies, and
 prerequisites when a run starts.
+
+A case screen can also hand the case to someone who will never open the
+extension. **Download → Markdown** saves the file exactly as authored — for a
+repo, a PR, or another Enloop folder. **Simplified** rewrites it for a person
+reading it: automated steps are dropped (and listed by title at the end, so the
+coverage is not silently missing), `Selector:` and `Kind:` lines go, `%VAR%`
+placeholders with a literal default are filled in, and a case that lives in a
+suite carries the suite's prep steps with it. What survives is the case as
+instructions — which is all a manual tester, a reviewer, or a ticket ever
+wanted from it.
 
 ---
 

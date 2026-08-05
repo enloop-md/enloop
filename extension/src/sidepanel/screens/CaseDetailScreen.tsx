@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   generateVariableValue,
   parseCaseDocument,
+  renderReadableCase,
   VARIABLE_GENERATOR_LABELS,
   type RunTier,
   type TestCaseMeta,
@@ -14,6 +15,7 @@ import { Header } from "../../components/Header.js";
 import { Markdown } from "../../components/Markdown.js";
 import { useReadyStore } from "../store/DataStoreProvider.js";
 import { getActivePageUrl } from "../../lib/automation.js";
+import { downloadTextFile, fileSlug } from "../../lib/download.js";
 
 export function CaseDetailScreen({
   testCaseId,
@@ -117,6 +119,43 @@ export function CaseDetailScreen({
       }
       const run = await store.createRun(testCaseId, meta.currentVersion, values, tier);
       onRunStarted(run.id);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * Two exports, because they answer two different questions.
+   *
+   * "Markdown" is the file itself, byte for byte — what you want in a repo,
+   * a PR, or another Enloop folder. "Simplified" is the case rewritten for
+   * someone who is going to read it: no selectors, no scripts, defaults
+   * filled in. That one is built from the *run* source, so a case inside a
+   * suite carries the suite's prep steps with it — a reader handed the case
+   * alone would otherwise be missing the setup it assumes.
+   */
+  async function download(kind: "source" | "readable") {
+    if (!meta || selectedVersion == null) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const slug = fileSlug(meta.title);
+      if (kind === "source") {
+        const source = await store.getVersionSource(testCaseId, selectedVersion);
+        downloadTextFile(`${slug}-v${selectedVersion}.md`, source);
+      } else {
+        const runSource = await store.getRunSource(testCaseId, selectedVersion);
+        const merged = parseCaseDocument(runSource, {
+          version: selectedVersion,
+          createdAt: new Date().toISOString(),
+        });
+        downloadTextFile(
+          `${slug}-v${selectedVersion}-simplified.md`,
+          renderReadableCase(merged, { exportedAt: new Date().toISOString() }),
+        );
+      }
     } catch (e) {
       setError(e);
     } finally {
@@ -336,6 +375,25 @@ export function CaseDetailScreen({
               className="flex-1 rounded border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
             >
               {meta.archived ? "Unarchive" : "Archive"}
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400">Download v{selectedVersion}</span>
+            <button
+              onClick={() => void download("source")}
+              disabled={busy}
+              title="The case file exactly as authored — selectors, scripts and all"
+              className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            >
+              ⤓ Markdown
+            </button>
+            <button
+              onClick={() => void download("readable")}
+              disabled={busy}
+              title="For a person to read: no selectors or scripts, defaults filled in, suite prep steps included"
+              className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            >
+              ⤓ Simplified
             </button>
           </div>
         </div>
