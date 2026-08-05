@@ -1,4 +1,5 @@
 import { VARIABLE_GENERATORS } from "./schemas.js";
+import { stripViewerComment } from "./viewer-link.js";
 import type {
   FreeRunFile,
   NoteType,
@@ -187,7 +188,10 @@ export function parseCaseDocument(
   opts: { requireSteps?: boolean } = {},
 ): TestCaseVersion {
   const requireSteps = opts.requireSteps ?? true;
-  const lines = raw.replace(/\r\n/g, "\n").split("\n");
+  // The generated viewer-link comment is machine-written and belongs to the
+  // file, not to the case — dropped here so no reader of the model ever has
+  // to know it exists. See `stripViewerComment`.
+  const lines = stripViewerComment(raw).replace(/\r\n/g, "\n").split("\n");
 
   let i = 0;
   while (i < lines.length && lines[i].trim() === "") i++;
@@ -964,7 +968,7 @@ function stepBodyIsQuick(body: string): boolean {
 
 /** Number of steps a quick run of this document would execute. */
 export function countQuickSteps(markdown: string): number {
-  const stepsRaw = extractSectionRaw(markdown.replace(/\r\n/g, "\n"), "Steps");
+  const stepsRaw = extractSectionRaw(stripViewerComment(markdown).replace(/\r\n/g, "\n"), "Steps");
   if (!stepsRaw) return 0;
   return splitTopSections(stepsRaw, 2).sections.filter((s) => stepBodyIsQuick(s.content)).length;
 }
@@ -989,7 +993,10 @@ export function countQuickSteps(markdown: string): number {
  * — a quick run that skips logging in is not a run.
  */
 export function filterToQuickSteps(markdown: string): string {
-  const normalized = markdown.replace(/\r\n/g, "\n");
+  // Stripped before the surgery, not after: the comment sits past the last
+  // step, so it would otherwise ride along inside that step's body and be
+  // kept or dropped depending on whether that step happened to be quick.
+  const normalized = stripViewerComment(markdown).replace(/\r\n/g, "\n");
   const range = sectionRange(normalized, "Steps");
   if (!range) return normalized;
 
@@ -1013,8 +1020,8 @@ export function filterToQuickSteps(markdown: string): string {
  */
 export function buildRunSource(caseMarkdown: string, suiteMarkdown: string | null): string {
   if (!suiteMarkdown) return caseMarkdown;
-  const normalizedCase = caseMarkdown.replace(/\r\n/g, "\n");
-  const normalizedSuite = suiteMarkdown.replace(/\r\n/g, "\n");
+  const normalizedCase = stripViewerComment(caseMarkdown).replace(/\r\n/g, "\n");
+  const normalizedSuite = stripViewerComment(suiteMarkdown).replace(/\r\n/g, "\n");
 
   const suiteSteps = extractSectionRaw(normalizedSuite, "Steps");
   const suiteVariables = extractSectionRaw(normalizedSuite, "Variables");

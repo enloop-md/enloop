@@ -2,7 +2,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { HighlightLink } from "./HighlightLink.js";
 import { ValueChip } from "./ValueChip.js";
-import { looksLikeSelector, selectorFromHref } from "../lib/selector-text.js";
+import { looksLikeSelector, selectorFromHref } from "@tcm/shared";
 import { rehypeQuotedValues } from "../lib/quoted-values.js";
 
 /**
