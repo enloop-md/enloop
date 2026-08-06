@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { parseCaseDocument, starterCaseTemplate } from "@tcm/shared";
 import { ErrorNotice } from "../../components/ErrorNotice.js";
 import { Header } from "../../components/Header.js";
-import { useReadyStore } from "../store/DataStoreProvider.js";
+import { useReadyStore, useWorkspace } from "../store/DataStoreProvider.js";
+import { splitId } from "@tcm/shared";
 
 export function EditorScreen({
   testCaseId,
@@ -17,7 +18,16 @@ export function EditorScreen({
   onSaved: (testCaseId: string) => void;
 }) {
   const store = useReadyStore();
+  const { storages, defaultStorageId, setDefaultStorageId, createTestCaseIn } = useWorkspace();
   const isNew = !testCaseId;
+  // Where a new case lands. A case inside a suite has no choice — the suite's
+  // folder decides. Editing an existing case has none either: its storage is
+  // fixed by its id.
+  const suiteStorageId = suiteId ? splitId(suiteId).storageId : null;
+  const [targetStorageId, setTargetStorageId] = useState<string>(
+    suiteStorageId ?? defaultStorageId ?? storages[0]?.id ?? "",
+  );
+  const showStoragePicker = isNew && !suiteId && storages.length > 1;
 
   const [text, setText] = useState(isNew ? starterCaseTemplate() : "");
   const [loaded, setLoaded] = useState(isNew);
@@ -66,7 +76,8 @@ export function EditorScreen({
     setBusy(true);
     try {
       if (isNew) {
-        const meta = await store.createTestCase(text, suiteId);
+        const meta = await createTestCaseIn(suiteStorageId ?? targetStorageId, text, suiteId);
+        if (!suiteId) setDefaultStorageId(targetStorageId);
         onSaved(meta.id);
       } else {
         await store.createVersion(testCaseId, text);
@@ -104,6 +115,23 @@ export function EditorScreen({
       </div>
       <div className="space-y-2 border-t border-slate-200 p-3">
         <ErrorNotice error={error} />
+        {showStoragePicker && (
+          <label className="flex items-center gap-2 text-xs text-slate-500">
+            <span className="shrink-0">Save to</span>
+            <select
+              value={targetStorageId}
+              onChange={(e) => setTargetStorageId(e.target.value)}
+              className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 text-sm text-slate-700"
+            >
+              {storages.map((s) => (
+                <option key={s.id} value={s.id} disabled={s.permission !== "granted"}>
+                  {s.label}
+                  {s.permission !== "granted" ? " (not connected)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <p className={`text-xs ${preview.ok ? "text-slate-500" : "text-amber-600"}`}>
           {preview.summary}
         </p>
