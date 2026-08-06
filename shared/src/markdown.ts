@@ -481,6 +481,101 @@ function parseOneStep(title: string, body: string, index: number): Step {
   };
 }
 
+/**
+ * A parsed case back out as grammar-valid Markdown — the inverse of
+ * `parseCaseDocument`.
+ *
+ * This exists for the builder in the viewer, where someone assembles a case
+ * from form fields and needs a real `.md` file at the end of it. It lives
+ * here, beside the parser and under the same doc comment that specifies the
+ * grammar, because a serializer that drifts from its parser produces files
+ * that look right and do not load.
+ *
+ * The property that must hold, and the one worth testing:
+ * `parseCaseDocument(renderCaseMarkdown(doc))` returns `doc` again, for
+ * everything the grammar can express. Fields the grammar has nowhere to put
+ * — `version`, `createdAt`, which are derived from the filename and mtime —
+ * are the deliberate exceptions.
+ */
+export function renderCaseMarkdown(doc: TestCaseVersion): string {
+  const out: string[] = [];
+
+  out.push(`# ${doc.title.trim() || "Untitled case"}`);
+  out.push(`@version ${doc.formatVersion || CURRENT_FORMAT_VERSION}`);
+  if (doc.author.trim()) out.push(`@author ${doc.author.trim()}`);
+  if (doc.project.trim()) out.push(`@project ${doc.project.trim()}`);
+  if (doc.tags.length > 0) out.push(`Tags: ${doc.tags.join(", ")}`);
+  if (doc.changeNote.trim()) out.push(`Change note: ${doc.changeNote.trim()}`);
+
+  if (doc.description.trim()) {
+    out.push("");
+    out.push(doc.description.trim());
+  }
+
+  if (doc.variables.length > 0) {
+    out.push("");
+    out.push("# Variables");
+    for (const variable of doc.variables) {
+      out.push("");
+      out.push(`## ${variable.name.trim()}`);
+      if (variable.description.trim()) out.push(variable.description.trim());
+      if (variable.defaultValue?.trim()) out.push(`Default: ${variable.defaultValue.trim()}`);
+      if (variable.generator) {
+        out.push(
+          `Generator: ${variable.generator}${
+            variable.generatorArg?.trim() ? ` ${variable.generatorArg.trim()}` : ""
+          }`,
+        );
+      }
+    }
+  }
+
+  for (const [heading, items] of [
+    ["Dependencies", doc.dependencies],
+    ["Prerequisites", doc.prerequisites],
+  ] as const) {
+    if (items.length === 0) continue;
+    out.push("");
+    out.push(`# ${heading}`);
+    for (const item of items) out.push(`- ${item.trim()}`);
+  }
+
+  out.push("");
+  out.push("# Steps");
+
+  for (const step of doc.steps) {
+    out.push("");
+    out.push(`## ${step.title.trim() || "Untitled step"}`);
+    // `Where:`/`Selector:`/`Kind:` are a header block in any order; this
+    // order is the one the grammar's own examples use.
+    if (step.where?.trim()) out.push(`Where: ${step.where.trim()}`);
+    for (const selector of step.selectors) {
+      if (selector.trim()) out.push(`Selector: ${selector.trim()}`);
+    }
+    if (step.quick) out.push("Kind: quick");
+    if (step.instructions?.trim()) out.push(step.instructions.trim());
+    if (step.script !== undefined) {
+      // A fenced block in place of instructions is what makes a step
+      // automated — see `parseOneStep`.
+      out.push("```js");
+      out.push(step.script.replace(/\n$/, ""));
+      out.push("```");
+    }
+    if (step.expected?.trim()) {
+      out.push("");
+      out.push("### Expected");
+      out.push(step.expected.trim());
+    }
+    if (step.note?.trim()) {
+      out.push("");
+      out.push("### Note");
+      out.push(step.note.trim());
+    }
+  }
+
+  return out.join("\n") + "\n";
+}
+
 /** Starter text for a brand new test case, shown in an empty editor. */
 export function starterCaseTemplate(): string {
   return `# New test case

@@ -24,6 +24,13 @@
   border-bottom: 1px solid var(--line);
 }
 
+/* `display` from a class beats the UA's `[hidden] { display: none }`, so
+   setting `.hidden` on this element does nothing without saying so here. It
+   is why the landing page carried an empty sticky strip. */
+.toolbar-bar[hidden] {
+  display: none;
+}
+
 .toolbar-bar .spacer {
   flex: 1;
 }
@@ -160,4 +167,164 @@ body.dropping::after {
 
 .landing .fine a {
   color: var(--muted);
+}
+
+/* ---------------------------------------------------------------------------
+   The builder. Deliberately plainer than the case page it produces: this is a
+   form, and the thing being designed here is the file coming out of it.
+   --------------------------------------------------------------------------- */
+
+.builder {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding-bottom: 48px;
+}
+
+.builder-head h1 {
+  font-size: 1.5rem;
+  margin: 0 0 8px;
+  letter-spacing: -0.01em;
+}
+
+.bsection {
+  margin-top: 28px;
+}
+
+.bsection > h2 {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+
+.bfield {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.blabel {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+
+.bfield input,
+.bfield textarea,
+.bfield select {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.bfield textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.bfield input:focus,
+.bfield textarea:focus,
+.bfield select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.bhint {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--faint);
+  margin-top: 3px;
+}
+
+.bcard {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: var(--card);
+}
+
+.bcard-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.bcard-title {
+  flex: 1;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.bcheck {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+button.bghost {
+  font: inherit;
+  font-size: 0.78rem;
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--muted);
+  border-radius: 7px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+button.bghost:hover:not(:disabled) {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+button.bghost:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+button.bprimary {
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  border-radius: 7px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.builder-preview {
+  max-height: 20rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
+.builder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
 }

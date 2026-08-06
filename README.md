@@ -72,6 +72,10 @@ no database, no account.
   case in a browser — steps to tick off, values to copy, variables to fill in
   — with no install and no account. The case rides inside the link, so there
   is still nothing uploaded anywhere.
+- **[The builder](https://enloop-me.github.io/enloop/)** writes one without an
+  agent: a form in the viewer that emits the same grammar, for when you want to
+  write down what you just did by hand. It also opens any case you are viewing,
+  so the viewer edits as well as reads.
 - **[The skills](docs/skills.md)** close the loop: **setup** prepares an app
   repo once, **write** writes a case for a real feature or ticket from inside
   the repo being tested, and **check** triages the finished run back in that

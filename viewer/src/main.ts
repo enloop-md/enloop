@@ -25,6 +25,7 @@ import {
   VIEWER_CASE_PARAM,
   type TestCaseVersion,
 } from "@tcm/shared";
+import { renderBuilder } from "./builder.js";
 import "./viewer.css";
 
 const styles = document.createElement("style");
@@ -174,6 +175,10 @@ function renderToolbar(doc: TestCaseVersion, markdown: string): void {
   );
 
   toolbar.appendChild(
+    button("✎ Edit", "Open this case in the builder", () => showBuilder(markdown)),
+  );
+
+  toolbar.appendChild(
     button("Open another", "Paste a different case", () => {
       showLanding(markdown);
       history.replaceState(null, "", baseUrl());
@@ -197,6 +202,23 @@ function show(markdown: string, opts: { updateUrl?: boolean } = {}): void {
   renderToolbar(doc, markdown);
   document.title = `${doc.title} — Enloop`;
   if (opts.updateUrl !== false) history.replaceState(null, "", linkFor(markdown));
+  window.scrollTo(0, 0);
+}
+
+/** The builder, in place of everything else. `initial` pre-fills it from an
+ * existing case, which is what the toolbar's Edit passes. */
+function showBuilder(initial?: string): void {
+  toolbar.hidden = true;
+  landing.hidden = true;
+  document.title = initial ? "Editing a case — Enloop" : "Build a case — Enloop";
+  renderBuilder(
+    caseRoot,
+    {
+      onPreview: (markdown) => open(markdown),
+      onClose: () => (source ? show(source) : showLanding()),
+    },
+    initial,
+  );
   window.scrollTo(0, 0);
 }
 
@@ -228,6 +250,8 @@ document.querySelector("#show-case")?.addEventListener("click", () => {
 });
 
 document.querySelector("#load-example")?.addEventListener("click", () => open(exampleCaseSource()));
+
+document.querySelector("#build-case")?.addEventListener("click", () => showBuilder());
 
 // Ctrl/⌘+Enter from the box, which is what anyone who has used a comment
 // field expects.
