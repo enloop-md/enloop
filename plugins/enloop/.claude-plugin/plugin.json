@@ -1,8 +1,8 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "enloop",
-  "version": "0.5.0",
-  "description": "Set up an app repo for test authoring, write manual test cases from inside it, triage the runs that come back, and add the test selectors that make them fast to execute — routes, labels and selectors derived from source, never invented.",
+  "version": "0.6.0",
+  "description": "Set up an app repo for test authoring, write manual test cases from inside it, triage the runs that come back, and add the test selectors that make them fast to execute \u2014 routes, labels and selectors derived from source, never invented.",
   "homepage": "https://enloop.me",
   "author": {
     "name": "Sergey Ryabenko",

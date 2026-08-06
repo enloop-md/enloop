@@ -46,13 +46,20 @@ Three paths. Never hardcode any of them.
   (`git rev-parse --show-toplevel`). Source of
   every route, label and selector.
 - **Enloop repo** — `$ENLOOP_HOME`. Source of the grammar.
-- **Data folder** — the directory the user connected in the extension.
-  Resolve it by following `references/data-folder.md` (at the plugin root,
-  one level above this skill's folder — if it is not there, search the plugin
-  directory for `data-folder.md`),
-  which you must read now. Do not guess which directory level it names;
-  guessing is how a finished case ends up somewhere the extension cannot
-  see it.
+- **Data folder** — where this repo's cases live. Resolve it by following
+  `references/data-folder.md` (at the plugin root, one level above this
+  skill's folder — if it is not there, search the plugin directory for
+  `data-folder.md`), which you must read now. It answers two questions in
+  order: *which folder this repo writes to*, and *which level of it the path
+  names*. Both are silent when wrong — a case in the wrong folder is a case
+  in another project's Library, and a case at the wrong level is in nobody's.
+
+  One agent config serves every repo you work in, so a data folder set once
+  at user level is right for one project and wrong for the rest. **When the
+  repo and the environment disagree, or nothing answers, ask** — naming the
+  candidates and what each already holds. If the user names a folder in the
+  request, that wins outright, which is how a case goes somewhere other than
+  the usual place without reconfiguring anything.
 
 ```bash
 echo "ENLOOP_HOME=${ENLOOP_HOME:-unset}"

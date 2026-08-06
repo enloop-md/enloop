@@ -29,11 +29,80 @@ The trap: a data folder is often itself *named* `test-cases`, which yields
 a correct-but-confusing `.../test-cases/test-cases/<caseId>/`. That
 doubled segment is right. Do not "fix" it.
 
-## Resolve it by detection, not by assumption
+## Which folder, before which level
 
-`ENLOOP_DATA_DIR` is the variable. `ENLOOP_CASES_DIR` is its former name
-and is still honoured. Never assume which level a user pointed either at —
-detect it:
+There are two questions here and they are easy to run together. **Which
+folder** does this repo's cases belong in, and **which level** of it did the
+path name. Get the first wrong and the case lands, intact and correct, in
+another project's Library.
+
+That first question got harder the moment the extension learned to connect
+several folders at once. A single agent config serves every repo you work
+in, so a `ENLOOP_DATA_DIR` set once at user level names one folder and is
+wrong for every project that does not share it. Meanwhile both shapes are
+legitimate: a folder per project, committed inside the repo it tests, and one
+external folder shared by several projects.
+
+So resolve **per repo**, in this order, and stop at the first that answers:
+
+1. **What the user said in this request.** "write it to ~/qa/acme" settles
+   it. So does "ask me where" — see *Asking well* below.
+2. **`$ENLOOP_DATA_DIR`**, when it is set *and* nothing in this repo
+   contradicts it (branch 3). An explicit variable is an explicit answer.
+   `ENLOOP_CASES_DIR` is its former name and is still honoured.
+3. **A data folder inside this repo.** Check `enloop/`, `test-cases/` and
+   `.enloop/` at the repo root for the layout signature below. This is the
+   shape to prefer when it exists: cases are committed with the code they
+   test, they arrive with a clone, and nothing has to be configured per
+   machine.
+4. **Ask.** Do not fall back to a default that happens to exist.
+
+```bash
+root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+for d in "$root/enloop" "$root/test-cases" "$root/.enloop"; do
+  [ -d "$d/test-cases" ] || [ -d "$d/runs" ] && echo "IN_REPO=$d"
+done
+echo "ENV=${ENLOOP_DATA_DIR:-${ENLOOP_CASES_DIR:-unset}}"
+```
+
+If step 3 finds an in-repo folder **and** the environment names a different
+one, that is a genuine conflict rather than an error: the user may have a
+per-project folder and a shared one and mean either. Say what you found and
+ask which, naming both paths. Never silently prefer one.
+
+## Asking well
+
+When you ask, ask once and make the answer cheap:
+
+- **Offer the candidates you found**, each with its absolute path and how
+  many cases it already holds (`ls <path>/test-cases | wc -l`) — a folder
+  with 40 cases in it is recognisable in a way a path is not.
+- **Offer to create an in-repo folder** when the repo has none:
+  `<repo>/enloop/`, which the extension can connect as a storage of its own
+  and which keeps cases with the code. Say that the extension writes a
+  `.gitignore` there so runs stay local.
+- **Offer to remember the answer**, so this is asked once per repo and not
+  once per case:
+  - *Claude Code* — `.claude/settings.local.json` in this repo, which is
+    machine-local and git-ignored, so a per-project path never lands in a
+    teammate's checkout:
+    ```json
+    { "env": { "ENLOOP_DATA_DIR": "/abs/path/to/the/folder" } }
+    ```
+  - *Codex* — there is no per-repo settings file. Offer a `.envrc` line if
+    the repo uses direnv, otherwise show the `export` line for them to put
+    wherever they keep per-project environment. Do not write to a shell
+    profile uninvited.
+- **A per-case override is always available.** Someone who keeps one folder
+  per project but wants *this* case in a shared one says so in the request,
+  and step 1 honours it without disturbing what is recorded.
+
+State the folder you resolved and how you got there, in one line, before you
+write anything. It is the cheapest possible correction point.
+
+## Then resolve the level, by detection
+
+Once you have a folder, never assume which level the path names — detect it:
 
 ```bash
 d="${ENLOOP_DATA_DIR:-${ENLOOP_CASES_DIR:-$ENLOOP_HOME/private/test-cases}}"
@@ -74,12 +143,10 @@ Read the result:
   layout inside an unrelated directory; that is how a source repo acquires
   a stray `test-cases/`.
 
-If neither variable is set and the default does not exist, ask for the
-path and tell the user to set it once:
-
-```json
-{ "env": { "ENLOOP_DATA_DIR": "/path/to/the/folder/you/connected" } }
-```
+If nothing resolved, you are at step 4 above: ask, using *Asking well*.
+Never write into `$ENLOOP_HOME/private/test-cases` as a silent fallback —
+that is this repo's own scratch folder, and a case that lands there is a
+case in nobody's Library.
 
 ## Verify after writing — always
 

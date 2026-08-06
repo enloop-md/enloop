@@ -178,6 +178,23 @@ The skills resolve three values from the environment. Where they are written
 depends on the agent, so ask which one the user runs rather than assuming —
 and offer only that one.
 
+**Settle the data folder for *this* repo first.** One agent config serves
+every repo the user works in, so a folder recorded at user level is right for
+one project and wrong for the rest — and the extension now connects several
+at once, so both shapes are legitimate. Offer the two, with the trade named:
+
+- **A folder inside this repo** — `<repo>/enloop/`. Cases are committed with
+  the code they test and arrive with a clone; the extension writes a
+  `.gitignore` there so run history stays local. Offer to create it.
+- **An external folder**, shared with other projects — one Library across
+  several products, at the cost of a machine-specific path that has to be
+  recorded per repo.
+
+Whichever they pick, record it **per repo and machine-locally**, never in a
+committed file: `.claude/settings.local.json` under Claude Code, a `.envrc`
+line or their own per-project environment under Codex. A path that lands in
+a teammate's checkout is wrong on their machine by definition.
+
 **Claude Code** — `<repo root>/.claude/settings.json`:
 
 ```json
@@ -206,12 +223,14 @@ paste, unless they ask you to do it.
 
 - `ENLOOP_HOME` — the Enloop repo, where the case grammar lives. Without
   it, the write skill asks every time.
-- `ENLOOP_DATA_DIR` — the folder connected in the extension. This is the
-  one users most often point one level too deep; read
-  `references/data-folder.md` at the plugin root, one level above this skill's
-  own directory,
-  and run its detection before recording anything, so you write a value that
-  resolves cleanly rather than one the next skill has to correct.
+- `ENLOOP_DATA_DIR` — the folder *this repo* writes to, chosen above. It is
+  the one users most often point one level too deep; read
+  `references/data-folder.md` at the plugin root, one level above this
+  skill's own directory, and run its detection before recording anything, so
+  you write a value that resolves cleanly rather than one the next skill has
+  to correct. Leave it unset when the repo has its own `enloop/` folder —
+  the write skill finds that without configuration, and an unset variable
+  cannot go stale.
 - `ENLOOP_PROJECT` — belt and braces with the agent-instructions line, and
   the value the write skill checks first.
 
