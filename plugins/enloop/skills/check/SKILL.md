@@ -23,11 +23,14 @@ nothing at all (meaning the most recent finished run).
 
 Two roots. Never hardcode either.
 
-- **App repo** — where you are now: `${CLAUDE_PROJECT_DIR}`. The place a
+- **App repo** — where you are now: the repo root
+  (`git rev-parse --show-toplevel`). The place a
   bug gets confirmed and fixed.
 - **Data folder** — the directory the user connected in the extension,
   where runs are stored. Resolve it by following
-  `${CLAUDE_SKILL_DIR}/../../references/data-folder.md`, which you must
+  `references/data-folder.md` (at the plugin root, one level above this
+  skill's folder — if it is not there, search the plugin directory for
+  `data-folder.md`), which you must
   read now. Pointing one level off here does not produce an error; it
   produces "no runs found" for a case that ran fine.
 
@@ -167,7 +170,7 @@ a legitimate fix in the new version.
 
 Note steps that carry no `Selector:` at all, too. Those run without
 Highlight, which is the feature that makes a case fast to execute. If
-there are several, offer `/enloop:instrument` to add the handles, then a
+there are several, offer the **instrument** skill to add the handles, then a
 new case version to use them.
 
 While you are here, check the case's header: `@project` present and
@@ -188,7 +191,8 @@ $DATA_DIR/test-cases/<testCaseId>/versions/v<n+1>.md
 Read the current highest `v<n>.md`, apply the fix, and add a
 `Change note:` line under the title saying what changed and which run
 prompted it. Before writing, read
-`${CLAUDE_SKILL_DIR}/../write/references/step-contract.md` and check the
+`write/references/step-contract.md` (the write skill's folder, beside this
+one) and check the
 edited steps against its reject list — a fix that reintroduces a contract
 violation is not a fix. The `@version` line stays as it is unless the
 grammar itself changed.

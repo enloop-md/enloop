@@ -1,0 +1,11 @@
+# Codex-specific metadata for this skill. The portable half — name,
+# description, instructions, references/ — lives in SKILL.md and is read by
+# Codex and Claude Code alike; only what follows is Codex's own.
+interface:
+  display_name: "Enloop: set up a repo"
+  short_description: One-time preparation of an app repo for test authoring.
+policy:
+  # The counterpart of SKILL.md's `disable-model-invocation: true`, which
+  # Codex does not read. Setup edits the repo's agent-instructions file and
+  # is run deliberately, once — never as a guess at what someone meant.
+  allow_implicit_invocation: false

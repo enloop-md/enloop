@@ -1,0 +1,8 @@
+interface:
+  display_name: "Enloop: write a test case"
+  short_description: Write a manual test case for a feature, ticket or branch in this repo.
+policy:
+  # Mirrors `disable-model-invocation: true` in SKILL.md. Authoring a case
+  # writes files into a data folder outside this repo; asking for it is the
+  # only reasonable trigger.
+  allow_implicit_invocation: false
