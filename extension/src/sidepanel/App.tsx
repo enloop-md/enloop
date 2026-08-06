@@ -24,7 +24,7 @@ export default function App() {
 }
 
 function Shell() {
-  const { connection } = useDataStore();
+  const { state, store } = useDataStore();
   // Null while the stored stack is being read. The panel is destroyed every
   // time it closes, so this is what keeps a click into the page from
   // throwing away the run the tester was in the middle of.
@@ -38,7 +38,10 @@ function Shell() {
     if (stack) void saveNavStack(stack);
   }, [stack]);
 
-  if (connection.status !== "connected") {
+  // The Connect screen is now only for having nothing mounted: no storages at
+  // all, or every one of them waiting on a permission Chrome dropped. With one
+  // storage granted the Library renders and handles the rest with banners.
+  if (state.status !== "ready" || !store) {
     return <ConnectScreen />;
   }
 

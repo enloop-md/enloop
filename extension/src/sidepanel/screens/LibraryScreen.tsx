@@ -8,7 +8,8 @@ import {
 } from "@tcm/shared";
 import { ErrorNotice } from "../../components/ErrorNotice.js";
 import { Header } from "../../components/Header.js";
-import { useReadyStore } from "../store/DataStoreProvider.js";
+import { useReadyStore, useWorkspace } from "../store/DataStoreProvider.js";
+import { splitId } from "@tcm/shared";
 import { relativeTime } from "../../lib/time.js";
 
 const DOCS_URL = "https://github.com/enloop-me/enloop#readme";
@@ -92,6 +93,14 @@ function CaseRow({
   indented?: boolean;
   onOpen: () => void;
 }) {
+  // Which folder this came from. Only shown when more than one is connected —
+  // with a single storage it is a label that says the same thing on every row.
+  const { storages } = useWorkspace();
+  const storageLabel =
+    storages.length > 1
+      ? storages.find((s) => s.id === splitId(testCase.id).storageId)?.label
+      : undefined;
+
   return (
     <button
       onClick={onOpen}
@@ -110,6 +119,11 @@ function CaseRow({
       <div className="flex items-center gap-2 text-xs text-slate-400">
         <span>v{testCase.currentVersion}</span>
         <span className="whitespace-nowrap">{relativeTime(testCase.updatedAt)}</span>
+        {storageLabel && (
+          <span className="max-w-[8rem] shrink-0 truncate rounded bg-sky-50 px-1.5 py-0.5 text-[10px] text-sky-700">
+            {storageLabel}
+          </span>
+        )}
         {testCase.tags.length > 0 && <span className="truncate">{testCase.tags.join(", ")}</span>}
       </div>
     </button>
@@ -249,6 +263,10 @@ export function LibraryScreen({
   onOpenFreeRun: (freeRunId: string) => void;
 }) {
   const store = useReadyStore();
+  const { storages, degraded, reconnect } = useWorkspace();
+  // "Switching" storage is filtering, not disconnecting: everything stays
+  // mounted, so a run in one folder survives reading a case in another.
+  const [storageFilter, setStorageFilter] = useState<string>("all");
   const [cases, setCases] = useState<TestCaseSummary[] | null>(null);
   const [suites, setSuites] = useState<SuiteSummary[] | null>(null);
   const [unfinished, setUnfinished] = useState<Unfinished | null>(null);
@@ -319,10 +337,13 @@ export function LibraryScreen({
     const q = query.trim().toLowerCase();
     const archivedOk = (archived: boolean) => showArchived || !archived;
 
+    const inFilter = (id: string) =>
+      storageFilter === "all" || splitId(id).storageId === storageFilter;
+
     const casesBySuite = new Map<string, TestCaseSummary[]>();
     const ungrouped: TestCaseSummary[] = [];
     for (const c of cases) {
-      if (!archivedOk(c.archived)) continue;
+      if (!archivedOk(c.archived) || !inFilter(c.id)) continue;
       if (c.suiteId) {
         const list = casesBySuite.get(c.suiteId) ?? [];
         list.push(c);
@@ -333,7 +354,7 @@ export function LibraryScreen({
     }
 
     const suiteGroups = suites
-      .filter((s) => archivedOk(s.archived))
+      .filter((s) => archivedOk(s.archived) && inFilter(s.id))
       .map((s) => {
         const suiteMatches = matchesQuery(q, s.title, s.tags, s.project);
         const allCases = casesBySuite.get(s.id) ?? [];
@@ -390,7 +411,7 @@ export function LibraryScreen({
     // One bucket labels nothing — a folder holding a single project, or one
     // holding none, would gain a header that every row is already under.
     return { projects, showProjectHeaders: projects.length > 1 };
-  }, [cases, suites, query, showArchived]);
+  }, [cases, suites, query, showArchived, storageFilter]);
 
   // "Nothing here yet" and "nothing matches that search" are different
   // situations with different answers, and the onboarding one must not fire
@@ -413,12 +434,61 @@ export function LibraryScreen({
         }
       />
       <div className="space-y-2 border-b border-slate-200 p-3">
+        {/* One banner per folder that cannot be read. A storage that lapsed or
+            vanished costs its own rows and nothing else — the rest of the
+            Library is still here, which is the whole point of degrading
+            instead of failing. */}
+        {storages
+          .filter((s) => s.permission !== "granted")
+          .map((s) => (
+            <div
+              key={s.id}
+              className="flex items-center gap-2 rounded border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-800"
+            >
+              <span className="flex-1 truncate">
+                <span className="font-medium">{s.label}</span>{" "}
+                {s.permission === "missing" ? "could not be found" : "needs permission again"}
+              </span>
+              <button
+                onClick={() => void reconnect(s.id)}
+                className="shrink-0 rounded bg-amber-600 px-2 py-0.5 font-medium text-white hover:bg-amber-500"
+              >
+                Reconnect
+              </button>
+            </div>
+          ))}
+        {degraded.map((d) => {
+          const label = storages.find((s) => s.id === d.storageId)?.label ?? d.storageId;
+          return (
+            <p
+              key={d.storageId}
+              className="rounded border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs text-red-700"
+            >
+              <span className="font-medium">{label}</span> could not be read: {d.message}
+            </p>
+          );
+        })}
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search title, project or tag…"
           className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
         />
+        {/* A picker over one storage is a decision about nothing. */}
+        {storages.length > 1 && (
+          <select
+            value={storageFilter}
+            onChange={(e) => setStorageFilter(e.target.value)}
+            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm text-slate-700"
+          >
+            <option value="all">All storages ({storages.length})</option>
+            {storages.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        )}
         <div className="flex items-center justify-between">
           <label className="flex items-center gap-1.5 text-xs text-slate-500">
             <input
