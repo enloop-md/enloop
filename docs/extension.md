@@ -177,3 +177,20 @@ viewer also offers a box to paste one into, which is the way in for a case too
 long to fit in a link.
 
 ---
+
+### Building a case without an agent
+
+The viewer also writes cases. **Build one** on its landing page opens a form —
+title, description, values, prerequisites, and a card per step with
+instructions, expected result, `Where:`, selectors and an optional script —
+with the generated case file shown live underneath as you type. Download it as
+`.md` into your connected folder, copy the Markdown, or open it as a case
+straight away.
+
+**✎ Edit** in the toolbar loads whatever case you are viewing back into that
+form, so a case someone sent you as a link can be corrected and re-shared
+without an editor or an agent.
+
+It serializes through `renderCaseMarkdown` in `shared/`, the inverse of the
+parser and its neighbour in the same file — a builder that drifted from the
+grammar would emit files that look right and do not load.
