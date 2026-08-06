@@ -26,13 +26,15 @@ Two roots. Never hardcode either.
 - **App repo** — where you are now: the repo root
   (`git rev-parse --show-toplevel`). The place a
   bug gets confirmed and fixed.
-- **Data folder** — the directory the user connected in the extension,
-  where runs are stored. Resolve it by following
-  `references/data-folder.md` (at the plugin root, one level above this
-  skill's folder — if it is not there, search the plugin directory for
-  `data-folder.md`), which you must
-  read now. Pointing one level off here does not produce an error; it
-  produces "no runs found" for a case that ran fine.
+- **Data folder** — where this repo's cases and runs live. Resolve it by
+  following `references/data-folder.md` (at the plugin root, one level above
+  this skill's folder — if it is not there, search the plugin directory for
+  `data-folder.md`), which you must read now. Resolve it the same way the
+  write skill did, per repo: with several folders connected, the run you are
+  looking for is in the one this repo writes to, and a user-level default
+  may name a different one. Pointing at the wrong folder — or the wrong
+  level of the right one — does not error; it reports "no runs found" for a
+  case that ran fine.
 
 ```bash
 echo "ENLOOP_HOME=${ENLOOP_HOME:-unset}"

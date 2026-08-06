@@ -31,10 +31,34 @@ pages above for where that is.
 
 - **`ENLOOP_HOME`** — this repo, where the case grammar lives. Without it the
   write skill asks every time.
-- **`ENLOOP_DATA_DIR`** — the folder you picked with "Connect folder…" in the
-  extension. It contains `test-cases/`, `runs/` and `free-runs/`.
+- **`ENLOOP_DATA_DIR`** — the folder *this repo* writes to. It contains
+  `test-cases/`, `runs/` and `free-runs/`. Optional, and often better left
+  unset — see below.
 - **`ENLOOP_PROJECT`** — the product name that prefixes case titles. The setup
   skill records it once so nothing has to ask again.
+
+### Which folder, when you have several
+
+One agent config serves every repo you work in, so a data folder set once at
+user level is right for one project and wrong for the rest. Since the
+extension connects several folders at once, both shapes are legitimate — a
+folder per project, and one external folder shared by several — so the skills
+resolve **per repo**, in this order:
+
+1. **What you said in the request.** "write it to ~/qa/acme" wins outright,
+   which is how one case goes somewhere other than the usual place without
+   reconfiguring anything.
+2. **`$ENLOOP_DATA_DIR`**, when nothing in the repo contradicts it.
+3. **A data folder inside the repo** — `enloop/`, `test-cases/` or `.enloop/`
+   at the root. Nothing to configure, cases are committed with the code they
+   test, and it arrives with a clone. Prefer this when it fits.
+4. **Otherwise they ask**, naming the candidates and how many cases each
+   already holds, and offer to remember the answer for this repo —
+   machine-locally, so a path never lands in a teammate's checkout.
+
+If the repo has its own folder *and* the environment names a different one,
+that is treated as a real question rather than an error: the skills say what
+they found and ask which you meant.
 
 Cases go **inside** `test-cases/`, not at the top of the data folder — a case
 written one level off doesn't error, it just never appears in the Library.
@@ -74,8 +98,8 @@ asking again.
 
 **The selector convention**, written into the app repo's agent instructions —
 `AGENTS.md`, `CLAUDE.md`, or both, whichever that repo already has. Highlight
-is only as good as the handles in the app, and the **instrument** skill backfilling
-them is work that decays the moment someone ships a screen without them. The
+is only as good as the handles in the app, and the **instrument** skill
+backfilling them is work that decays the moment someone ships a screen without them. The
 section it installs — which attribute this repo uses, how values are named,
 what to do about list rows, and which elements are unreachable from the side
 panel at all — is read into every agent session in that repo, so new UI
@@ -177,8 +201,8 @@ bug both need another pass through the extension.
 
 `Selector:` is the field that makes a case fast to execute — the extension
 scrolls the element into view and flashes it. It's also the field most often
-missing, because the **write** skill refuses to invent one: if the element has no
-stable handle in source, the step ships without a selector and the skill says
+missing, because the **write** skill refuses to invent one: if the element
+has no stable handle in source, the step ships without a selector and the skill says
 so.
 
 The **instrument** skill is the fix. From the app repo:
