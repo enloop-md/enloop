@@ -169,7 +169,7 @@ change, not a follow-up someone else discovers.
 
 ## 8. Record what you added
 
-Update `${CLAUDE_PROJECT_DIR}/.claude/test-map.md` — the app map
+Update `<repo root>/.claude/test-map.md` — the app map
 `enloop:write` builds and reads — with the new selectors, each against its
 screen and source file. Skipping this means the next case-writing session
 rediscovers them by grep. If no map exists yet, don't build one here; just
@@ -178,13 +178,13 @@ say so.
 ## 9. Offer the convention for future code
 
 A backfill decays. The durable half of this is making new UI arrive
-already instrumented, which is what `/enloop:setup` installs in the app
-repo's `CLAUDE.md`.
+already instrumented, which is what the **setup** skill installs in the app
+repo's agent instructions (`AGENTS.md` or `CLAUDE.md`).
 
 Check whether that section exists:
 
 ```bash
-rg -n '^## Enloop' CLAUDE.md
+rg -n '^## Enloop' AGENTS.md CLAUDE.md 2>/dev/null
 ```
 
 If it does, and the convention you detected in step 1 matches what it
@@ -192,7 +192,7 @@ says, there is nothing to do here — say so. If it disagrees with what the
 code actually does, that is worth raising: one of the two is wrong, and
 the code usually wins.
 
-If there is no such section, offer `/enloop:setup` rather than writing a
+If there is no such section, offer the **setup** skill rather than writing a
 convention yourself. It also records the project name, which cases need
 and this skill has no reason to know about.
 

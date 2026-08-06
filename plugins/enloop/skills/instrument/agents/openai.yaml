@@ -1,0 +1,5 @@
+interface:
+  display_name: "Enloop: add test selectors"
+  short_description: Add stable test selectors to elements so Highlight can find them.
+policy:
+  allow_implicit_invocation: false

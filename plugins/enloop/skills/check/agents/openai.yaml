@@ -1,0 +1,5 @@
+interface:
+  display_name: "Enloop: check a run"
+  short_description: Triage a finished test run — app bug, case defect, or environment.
+policy:
+  allow_implicit_invocation: false

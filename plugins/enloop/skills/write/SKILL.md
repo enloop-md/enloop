@@ -29,7 +29,7 @@ developer checking their own branch does not need the full article. In quick
 mode: cover the happy path only, skip building or refreshing the app map
 (read just the screens the path touches), keep variables to what the path
 cannot run without, and mark every step `Kind: quick`. Say in your report
-that the case is quick-only and that `/enloop:write` without the flag will
+that the case is quick-only and that a full run without the flag will
 extend it.
 
 Without the flag you write the full case — and if a quick case for this
@@ -42,11 +42,14 @@ is the outcome the tiering exists to avoid.
 
 Three paths. Never hardcode any of them.
 
-- **App repo** — where you are now: `${CLAUDE_PROJECT_DIR}`. Source of
+- **App repo** — where you are now: the repo root
+  (`git rev-parse --show-toplevel`). Source of
   every route, label and selector.
 - **Enloop repo** — `$ENLOOP_HOME`. Source of the grammar.
 - **Data folder** — the directory the user connected in the extension.
-  Resolve it by following `${CLAUDE_SKILL_DIR}/../../references/data-folder.md`,
+  Resolve it by following `references/data-folder.md` (at the plugin root,
+  one level above this skill's folder — if it is not there, search the plugin
+  directory for `data-folder.md`),
   which you must read now. Do not guess which directory level it names;
   guessing is how a finished case ends up somewhere the extension cannot
   see it.
@@ -62,7 +65,8 @@ to their settings `env` block so this is a one-time cost:
 { "env": { "ENLOOP_HOME": "/path/to/enloop" } }
 ```
 
-Verify each path exists before continuing. If `${CLAUDE_PROJECT_DIR}` and
+Verify each path exists before continuing. If the repo root
+(`git rev-parse --show-toplevel`) and
 `$ENLOOP_HOME` are the same directory, you are in the wrong repo — that means
 the user wants the `enloop-demo` skill, not this one.
 
@@ -72,10 +76,10 @@ flat list of titles with no way to tell which product each belongs to. In
 order:
 
 1. `$ENLOOP_PROJECT`, if set.
-2. An `## Enloop` section in `${CLAUDE_PROJECT_DIR}/CLAUDE.md` — what
-   `/enloop:setup` writes. Read the `Project:` line there.
+2. An `## Enloop` section in the repo's agent instructions file — what
+   the **setup** skill writes. Read the `Project:` line there.
 3. Ask the user, offering the repo directory name as the default, and tell
-   them `/enloop:setup` records it once so this question stops recurring.
+   them the **setup** skill records it once so this question stops recurring.
 
 Use it verbatim, including capitalisation. It goes in two places in the
 finished case (step 7): the `@project` line and the title prefix.
@@ -94,7 +98,8 @@ this file.
 
 ## 3. Read the step contract
 
-Read `${CLAUDE_SKILL_DIR}/references/step-contract.md` in full. It defines
+Read `references/step-contract.md`, inside this skill's own folder, in full.
+It defines
 what a step must look like and carries the reject list you will check
 against in step 8. It is the whole point of this skill.
 
@@ -119,7 +124,7 @@ wrong interpretation costs seconds rather than a whole case.
 ## 5. Build or refresh the app map
 
 The expensive part of authoring is learning the app's surface. Do it once
-and cache it at `${CLAUDE_PROJECT_DIR}/.claude/test-map.md`.
+and cache it at `<repo root>/.claude/test-map.md`.
 
 **If it exists**, read it, and spot-check two or three entries against
 source before trusting it. Note its `Generated:` date — if the diff from
@@ -171,7 +176,7 @@ If a needed element has no stable selector, do not invent one. Write the
 step without a `Selector:`, add a `### Note` saying the element lacks a
 test handle, and mention it in your final report as a suggested
 `data-testid`. Collect these — the report ends by offering
-`/enloop:instrument` to add them, which is the only way those steps ever
+the **instrument** skill to add them, which is the only way those steps ever
 gain a working Highlight.
 
 ## 7. Write the case
@@ -314,8 +319,8 @@ Tell the user:
 Do not claim the case was executed. It was parsed and linted, not run.
 
 Finish by telling them the next step: run it in the extension, then
-`/enloop:check` back here to triage what it found. If any step had to go
-without a `Selector:`, offer `/enloop:instrument` first — Highlight is
+the **check** skill, back here, to triage what it found. If any step had to go
+without a `Selector:`, offer the **instrument** skill first — Highlight is
 dead weight on those steps until the elements have handles. If you had to
-ask for the project name in step 1, offer `/enloop:setup` so the next case
+ask for the project name in step 1, offer the **setup** skill so the next case
 in this repo does not ask again.

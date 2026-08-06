@@ -1,0 +1,19 @@
+{
+  "name": "enloop",
+  "interface": {
+    "displayName": "Enloop"
+  },
+  "plugins": [
+    {
+      "name": "enloop",
+      "source": {
+        "source": "local",
+        "path": "./plugins/enloop"
+      },
+      "policy": {
+        "installation": "AVAILABLE"
+      },
+      "category": "Testing"
+    }
+  ]
+}
