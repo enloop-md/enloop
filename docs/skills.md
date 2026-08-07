@@ -14,7 +14,8 @@ To install and invoke them:
 | Skill | Run it from | Writes | Claude Code | Codex |
 | --- | --- | --- | --- | --- |
 | setup | the app repo, once | project name + selector convention into the repo's agent instructions | `/enloop:setup` | `$setup` |
-| write | the app repo | a case into your data folder | `/enloop:write` | `$write` |
+| quick | the app repo | a happy-path case into your data folder | `/enloop:quick` | `$quick` |
+| full | the app repo | the complete case, extending a quick one in place | `/enloop:full` | `$full` |
 | check | the app repo | fixes, and a verdict per failure | `/enloop:check` | `$check` |
 | instrument | the app repo | `data-testid` attributes | `/enloop:instrument` | `$instrument` |
 
@@ -93,7 +94,7 @@ It settles two things that every later case depends on.
 **The project name.** One connected folder normally holds cases from every
 repo you write from, so a case needs to say which app it belongs to.
 The **setup** skill agrees a name with you and records it, after which
-**write** titles cases `<Project>: ...` and sets `@project` without
+the authoring skills title cases `<Project>: ...` and set `@project` without
 asking again.
 
 **The selector convention**, written into the app repo's agent instructions —
@@ -116,11 +117,22 @@ above — done once, with the data folder detection already applied.
 
 ## Writing a case
 
+Two skills, one procedure. **quick** covers the happy path and skips the
+expensive app-map step — the two-minute case a developer wants before pushing
+a branch. **full** is the complete article: edge cases, error states and
+cleanup, and it *extends an existing quick case in place* rather than starting
+a second one, so a feature never ends up with two competing cases.
+
+Both derive every route, label and selector from source and validate with the
+real parser before writing. Quick means smaller, not looser.
+
 From inside the repo of the app you're testing:
 
 ```
-/enloop:write PROJ-1234   # Claude Code
-$write PROJ-1234          # Codex
+/enloop:quick PROJ-1234   # Claude Code — the two-minute version
+/enloop:full PROJ-1234    # Claude Code — the whole article
+$quick PROJ-1234          # Codex
+$full PROJ-1234           # Codex
 ```
 
 The argument is the scope — a ticket id, a branch, a feature name, or a
@@ -136,7 +148,7 @@ What it does, in order:
 1. Resolves the two roots and reads the case grammar fresh from
    `$ENLOOP_HOME/shared/src/markdown.ts`. It never works from a remembered
    version of the grammar and never carries a vendored copy.
-2. Reads the [step contract](../plugins/enloop/skills/write/references/step-contract.md).
+2. Reads the [step contract](../plugins/enloop/references/step-contract.md).
 3. Works out the scope from the diff and states it back to you in one line, so
    a wrong reading costs seconds instead of a whole case.
 4. Builds or refreshes an **app map** at `.claude/test-map.md` in the app repo
@@ -201,7 +213,7 @@ bug both need another pass through the extension.
 
 `Selector:` is the field that makes a case fast to execute — the extension
 scrolls the element into view and flashes it. It's also the field most often
-missing, because the **write** skill refuses to invent one: if the element
+missing, because the authoring skills refuse to invent one: if the element
 has no stable handle in source, the step ships without a selector and the skill says
 so.
 

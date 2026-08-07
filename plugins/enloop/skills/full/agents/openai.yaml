@@ -1,0 +1,5 @@
+interface:
+  display_name: "Enloop: full test case"
+  short_description: Write a complete case — edges, error states and cleanup.
+policy:
+  allow_implicit_invocation: false

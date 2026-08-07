@@ -1,6 +1,6 @@
 ---
 name: check
-description: Triage a finished Enloop test run from inside the app repo being tested. Reads the run's feedback.md/report.md, then decides for each failure, warning and tester note whether it is an app bug (with the file and line), a defect in the test case itself, or an environment/data problem — and fixes what it owns. Use after a run has been executed in the extension and the user asks to check/review/triage the run, the results, or the feedback — e.g. "check the last run", "what did the run find", "triage run failures". Not for authoring a case; that is the enloop:write skill.
+description: Triage a finished Enloop test run from inside the app repo being tested. Reads the run's feedback.md/report.md, then decides for each failure, warning and tester note whether it is an app bug (with the file and line), a defect in the test case itself, or an environment/data problem — and fixes what it owns. Use after a run has been executed in the extension and the user asks to check/review/triage the run, the results, or the feedback — e.g. "check the last run", "what did the run find", "triage run failures". Not for authoring a case; those are the enloop:quick and enloop:full skills.
 disable-model-invocation: true
 allowed-tools: Read Grep Glob Write Edit Bash(git diff *) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(rg *) Bash(ls *) Bash(cat *) Bash(node *) Bash(npx tsc *) Bash(openssl rand *)
 ---
@@ -30,7 +30,7 @@ Two roots. Never hardcode either.
   following `references/data-folder.md` (at the plugin root, one level above
   this skill's folder — if it is not there, search the plugin directory for
   `data-folder.md`), which you must read now. Resolve it the same way the
-  write skill did, per repo: with several folders connected, the run you are
+  quick and full skills do, per repo: with several folders connected, the run you are
   looking for is in the one this repo writes to, and a user-level default
   may name a different one. Pointing at the wrong folder — or the wrong
   level of the right one — does not error; it reports "no runs found" for a
@@ -193,8 +193,7 @@ $DATA_DIR/test-cases/<testCaseId>/versions/v<n+1>.md
 Read the current highest `v<n>.md`, apply the fix, and add a
 `Change note:` line under the title saying what changed and which run
 prompted it. Before writing, read
-`write/references/step-contract.md` (the write skill's folder, beside this
-one) and check the
+`../../references/step-contract.md` (the plugin's references folder) and check the
 edited steps against its reject list — a fix that reintroduces a contract
 violation is not a fix. The `@version` line stays as it is unless the
 grammar itself changed.

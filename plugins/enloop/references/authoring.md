@@ -1,42 +1,30 @@
----
-name: write
-description: Write a manual test case for Enloop covering a feature, ticket, or branch in the app repo you are currently in. Every route, UI label and selector is derived from that repo's source rather than recalled, and the finished case is parsed with the real grammar parser before it is written. Use when the user asks to write/author/generate a test case, QA checklist, or manual verification plan for a ticket or branch — e.g. "write a test case for PROJ-1234", "make a QA case for this branch". Not for demo/example cases exercising the grammar itself; that is the enloop-demo skill, which only runs inside the Enloop repo.
-disable-model-invocation: true
-allowed-tools: Read Grep Glob Write Edit Bash(git diff *) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(rg *) Bash(node *) Bash(npx tsc *) Bash(mkdir -p *) Bash(openssl rand *)
----
+# Authoring a test case
 
-# Write a test case
+<!-- Shared by the quick and full skills. One procedure, two tiers: the skill
+     that sent you here has already told you which one you are writing, and
+     that is the only thing that differs. Both must resolve the folder, derive
+     every specific from source, and validate with the real parser. -->
 
-Produces one real test case, written into Enloop's cases folder, that a
-tester can execute without stopping to think. Two failure modes this skill
-exists to prevent:
+This is the procedure. **The tier — quick or full — comes from the skill that
+sent you here**, and it changes three things and nothing else:
 
-1. **Invented specifics.** A route, button label, or selector recalled
-   from conversation rather than read from the app's source. These look
+| | quick | full |
+| --- | --- | --- |
+| Coverage | the happy path only | edge cases, error states, cleanup |
+| App map (§5) | read only the screens the path touches; do not build or refresh the cached map | build or refresh it |
+| `Kind: quick` | on every step | on the core path only |
+
+Everything below applies to both. Two failure modes the procedure exists to
+prevent, whichever tier you are in:
+
+1. **Invented specifics.** A route, button label, or selector recalled from
+   conversation rather than read from the app's source. These look
    authoritative and waste the tester's time when wrong.
 2. **Prose that offloads thinking onto the tester.** Multi-action steps,
    rationale mixed into pass criteria, test data discovered mid-run.
 
 The deliverable is a case that parses with the real parser and passes the
 step contract's reject list. A case that merely reads well is not done.
-
-$ARGUMENTS is the scope: a ticket id, a branch, a feature name, or a
-free-text description. If it is empty, ask what to cover before doing
-anything else.
-
-**`--quick` writes a smaller case.** Authoring is the expensive part, and a
-developer checking their own branch does not need the full article. In quick
-mode: cover the happy path only, skip building or refreshing the app map
-(read just the screens the path touches), keep variables to what the path
-cannot run without, and mark every step `Kind: quick`. Say in your report
-that the case is quick-only and that a full run without the flag will
-extend it.
-
-Without the flag you write the full case — and if a quick case for this
-scope already exists, **extend it** with a new version rather than starting
-a second case: keep its steps and their `Kind: quick` marks, and add the
-edge cases, error states and cleanup around them. Two cases for one feature
-is the outcome the tiering exists to avoid.
 
 ## 1. Resolve where things live
 
@@ -47,12 +35,11 @@ Three paths. Never hardcode any of them.
   every route, label and selector.
 - **Enloop repo** — `$ENLOOP_HOME`. Source of the grammar.
 - **Data folder** — where this repo's cases live. Resolve it by following
-  `references/data-folder.md` (at the plugin root, one level above this
-  skill's folder — if it is not there, search the plugin directory for
-  `data-folder.md`), which you must read now. It answers two questions in
-  order: *which folder this repo writes to*, and *which level of it the path
-  names*. Both are silent when wrong — a case in the wrong folder is a case
-  in another project's Library, and a case at the wrong level is in nobody's.
+  `data-folder.md`, beside this file, which you must read now. It answers
+  two questions in order: *which folder this repo writes to*, and *which
+  level of it the path names*. Both are silent when wrong — a case in the
+  wrong folder is a case in another project's Library, and a case at the
+  wrong level is in nobody's.
 
   One agent config serves every repo you work in, so a data folder set once
   at user level is right for one project and wrong for the rest. **When the
@@ -105,7 +92,8 @@ this file.
 
 ## 3. Read the step contract
 
-Read `references/step-contract.md`, inside this skill's own folder, in full.
+Read `step-contract.md`, beside this file in the plugin's `references/`
+folder, in full.
 It defines
 what a step must look like and carries the reject list you will check
 against in step 8. It is the whole point of this skill.
@@ -287,7 +275,7 @@ $DATA_DIR/test-cases/<id>/meta.json          {"archived": false}
 $DATA_DIR/test-cases/<id>/versions/v1.md     the validated Markdown
 ```
 
-Then run the verification at the end of `references/data-folder.md`. It is
+Then run the verification at the end of `data-folder.md`. It is
 two `ls` calls and it is the only thing standing between a misplaced file
 and a user staring at an empty Library.
 

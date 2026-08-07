@@ -224,6 +224,8 @@ What B needs:
   and a history that cannot distinguish them is misleading.
 - The case detail screen shows both counts: *"12 steps · 4 quick"*.
 - `/enloop:write` gains a mode. Quick mode is a genuinely different budget:
+  *(Superseded: the mode shipped as two skills, `/enloop:quick` and
+  `/enloop:full`, rather than a flag on one.)*
   no full app-map build, only the screens on the happy path, fewer variables,
   and it marks the steps it writes as `Kind: quick`. Acceptance mode is
   today's behaviour and additionally fills in around an existing quick case

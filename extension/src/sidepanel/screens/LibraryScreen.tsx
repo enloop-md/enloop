@@ -221,9 +221,10 @@ function FirstRun({ busy, onLoadExample }: { busy: boolean; onLoadExample: () =>
         Load an example case
       </button>
       <p className="text-xs text-slate-400">
-        For your own app, cases are written from its repo with the Claude Code skill{" "}
-        <code className="text-slate-500">/enloop:write</code>, which reads the code and derives
-        the routes and selectors.{" "}
+        For your own app, cases are written from its repo by an agent skill —{" "}
+        <code className="text-slate-500">/enloop:quick</code> for the happy path,{" "}
+        <code className="text-slate-500">/enloop:full</code> for the whole article — which
+        reads the code and derives the routes and selectors.{" "}
         <a href={DOCS_URL} target="_blank" rel="noreferrer" className="text-sky-600 hover:underline">
           Setting that up ↗
         </a>

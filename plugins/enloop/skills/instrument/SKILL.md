@@ -1,6 +1,6 @@
 ---
 name: instrument
-description: Add stable test selectors (data-testid or the repo's existing equivalent) to elements in the app repo you are currently in, so Enloop's Highlight can find them during a run. Follows the repo's existing convention rather than introducing one, touches attributes only, and verifies the attribute survives the production build. Use when the user asks to add test ids/selectors/test handles to a screen or component, or to fix elements that enloop:write or enloop:check reported as having no stable selector — e.g. "add test ids to the sync console", "instrument this form". Not for writing or triaging cases; those are enloop:write and enloop:check.
+description: Add stable test selectors (data-testid or the repo's existing equivalent) to elements in the app repo you are currently in, so Enloop's Highlight can find them during a run. Follows the repo's existing convention rather than introducing one, touches attributes only, and verifies the attribute survives the production build. Use when the user asks to add test ids/selectors/test handles to a screen or component, or to fix elements that enloop:quick, enloop:full or enloop:check reported as having no stable selector — e.g. "add test ids to the sync console", "instrument this form". Not for writing or triaging cases; those are enloop:quick, enloop:full and enloop:check.
 disable-model-invocation: true
 allowed-tools: Read Grep Glob Edit Write Bash(git diff *) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(rg *) Bash(ls *) Bash(npm run *) Bash(npx tsc *)
 ---
@@ -18,7 +18,7 @@ component is a selector sweep nobody will merge.
 
 $ARGUMENTS is the target: a screen, route, component path, feature name, a
 case id whose steps lack selectors, or nothing — meaning the elements the
-last `enloop:write` or `enloop:check` reported as missing a stable handle.
+last authoring or `enloop:check` run reported as missing a stable handle.
 
 ## What Highlight can and cannot resolve
 
@@ -170,7 +170,7 @@ change, not a follow-up someone else discovers.
 ## 8. Record what you added
 
 Update `<repo root>/.claude/test-map.md` — the app map
-`enloop:write` builds and reads — with the new selectors, each against its
+the authoring skills build and read — with the new selectors, each against its
 screen and source file. Skipping this means the next case-writing session
 rediscovers them by grep. If no map exists yet, don't build one here; just
 say so.

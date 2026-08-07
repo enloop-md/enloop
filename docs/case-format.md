@@ -139,7 +139,7 @@ prerequisites when a run starts.
 ## The step contract
 
 The contract is what makes the output executable rather than merely plausible.
-It is a real file — [`step-contract.md`](../plugins/enloop/skills/write/references/step-contract.md)
+It is a real file — [`step-contract.md`](../plugins/enloop/references/step-contract.md)
 — and it is the thing to edit when cases come out wrong.
 
 The rules, in brief:

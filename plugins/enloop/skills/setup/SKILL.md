@@ -127,8 +127,9 @@ a script to paste blindly:
 ```markdown
 ## Enloop
 
-Manual test cases for this app are written with the Enloop **write** skill
-(`/enloop:write` in Claude Code, `$enloop-write` in Codex) and run in the
+Manual test cases for this app are written with the Enloop **quick** and
+**full** skills (`/enloop:quick` / `/enloop:full` in Claude Code, `$quick` /
+`$full` in Codex) and run in the
 Enloop Chrome side panel, which finds elements with `document.querySelector`
 and flashes them for the tester.
 
@@ -222,17 +223,17 @@ outside what the user pointed this skill at. Show the lines and let them
 paste, unless they ask you to do it.
 
 - `ENLOOP_HOME` — the Enloop repo, where the case grammar lives. Without
-  it, the write skill asks every time.
+  it, the authoring skills ask every time.
 - `ENLOOP_DATA_DIR` — the folder *this repo* writes to, chosen above. It is
   the one users most often point one level too deep; read
   `references/data-folder.md` at the plugin root, one level above this
   skill's own directory, and run its detection before recording anything, so
   you write a value that resolves cleanly rather than one the next skill has
   to correct. Leave it unset when the repo has its own `enloop/` folder —
-  the write skill finds that without configuration, and an unset variable
+  the authoring skills find that without configuration, and an unset variable
   cannot go stale.
 - `ENLOOP_PROJECT` — belt and braces with the agent-instructions line, and
-  the value the write skill checks first.
+  the value the authoring skills check first.
 
 `ENLOOP_HOME` and `ENLOOP_DATA_DIR` are machine-specific. Under Claude Code,
 if `.claude/settings.json` is committed, put them in `settings.local.json`
@@ -260,7 +261,7 @@ that deserves its own turn with its own review.
 - What is not yet instrumented, and the **instrument** skill invocation to
   fix the part that matters first.
 
-Then say what is now possible: the **write** skill, given a ticket, from this
-repo
+Then say what is now possible: **quick** for a two-minute case or **full**
+for the complete one, given a ticket, from this repo
 writes a case titled `<Project>: ...`, carrying `@project`, into the
 connected folder.
