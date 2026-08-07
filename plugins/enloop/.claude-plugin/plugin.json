@@ -3,7 +3,7 @@
   "name": "enloop",
   "version": "0.6.0",
   "description": "Set up an app repo for test authoring, write manual test cases from inside it, triage the runs that come back, and add the test selectors that make them fast to execute \u2014 routes, labels and selectors derived from source, never invented.",
-  "homepage": "https://enloop.me",
+  "homepage": "https://enloop.md",
   "author": {
     "name": "Sergey Ryabenko",
     "email": "ryabenko.sergey@gmail.com"
