@@ -36,7 +36,7 @@ After this work:
   offline against a local folder when the user chooses that mode.
 - A Vue console (options API) manages the library, versions, runs and org
   settings in a full browser tab, where the side panel is too narrow.
-- The `/enloop:write` and `/enloop:check` skills reach the same data over HTTP
+- The `/enloop:quick`, `/enloop:full` and `/enloop:check` skills reach the same data over HTTP
   with an API token instead of guessing at directory levels.
 
 ### Non-goals for this pass
@@ -896,7 +896,7 @@ regression for solo users.
 
 Per-skill edits:
 
-- `skills/write/SKILL.md` — resolution step becomes mode detection; the write
+- `references/authoring.md` — resolution step becomes mode detection; the write
   step becomes a CLI call; keep reading the grammar fresh from
   `$ENLOOP_HOME/shared/src/markdown.ts` (unchanged, still the spec).
 - `skills/check/SKILL.md` — `enloop run list --finished --limit 1 --json` to
@@ -1196,7 +1196,7 @@ without edits.
    update `write`, `check`, and `enloop-demo` skills.
 4. README rewrite: accounts, projects, the two modes, CLI setup, self-hosting.
    Keep the existing local-folder story intact rather than replacing it.
-5. `/enloop:write` end-to-end from a real app repo into a hosted project, then
+5. `/enloop:full` end-to-end from a real app repo into a hosted project, then
    `/enloop:check` on the resulting run.
 
 **Checkpoint:** the full write → run → check loop, with no filesystem path
@@ -1236,7 +1236,7 @@ delete, which keeps history navigable but complicates uniqueness on
 nullable, so both work. CI in a client repo probably wants a token that
 survives a person leaving — which really means service accounts, deferred.
 
-**Q5 — Where does `.claude/test-map.md` live?** `/enloop:write` caches an app
+**Q5 — Where does `.claude/test-map.md` live?** The authoring skills cache an app
 map in the app repo and the README says commit it. That stays repo-local and
 does not move into the backend — but if two testers on different machines both
 generate one, the backend is the natural place to share it. Not in this pass.

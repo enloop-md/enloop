@@ -1,5 +1,5 @@
 # The step contract
-<!-- Read by the enloop:write skill. Also the reference enloop-demo
+<!-- Read by the quick and full skills. Also the reference enloop-demo
      should follow for any case it writes. -->
 
 

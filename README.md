@@ -92,7 +92,7 @@ no database, no account.
   write down what you just did by hand. It also opens any case you are viewing,
   so the viewer edits as well as reads.
 - **[The skills](docs/skills.md)** close the loop: **setup** prepares an app
-  repo once, **write** writes a case for a real feature or ticket from inside
+  repo once, **quick** and **full** write a case for a real feature or ticket from inside
   the repo being tested, and **check** triages the finished run back in that
   same repo — deciding per failure whether the app is wrong or the case is.
 

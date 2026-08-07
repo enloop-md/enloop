@@ -47,7 +47,8 @@ Claude Code namespaces a plugin's skills, so each one is `/enloop:<skill>`:
 | Skill | Command |
 | --- | --- |
 | Prepare an app repo, once | `/enloop:setup` |
-| Write a case for a ticket or branch | `/enloop:write <ticket>` |
+| Write a quick case — happy path only | `/enloop:quick <ticket>` |
+| Write the full case, edges and cleanup | `/enloop:full <ticket>` |
 | Triage a finished run | `/enloop:check` |
 | Backfill test selectors | `/enloop:instrument` |
 

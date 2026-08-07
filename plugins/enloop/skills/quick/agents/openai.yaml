@@ -1,0 +1,8 @@
+interface:
+  display_name: "Enloop: quick test case"
+  short_description: Write a happy-path case for the branch you are on.
+policy:
+  # Counterpart of SKILL.md's `disable-model-invocation: true`, which Codex
+  # does not read. Authoring writes files into a data folder outside this
+  # repo; asking for it is the only reasonable trigger.
+  allow_implicit_invocation: false

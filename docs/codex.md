@@ -31,7 +31,8 @@ Mention a skill explicitly with `$`, or run `/skills` to list what is loaded:
 | Skill | Mention |
 | --- | --- |
 | Prepare an app repo, once | `$setup` |
-| Write a case for a ticket or branch | `$write` |
+| Write a quick case — happy path only | `$quick` |
+| Write the full case, edges and cleanup | `$full` |
 | Triage a finished run | `$check` |
 | Backfill test selectors | `$instrument` |
 
@@ -44,11 +45,11 @@ guesses that you meant them.
 
 Codex does not yet prefix a plugin's skills with the plugin name
 ([openai/codex#28608][ns] adds it), so these install under bare names:
-`$write`, not `$enloop-write`. If another installed plugin claims the same
+`$quick`, not `$enloop-quick`. If another installed plugin claims the same
 name, disambiguate with `/skills`.
 
 They are deliberately **not** renamed to `enloop-*` here, because Claude Code
-already namespaces them and the result there would be `/enloop:enloop-write`.
+already namespaces them and the result there would be `/enloop:enloop-quick`.
 When Codex ships plugin-namespaced skills, this section goes away and nothing
 else changes.
 

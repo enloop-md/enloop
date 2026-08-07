@@ -71,10 +71,10 @@ into a control that inserts it into the next field the tester clicks, so on
 a demo case — whose job is to show the product working — an unmarked value
 is a feature that silently does not appear. Full rule and the
 label-vs-value table:
-`plugins/enloop/skills/write/references/step-contract.md` §6.
+`plugins/enloop/references/step-contract.md` §6.
 
 Title these `Enloop demo: <what it shows>` and set `@project Enloop demo`,
-the same convention `/enloop:write` follows for a real app. It is what
+the same convention the quick and full skills follow for a real app. It is what
 keeps generated examples distinguishable from real cases in a Library that
 holds both — which is exactly the situation this repo's own data folder is
 in.
