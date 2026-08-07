@@ -1,3 +1,15 @@
+<p align="center">
+  <img src="assets/enloop-banner.png" alt="Enloop" width="620">
+</p>
+
+<p align="center"><strong>Keep the human in the loop, not in the weeds.</strong></p>
+
+<p align="center">
+  Agents write the test cases from your source and triage what comes back.<br>
+  You run them and react to what you actually see — so your attention stays on<br>
+  what shipped, not on how it got checked.
+</p>
+
 # Enloop
 
 A Chrome side-panel extension for running manual and automated test cases,

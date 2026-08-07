@@ -6,7 +6,23 @@ export default defineManifest({
   name: "Enloop",
   description: "Run manual + automated test cases from a Chrome side panel.",
   version: pkg.version,
-  action: {},
+  // Four sizes because Chrome picks per surface and per DPI: 16/32 in the
+  // toolbar, 48 on the extensions page, 128 in the store listing and the
+  // install prompt. The small two are cropped tighter and lifted in contrast
+  // — the mark is a thin light stroke on near-black, which at 16px otherwise
+  // downsamples into a smudge.
+  icons: {
+    16: "icons/icon-16.png",
+    32: "icons/icon-32.png",
+    48: "icons/icon-48.png",
+    128: "icons/icon-128.png",
+  },
+  action: {
+    default_icon: {
+      16: "icons/icon-16.png",
+      32: "icons/icon-32.png",
+    },
+  },
   side_panel: {
     default_path: "sidepanel.html",
   },
