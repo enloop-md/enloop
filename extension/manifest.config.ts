@@ -3,8 +3,13 @@ import pkg from "./package.json";
 
 export default defineManifest({
   manifest_version: 3,
-  name: "Enloop",
-  description: "Run manual + automated test cases from a Chrome side panel.",
+  name: "Enloop.md - managing human attention in AI loops",
+  // Chrome caps this at 132 characters, so it carries the first two sentences
+  // of the positioning verbatim and stops. The full copy — headline and all —
+  // lives in `store-listing.md` beside this file, which is what a Web Store
+  // listing's detailed description takes.
+  description:
+    "The human is the slowest step in any AI feedback cycle. Enloop makes that step ruthlessly effective.",
   version: pkg.version,
   // Four sizes because Chrome picks per surface and per DPI: 16/32 in the
   // toolbar, 48 on the extensions page, 128 in the store listing and the
