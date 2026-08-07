@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useDataStore } from "../store/DataStoreProvider.js";
 
-const DOCS_URL = "https://github.com/enloop-me/enloop#readme";
+const DOCS_URL = "https://github.com/enloop-md/enloop#readme";
 
 /**
  * The screen for having nothing to show yet, in the two ways that happens.

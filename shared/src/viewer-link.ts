@@ -5,7 +5,7 @@
  * server and no storage behind it, so a link to "this case" has to carry the
  * case itself. It travels base64url-encoded in the `c` parameter:
  *
- *   https://enloop-me.github.io/enloop/?c=IyBTaWduIGluCkAdmVyc2lvbi4uLg
+ *   https://enloop-md.github.io/enloop/?c=IyBTaWduIGluCkAdmVyc2lvbi4uLg
  *
  * base64url rather than plain base64 for one specific reason: a `+` in a
  * query string decodes as a space in most parsers (including
@@ -22,7 +22,7 @@
 
 /** Where the published viewer lives. A different deployment (a fork, a
  * company mirror) overrides it per call via `opts.baseUrl`. */
-export const VIEWER_BASE_URL = "https://enloop-me.github.io/enloop/";
+export const VIEWER_BASE_URL = "https://enloop-md.github.io/enloop/";
 
 /** The query parameter the viewer reads the case out of. */
 export const VIEWER_CASE_PARAM = "c";

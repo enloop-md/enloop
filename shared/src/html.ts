@@ -482,10 +482,10 @@ export function renderCaseBody(doc: TestCaseVersion, opts: CasePageOptions = {})
   parts.push('<footer class="case-foot">');
   parts.push(
     opts.viewerUrl
-      ? `<p>Made with <a href="https://github.com/enloop-me/enloop" target="_blank" rel="noopener noreferrer">Enloop</a>. ` +
+      ? `<p>Made with <a href="https://github.com/enloop-md/enloop" target="_blank" rel="noopener noreferrer">Enloop</a>. ` +
           `<a href="${escapeAttr(opts.viewerUrl)}" target="_blank" rel="noopener noreferrer">Open this case online</a> — ` +
           `or run it step by step in the Chrome side panel.</p>`
-      : `<p>Made with <a href="https://github.com/enloop-me/enloop" target="_blank" rel="noopener noreferrer">Enloop</a>. ` +
+      : `<p>Made with <a href="https://github.com/enloop-md/enloop" target="_blank" rel="noopener noreferrer">Enloop</a>. ` +
           `This page runs entirely in your browser — the case travels in the link, and nothing is uploaded.</p>`,
   );
   parts.push("</footer></article>");
