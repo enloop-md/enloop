@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/enloop-banner.png" alt="Enloop" width="620">
+  <img src="assets/enloop-banner-bw-web.png" alt="Enloop" width="620">
 </p>
 
 <p align="center"><em>Enloop — managing human attention</em></p>
