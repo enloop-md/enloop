@@ -2,12 +2,15 @@
   <img src="assets/enloop-banner.png" alt="Enloop" width="620">
 </p>
 
-<p align="center"><strong>Keep the human in the loop, not in the weeds.</strong></p>
+<p align="center"><em>Enloop — managing human attention</em></p>
+
+<h3 align="center">Fix the Bottleneck in Human-in-the-Loop</h3>
 
 <p align="center">
-  Agents write the test cases from your source and triage what comes back.<br>
-  You run them and react to what you actually see — so your attention stays on<br>
-  what shipped, not on how it got checked.
+  The human is the slowest step in any AI feedback cycle. Enloop makes that step<br>
+  ruthlessly effective. By handling the heavy lifting of context and instruction,<br>
+  it frees you to operate at the speed of thought, turning validation from a<br>
+  chore into a seamless flow.
 </p>
 
 # Enloop
