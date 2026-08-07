@@ -12,7 +12,7 @@ import { useReadyStore, useWorkspace } from "../store/DataStoreProvider.js";
 import { splitId } from "@tcm/shared";
 import { relativeTime } from "../../lib/time.js";
 
-const DOCS_URL = "https://github.com/enloop-me/enloop#readme";
+const DOCS_URL = "https://github.com/enloop-md/enloop#readme";
 
 function matchesQuery(query: string, title: string, tags: string[], project = ""): boolean {
   if (!query) return true;

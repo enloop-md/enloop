@@ -83,11 +83,11 @@ no database, no account.
   pass/fail, executing automated steps in the page, capturing notes, and
   writing a run report.
 - **[The viewer](docs/extension.md#the-viewer)** shares them:
-  <https://enloop-me.github.io/enloop/>. Send anyone a link and they read the
+  <https://enloop-md.github.io/enloop/>. Send anyone a link and they read the
   case in a browser — steps to tick off, values to copy, variables to fill in
   — with no install and no account. The case rides inside the link, so there
   is still nothing uploaded anywhere.
-- **[The builder](https://enloop-me.github.io/enloop/)** writes one without an
+- **[The builder](https://enloop-md.github.io/enloop/)** writes one without an
   agent: a form in the viewer that emits the same grammar, for when you want to
   write down what you just did by hand. It also opens any case you are viewing,
   so the viewer edits as well as reads.
@@ -105,7 +105,7 @@ no database, no account.
 | Write cases with **Codex** | [docs/codex.md](docs/codex.md) |
 | Understand what the skills do | [docs/skills.md](docs/skills.md) |
 | Write or read a case by hand | [docs/case-format.md](docs/case-format.md) |
-| Share a case with someone | [the viewer](https://enloop-me.github.io/enloop/) |
+| Share a case with someone | [the viewer](https://enloop-md.github.io/enloop/) |
 
 The quickest way in: install the extension, connect a folder, and let the
 Library load its example case — it runs against a public practice site and

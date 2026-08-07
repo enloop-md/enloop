@@ -15,7 +15,7 @@ switched on.
 **A. From a release — no build tools needed.**
 
 1. Download `enloop-<version>.zip` from the
-   [latest release](https://github.com/enloop-me/enloop/releases/latest).
+   [latest release](https://github.com/enloop-md/enloop/releases/latest).
 2. Unzip it somewhere you intend to keep — `~/enloop-extension`, say. Chrome
    loads an unpacked extension from that path every time it starts, so moving
    or deleting the folder later disables it.
@@ -138,7 +138,7 @@ missing the setup it assumes.
 
 ## The viewer
 
-<https://enloop-me.github.io/enloop/>
+<https://enloop-md.github.io/enloop/>
 
 The same page, online, for people who should not have to install anything: send
 a link and they read the case in a browser, tick steps off as they go, copy the
@@ -160,7 +160,7 @@ file the extension writes also ends with a comment carrying its own link:
 Read this case in a browser — tick off steps, copy the values, fill in the
 variables. The link below carries the case itself; nothing is uploaded.
 
-https://enloop-me.github.io/enloop/?c=IyBTaWduIGluIHdpdGgg…
+https://enloop-md.github.io/enloop/?c=IyBTaWduIGluIHdpdGgg…
 -->
 ```
 

@@ -15,7 +15,7 @@ doing.
 marketplace and install:
 
 ```
-/plugin marketplace add enloop-me/enloop
+/plugin marketplace add enloop-md/enloop
 /plugin install enloop@enloop
 ```
 

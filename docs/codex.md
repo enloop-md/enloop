@@ -12,7 +12,7 @@ This repo is a Codex marketplace: `.agents/plugins/marketplace.json` points at
 the same plugin folder Claude Code installs from.
 
 ```bash
-codex plugin marketplace add enloop-me/enloop
+codex plugin marketplace add enloop-md/enloop
 ```
 
 Then `/plugins` in Codex to install **enloop**, and start a new session before
