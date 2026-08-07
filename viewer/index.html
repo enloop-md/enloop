@@ -8,6 +8,20 @@
       name="description"
       content="Open an Enloop test case in the browser: tick off steps, copy the values, fill in the variables. The case travels in the link; nothing is uploaded."
     />
+    <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+
+    <!-- This page exists to be pasted into chat and tickets, so the unfurl is
+         part of the product. Absolute URL because Open Graph consumers do not
+         resolve relative ones. -->
+    <meta property="og:title" content="Enloop — test case viewer" />
+    <meta
+      property="og:description"
+      content="Read a test case in the browser: tick off steps, copy the values, fill in the variables. The case travels inside the link."
+    />
+    <meta property="og:image" content="https://enloop-me.github.io/enloop/enloop-banner.png" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <!-- The toolbar is written by main.ts once a case is on screen; it makes
