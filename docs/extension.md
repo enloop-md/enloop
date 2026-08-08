@@ -192,11 +192,16 @@ values into their own app, and fill in the variables — every `%NAME%` in the
 document updates as they type.
 
 **The case travels inside the link.** There is no server, no account and no
-upload: the case is base64url-encoded into `?c=`, and the page decodes and
-parses it on the reader's own device. The viewer also accepts the same payload
-as `#c=`, which is never sent to a host at all — worth using when a case names
-internal URLs. Either way, the page you send is the page they get, forever;
-nothing can be taken down or expire.
+upload: the case is deflate-compressed and base64url-encoded into `#c=`, and
+the page decodes and parses it on the reader's own device. It goes in the
+**fragment** — the part after the `#` — which browsers never send to a server,
+so a case naming internal URLs, staging logins or customer records never
+reaches GitHub Pages or any access log along the way. The page you send is the
+page they get, forever; nothing can be taken down or expire.
+
+Compressing roughly halves the link, which is what keeps a long case inside the
+length a ticket or chat client will carry. Older links, uncompressed and in the
+`?c=` query string, still open.
 
 **Copy link** on the case screen puts that link on your clipboard. Every case
 file the extension writes also ends with a comment carrying its own link:
@@ -204,9 +209,10 @@ file the extension writes also ends with a comment carrying its own link:
 ```markdown
 <!-- enloop:viewer
 Read this case in a browser — tick off steps, copy the values, fill in the
-variables. The link below carries the case itself; nothing is uploaded.
+variables. The link below carries the case itself; nothing is uploaded, and
+the part after the # never reaches a server at all.
 
-https://enloop-md.github.io/enloop/?c=IyBTaWduIGluIHdpdGgg…
+https://enloop-md.github.io/enloop/#c=~xdc9TsQwEIbh3qf4tNF2…
 -->
 ```
 

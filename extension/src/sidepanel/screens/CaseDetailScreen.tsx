@@ -164,7 +164,7 @@ export function CaseDetailScreen({
 
       if (kind === "source") {
         const source = await store.getVersionSource(testCaseId, selectedVersion);
-        downloadTextFile(`${slug}-v${selectedVersion}.md`, withViewerComment(source));
+        downloadTextFile(`${slug}-v${selectedVersion}.md`, await withViewerComment(source));
         return;
       }
 
@@ -173,14 +173,17 @@ export function CaseDetailScreen({
 
       if (kind === "readable") {
         const readable = renderReadableCase(merged, { exportedAt });
-        downloadTextFile(`${slug}-v${selectedVersion}-simplified.md`, withViewerComment(readable));
+        downloadTextFile(
+          `${slug}-v${selectedVersion}-simplified.md`,
+          await withViewerComment(readable),
+        );
         return;
       }
 
       const simplified = kind === "html-simple";
       downloadTextFile(
         `${slug}-v${selectedVersion}${simplified ? "-simplified" : ""}.html`,
-        renderCasePage(merged, { simplified, exportedAt, viewerUrl: viewerLink(runSource) }),
+        renderCasePage(merged, { simplified, exportedAt, viewerUrl: await viewerLink(runSource) }),
         "text/html",
       );
     } catch (e) {
@@ -200,7 +203,7 @@ export function CaseDetailScreen({
     setMenuOpen(false);
     try {
       const runSource = await store.getRunSource(testCaseId, selectedVersion);
-      await navigator.clipboard.writeText(viewerLink(runSource));
+      await navigator.clipboard.writeText(await viewerLink(runSource));
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
     } catch (e) {
