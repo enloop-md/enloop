@@ -171,6 +171,15 @@ export const runStepStateSchema = z.object({
   automatedResult: automatedResultSchema.nullable(),
   startedAt: z.string().nullable(),
   finishedAt: z.string().nullable(),
+  /** What the page printed while this step was running — see
+   * `shared/src/capture.ts`. Counts only: the entries themselves live in
+   * `console.jsonl`/`console.md`, because console volume is unbounded and
+   * `run.json` is rewritten on every step patch. Written when the run
+   * finishes, and `.default(0)` so every run recorded before capture existed
+   * still parses. */
+  consoleErrors: z.number().int().nonnegative().default(0),
+  consoleWarnings: z.number().int().nonnegative().default(0),
+  networkFailures: z.number().int().nonnegative().default(0),
 });
 
 export const runStatusSchema = z.enum(["in_progress", "passed", "failed", "aborted"]);
@@ -196,6 +205,12 @@ export const runFileSchema = z.object({
   /** Defaulted to `full`: every run recorded before tiers existed executed
    * the whole case, so that is the truthful value for them. */
   tier: runTierSchema.default("full"),
+  /** The tester's decision, at finish, about whether the captured console and
+   * network output may be summarized into `report.md` — which is the file an
+   * agent reads. Recorded on disk rather than acted on and forgotten, so
+   * `/enloop:check` sees the decision instead of re-making it. Defaulted for
+   * runs written before capture existed. */
+  consoleInReport: z.boolean().default(false),
   startedAt: z.string(),
   finishedAt: z.string().nullable(),
   steps: z.array(runStepStateSchema),
@@ -212,6 +227,9 @@ export const runStepSchema = stepSchema.omit({ id: true }).extend({
   automatedResult: automatedResultSchema.nullable(),
   startedAt: z.string().nullable(),
   finishedAt: z.string().nullable(),
+  consoleErrors: z.number().int().nonnegative(),
+  consoleWarnings: z.number().int().nonnegative(),
+  networkFailures: z.number().int().nonnegative(),
 });
 
 /** Composed, in-memory view of a run — case.md + run.json merged. This is
@@ -225,6 +243,7 @@ export const runSchema = z.object({
   status: runStatusSchema,
   comment: z.string(),
   tier: runTierSchema,
+  consoleInReport: z.boolean(),
   startedAt: z.string(),
   finishedAt: z.string().nullable(),
   /** From the frozen `case.md`, so a tester can see what had to be true

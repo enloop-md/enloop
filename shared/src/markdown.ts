@@ -1,3 +1,11 @@
+import {
+  describeCounts,
+  hasCaptureSignal,
+  renderCaptureDigest,
+  summarizeDigestItem,
+  type CaptureCounts,
+  type CaptureDigest,
+} from "./capture.js";
 import { VARIABLE_GENERATORS } from "./schemas.js";
 import { stripViewerComment } from "./viewer-link.js";
 import type {
@@ -639,11 +647,44 @@ export const NOTE_TYPE_LABELS: Record<NoteType, string> = {
   docs: "docs update required",
 };
 
-/** Human-readable summary of a finished (or in-progress) run — meant to be
+/** The counts a step carries, as the report and feedback both phrase them. */
+function stepCounts(state: RunStepState): CaptureCounts {
+  return {
+    consoleErrors: state.consoleErrors,
+    consoleWarnings: state.consoleWarnings,
+    networkFailures: state.networkFailures,
+  };
+}
+
+/** "step 3 — Sync the contact", for cross-referencing a digest item back into
+ * the step list above it. Returns "" for an entry that arrived outside any
+ * step, which reads better than "step none". */
+function stepLabeller(doc: TestCaseVersion): (stepId: string | null) => string {
+  const numbers = new Map(doc.steps.map((step, index) => [step.id, index + 1]));
+  return (stepId) => {
+    if (!stepId) return "";
+    const number = numbers.get(stepId);
+    return number ? `step ${number}` : stepId;
+  };
+}
+
+/**
+ * Human-readable summary of a finished (or in-progress) run — meant to be
  * shared outside the extension, e.g. emailed. Written as `report.md`
- * alongside `run.json` whenever a run finishes. */
-export function renderRunReport(doc: TestCaseVersion, run: RunFile): string {
+ * alongside `run.json` whenever a run finishes.
+ *
+ * `digest` is the captured console/network output, and is passed **only when
+ * the tester ticked the box at finish**. Per-step counts are printed either
+ * way — knowing a step logged three errors is not the same as reading them,
+ * and the count is what makes the un-attached case visible rather than silent.
+ */
+export function renderRunReport(
+  doc: TestCaseVersion,
+  run: RunFile,
+  digest?: CaptureDigest | null,
+): string {
   const byId = new Map(run.steps.map((s) => [s.stepId, s]));
+  const labelStep = stepLabeller(doc);
   const lines: string[] = [];
 
   lines.push(`# ${doc.title} — Run Report`);
@@ -664,6 +705,12 @@ export function renderRunReport(doc: TestCaseVersion, run: RunFile): string {
     lines.push("");
     lines.push(run.comment.trim());
     lines.push("");
+  }
+  // Above the steps for the same reason as the comment: it is evidence about
+  // the whole run, and a reader who stops after the first screen should have
+  // seen it.
+  if (digest) {
+    lines.push(renderCaptureDigest(digest, labelStep));
   }
   lines.push("## Steps");
   lines.push("");
@@ -695,6 +742,15 @@ export function renderRunReport(doc: TestCaseVersion, run: RunFile): string {
       lines.push("Warnings:");
       for (const w of state.automatedResult.warnings) lines.push(`- ${w}`);
     }
+    if (state && hasCaptureSignal(stepCounts(state))) {
+      lines.push("");
+      lines.push(`Console: ${describeCounts(stepCounts(state))}`);
+      // The step's own findings in one line each, so a reader stopped at a
+      // failed step sees what the page said without scrolling back up to the
+      // digest. The full text and stacks stay up there, deduplicated once.
+      const own = digest?.items.filter((item) => item.firstStepId === step.id) ?? [];
+      for (const item of own) lines.push(`- ${summarizeDigestItem(item)}`);
+    }
     lines.push("");
   });
 
@@ -707,7 +763,11 @@ function hasStepSignal(state: RunStepState): boolean {
     state.status === "warning" ||
     state.comment.trim().length > 0 ||
     state.notes.length > 0 ||
-    !!state.automatedResult?.error
+    !!state.automatedResult?.error ||
+    // A console error during a step the tester marked passed is signal in its
+    // own right, on the same argument as the run comment below: a green run
+    // with a stack trace in it is exactly the finding that used to disappear.
+    state.consoleErrors > 0
   );
 }
 
@@ -723,8 +783,17 @@ function hasStepSignal(state: RunStepState): boolean {
  * attaches to one step, and before the run comment existed it had nowhere
  * to go — so a run that passed while worrying the tester produced no
  * handoff at all.
+ *
+ * `digest` follows the same rule as in `renderRunReport`: passed only when the
+ * tester agreed to attach captured output. Without it this file still says how
+ * much was captured — a count is not content, and a reader that knows a log
+ * exists can ask for it instead of assuming the page was quiet.
  */
-export function renderRunFeedback(doc: TestCaseVersion, run: RunFile): string | null {
+export function renderRunFeedback(
+  doc: TestCaseVersion,
+  run: RunFile,
+  digest?: CaptureDigest | null,
+): string | null {
   const byId = new Map(run.steps.map((s) => [s.stepId, s]));
   const signalSteps = doc.steps
     .map((step, index) => ({ step, index, state: byId.get(step.id) }))
@@ -739,10 +808,17 @@ export function renderRunFeedback(doc: TestCaseVersion, run: RunFile): string | 
   const warningCount = run.steps.filter((s) => s.status === "warning").length;
   const noteCount = run.steps.reduce((n, s) => n + s.notes.length, 0);
 
+  const captured: CaptureCounts = {
+    consoleErrors: run.steps.reduce((n, s) => n + s.consoleErrors, 0),
+    consoleWarnings: run.steps.reduce((n, s) => n + s.consoleWarnings, 0),
+    networkFailures: run.steps.reduce((n, s) => n + s.networkFailures, 0),
+  };
+
   const bugItems: string[] = [];
   const featureItems: string[] = [];
   const docsItems: string[] = [];
   const failedItems: string[] = [];
+  const consoleItems: string[] = [];
 
   for (const { step, index, state } of signalSteps) {
     const stepNum = index + 1;
@@ -762,6 +838,17 @@ export function renderRunFeedback(doc: TestCaseVersion, run: RunFile): string | 
         .join(" — ");
       failedItems.push(`- **${step.title}** (step ${stepNum})${detail ? `: ${detail}` : ""}`);
     }
+    // The page throwing and the step failing are different statements, and
+    // when they disagree the console one is the more precise: it names what
+    // broke rather than what the tester could see of it.
+    for (const item of digest?.items ?? []) {
+      if (item.firstStepId !== step.id) continue;
+      if (item.level !== "error" && item.level !== "uncaught") continue;
+      consoleItems.push(
+        `- **${step.title}** (step ${stepNum}, tester marked it ${state.status}): ` +
+          summarizeDigestItem(item),
+      );
+    }
   }
 
   const lines: string[] = [];
@@ -773,9 +860,21 @@ export function renderRunFeedback(doc: TestCaseVersion, run: RunFile): string | 
       `${run.tier === "quick" ? ", covering the quick (core) steps only" : ""}.`,
   );
   lines.push(`${failedCount} failed, ${warningCount} warnings, ${noteCount} feedback notes.`);
+  if (hasCaptureSignal(captured)) {
+    lines.push(
+      digest
+        ? `The page itself produced ${describeCounts(captured)} during the run; they are listed below.`
+        : `The page itself produced ${describeCounts(captured)} during the run. The tester did ` +
+            "not attach them, so they are **not** in this file or in `report.md`. `console.md` in " +
+            "this run's folder holds them and is not yours to read — treat the omission as the " +
+            "tester's decision, and ask if you need it.",
+    );
+  }
   lines.push("");
   const hasActionItems =
-    bugItems.length + featureItems.length + docsItems.length + failedItems.length > 0;
+    bugItems.length + featureItems.length + docsItems.length + failedItems.length +
+      consoleItems.length >
+    0;
   lines.push(
     hasActionItems
       ? "This file was written by a human tester reviewing the feature. Address the " +
@@ -796,6 +895,7 @@ export function renderRunFeedback(doc: TestCaseVersion, run: RunFile): string | 
     ["Feature requests", featureItems],
     ["Docs updates", docsItems],
     ["Failed steps", failedItems],
+    ["Errors the page threw", consoleItems],
   ];
   // A comment-only handoff has nothing to list, and an empty "Action items"
   // heading reads as a bug in this renderer rather than as an all-clear.
@@ -825,6 +925,12 @@ export function renderRunFeedback(doc: TestCaseVersion, run: RunFile): string | 
       for (const note of state.notes) lines.push(`- [${NOTE_TYPE_LABELS[note.type]}] ${note.text}`);
     }
     if (state.automatedResult?.error) lines.push(`Automated error: ${state.automatedResult.error}`);
+    if (hasCaptureSignal(stepCounts(state))) {
+      lines.push(`Console: ${describeCounts(stepCounts(state))}`);
+      for (const item of digest?.items ?? []) {
+        if (item.firstStepId === step.id) lines.push(`- ${summarizeDigestItem(item)}`);
+      }
+    }
   }
   lines.push("");
 

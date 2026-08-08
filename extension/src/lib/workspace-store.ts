@@ -24,6 +24,7 @@
 import {
   joinId,
   splitId,
+  type CapturedEntry,
   type DataStore,
   type FreeRun,
   type FreeRunFile,
@@ -311,9 +312,24 @@ export class WorkspaceStore implements DataStore {
     );
   }
 
-  async updateRun(testCaseId: string, runId: string, patch: { comment?: string }): Promise<Run> {
+  async updateRun(
+    testCaseId: string,
+    runId: string,
+    patch: { comment?: string; consoleInReport?: boolean },
+  ): Promise<Run> {
     const { store, storageId, localId } = this.route(testCaseId);
     return this.tagRun(storageId, await store.updateRun(localId, splitId(runId).localId, patch));
+  }
+
+  /** Captured output follows its run, which routing makes automatic — a run's
+   * console log cannot end up in a different folder from the run. */
+  async appendConsole(
+    testCaseId: string,
+    runId: string,
+    entries: CapturedEntry[],
+  ): Promise<void> {
+    const { store, localId } = this.route(testCaseId);
+    return store.appendConsole(localId, splitId(runId).localId, entries);
   }
 
   async finishRun(testCaseId: string, runId: string, status: RunStatus): Promise<Run> {
@@ -346,6 +362,11 @@ export class WorkspaceStore implements DataStore {
   async updateFreeRun(id: string, patch: { title?: string; notes?: string }): Promise<FreeRun> {
     const { store, storageId, localId } = this.route(id);
     return this.tagFreeRun(storageId, await store.updateFreeRun(localId, patch));
+  }
+
+  async appendFreeRunConsole(id: string, entries: CapturedEntry[]): Promise<void> {
+    const { store, localId } = this.route(id);
+    return store.appendFreeRunConsole(localId, entries);
   }
 
   async finishFreeRun(id: string): Promise<FreeRun> {

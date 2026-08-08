@@ -1,19 +1,23 @@
 # Enloop tooling — workflow plan
 
-Status: **items 3 and 4 built; 1, 2 and 5 outstanding; 6 parked.** Written
-2026-08-04.
+Status: **items 3, 4 and 5 built; 8 is the next one to build; 1, 2 and 7
+outstanding; 6 parked.** Written 2026-08-04.
 
 Scope split: [`PLAN-BACKEND.md`](PLAN-BACKEND.md) owns the hosted backend —
 accounts, projects, the HTTP API, environments. This document owns the skills
 and the extension workflow. Items here that need a schema column say so
 explicitly, so the backend plan can pick them up rather than discovering them.
 
-Six items. **3 and 4 are built** (2026-08-04) and their sections are kept as
-the record of what was decided and why. 1, 2 and 5 remain outstanding. 1 and 2
-are a pair: the first takes a capability away from `/enloop:setup`, the second
-gives it a proper home. 5 is independent of the other four and is extension
-work, not skill work. **6 is parked** — low priority, recorded so the idea
-stops being re-litigated, not queued.
+Eight items. **3 and 4 are built** (2026-08-04) and **5 is built** (2026-08-08,
+including the network cut it describes as a second pass); their sections are
+kept as the record of what was decided and why, with what changed on the way
+recorded under each. **8 is high priority and next** — it is the one item here
+that changes the quality of every case written from now on, rather than what
+happens around a case. 1 and 2 remain outstanding, and they are a pair: the
+first takes a capability away from `/enloop:setup`, the second gives it a proper
+home. **7 is outstanding** and extends 5 — it is the revisit 5 asked for, and
+the only item that changes something already shipped. **6 is parked** — low
+priority, recorded so the idea stops being re-litigated, not queued.
 
 ---
 
@@ -248,7 +252,7 @@ is a client-side filter, consistent with §3.3.
 
 ---
 
-## 5. Capture the page's console during a run
+## 5. Capture the page's console during a run — **implemented 2026-08-08, with the network cut**
 
 ### The problem
 
@@ -430,6 +434,56 @@ around it makes the checkbox a lie. Worth stating in the skill body, not just
 here — the file is sitting right there in the run folder, and reading it is
 the locally helpful thing to do.
 
+### What changed on the way in
+
+Six deviations from the design above, each because the design was wrong about
+something rather than because it was inconvenient:
+
+1. **Registration is against the origins the tester has granted, not
+   `<all_urls>`.** This document claimed `<all_urls>` was already in the
+   manifest, but it is in `optional_host_permissions` — a list of what may be
+   asked for, not of what was given. Chrome will not register a content script
+   for a host the extension cannot access. So `background/capture.ts` builds
+   `matches` from `chrome.permissions.getAll()` and re-syncs on
+   `permissions.onAdded`/`onRemoved`. Consequence worth knowing: capture starts
+   on a site the moment that site is granted, and never before.
+2. **Two files, not one.** `console.jsonl` is appended live (the record);
+   `console.md` is rendered from it when the run finishes (for people). The
+   digest needs the entries back, and parsing them out of prose we had just
+   written would have been a parser to maintain for nothing.
+3. **The cap stops capture instead of dropping the oldest entries.** Entries
+   are already on disk when a cap is reached, and the earliest ones — the load
+   — are the most valuable, so evicting them would have spent the budget on
+   exactly the wrong half. Both the entry cap and the byte cap write a `notice`
+   line into the log, so a capped log never reads as a quiet page.
+4. **Per-step counts are folded into `run.json` when the run finishes**, not on
+   every append. They are only read after a run ends, and rewriting `run.json`
+   every few seconds would have fought the step patches for the same file.
+5. **The network cut was built at the same time, with its own toggle** — as
+   section 5 asked. Query strings are redacted from page URLs as well as
+   request URLs; the same risk applies and the two paths share one redactor.
+6. **The digest sits in one `## Console and network` section** with short
+   per-step lines pointing into it, rather than the full text under each step:
+   deduplication is the whole value, and splitting it across steps un-dedupes
+   it.
+
+### The open questions, answered
+
+- **Global toggle, not per-run** — as suggested, and the revisit it asked for is
+  **item 7**, which turns out to be a bookkeeping change rather than the
+  reload-per-run trade this section feared.
+- **Levels:** every level is captured and every level is kept in `console.md`.
+  The proposed "include log and info" checkbox turned out to be unnecessary,
+  because the digest — the only thing that ever reaches a prompt — drops
+  `log`/`info`/`debug` on its own and says how many it dropped.
+- **Free runs capture**, into `console.md` next to `notes.md`, grouped under the
+  session. Nothing from there reaches `feedback.md`: a free run has no finish
+  bar to ask the question in, and an unasked question is not consent.
+- **An aborted run needs no special case.** The checkbox already defaults to
+  ticked whenever an error was captured, and abort persists whatever it says —
+  so an abandoned run keeps its digest without being asked, and a tester who
+  explicitly unticked the box is still obeyed.
+
 ### Check
 
 Enable → notice appears → reload → run a case → `console.error("boom")` from
@@ -441,10 +495,11 @@ own code reads `console.error.toString()` or reassigns `console` still works.
 
 **Backend note:** run-scoped console storage — a `run_console_entry` table or
 a `console_body text` on `run`, plus `run_step.console_errors` /
-`console_warnings int not null default 0`, and
+`console_warnings` / `network_failures int not null default 0`, and
 `run.console_in_report boolean not null default false`
 (`PLAN-BACKEND.md` §4.4). Prefer the text blob: entries are only ever written
-in batches and read whole.
+in batches and read whole — that is exactly what the local store's
+`console.jsonl` turned out to be, so the batch endpoint is an append to it.
 
 ### Open questions
 
@@ -511,3 +566,413 @@ would close is already closed by the example case. Revisit only if real
 demand shows up from people who want the runner without the loop, and treat
 the picker as the interesting half: it is also what `/enloop:instrument` would
 want in order to show you what it is about to tag.
+
+---
+
+## 7. Capture per run, and the option to keep every request
+
+Extends item 5, which is built. Two changes, and they land together because the
+second one is only tolerable once the first exists.
+
+### The problem
+
+**The global toggle answers one question and then answers it for everything.**
+Once capture is on, every run against a granted site captures, and so does every
+page in the window between runs — so a tester who wanted the console for one
+flaky case collects output from every other case they touch that afternoon, and
+`console.md` files pile up in runs nobody was ever suspicious about. Going the
+other way is worse: deciding mid-flow that *this* run needs watching means
+leaving the run, opening Settings, coming back, and reloading the page — four
+moves at the exact moment the tester had decided to look at something.
+
+**And only failures are recorded.** That was the right first cut for privacy,
+but it leaves one common question unanswerable. A button that did nothing
+because **no request was sent at all** looks identical, in the log, to a button
+that did nothing because the page threw somewhere unrelated. Absence of a
+request is evidence, and only a record of all of them can show it.
+
+### The split that makes per-run cheap
+
+Item 5's own open question assumed per-run capture meant a reload at the start of
+every run. It does not, because two different decisions are riding on one
+toggle:
+
+- **Arming** — installing the wrapper. Browser-wide, per granted origin, and it
+  only takes effect on the next page load. This is Settings' job and stays
+  there, reload notice and all.
+- **Recording** — whether entries arriving now are kept for *this* run. Instant,
+  per run, no reload, because the wrapper is already installed and merely stops
+  or starts forwarding.
+
+Item 5 already built the second half: the wrapper forwards, the service worker
+refuses everything when no target is set, and switching capture off reaches
+loaded pages immediately. So per-run capture is a UI-and-bookkeeping change over
+machinery that exists.
+
+**Rejected: register at run start, unregister at finish.** It would make
+"capture during runs" literally true, and it costs a reload at the start of
+every run — which is not merely a delay, it destroys the state the run's
+prerequisites just established: a seeded form, an SPA route, an open modal, a
+session the tester logged into by hand. A reload that resets the app under the
+tester is worse than a wrapper sitting idle on pages nobody is recording.
+
+### The run-start surface
+
+The pre-run screen already asks two things — variable values, and quick or full.
+Capture becomes a third block on it:
+
+> **Capture during this run**
+> ☐ Console output ☐ Failed requests ☐ Every request *(verbose)*
+
+- **Defaults come from Settings**, which becomes "what new runs start with", so
+  a tester who always wants console output sets it once and never sees the
+  question again.
+- **When capture is not armed the boxes are disabled**, with one line saying why
+  and an *Arm capture* affordance next to it. Nobody should have to learn the
+  word "registration" to find out why a checkbox is grey.
+- **The same block at free-run start**, for the same reason capture covers free
+  runs at all.
+
+Settings keeps the reload notice, because the reload belongs to installation, not
+to recording — and the copy has to say that plainly, or the two toggles read as
+duplicates of the run-start ones.
+
+### Where the choice is recorded
+
+On the run: `runFileSchema` gains
+`capture: { console: boolean; requests: "none" | "failed" | "all" }`, defaulted
+so runs written before this parse unchanged. On disk rather than in panel state,
+for three reasons:
+
+1. A run resumed after the panel closed — or after a browser restart — must keep
+   recording what it was recording, and panel state does not survive either.
+2. `report.md` can then say what was *not* captured. "The console was quiet" and
+   "the console was not being watched" are different sentences, and item 5
+   currently cannot tell them apart in a run with no console section.
+3. `/enloop:check` needs that same distinction, and it reads files.
+
+`useCapture` then gates on the run's own flags rather than the global setting,
+and sets the worker's target only when the run says so.
+
+### Every request
+
+A third *state*, not a fourth checkbox: `requests` is `none`, `failed` or `all`.
+"All" includes failures by definition, and two independent booleans would permit
+the nonsense of "every request except the failed ones".
+
+A successful request forwards as a new level, `request`, kept distinct from
+`network` (which stays the failure level) so that nothing downstream has to read
+a status code to know what kind of line it is holding.
+
+Three things must not happen, and each one is a design constraint rather than a
+detail:
+
+1. **Successes must not starve errors.** The per-run caps are shared, and an app
+   that polls can produce hundreds of 200s a minute — a cap filled with those
+   means the `TypeError` arrives after capture has already stopped. So `request`
+   entries get their own sub-budget (order of 500) and are dropped when it is
+   spent, leaving console lines and failures their full allowance. This is the
+   part most likely to be got wrong, because it only shows up on a busy app.
+2. **Successes must not enter the digest.** The digest is what a model reads;
+   fifty 200s in it is fifty lines of nothing, and it would push the one error
+   out under the item cap.
+3. **`console.md` must not become a request log with a run buried in it.** So
+   successes are **rolled up per step at render time** — one line per
+   method + path + status, with a count and a duration range — while failures
+   stay verbatim and in time order where they happened. `console.jsonl` keeps
+   every line either way: the roll-up is a rendering decision, which is what
+   makes it revisable without changing what was captured.
+
+Per-step counts in `run.json` gain `requests: number`, counting all of them,
+failures included. That count is what answers "did this step send anything at
+all" — the question that motivated the option in the first place.
+
+Headers and bodies are still never captured, and query strings are still
+redacted. "All requests" widens *which* requests are recorded; it never widens
+*what* is recorded about one.
+
+### What this touches
+
+- `public/console-capture.js` — the state event carries
+  `requests: "none" | "failed" | "all"`; the `fetch`/XHR wrappers emit `request`
+  for a success when it is `all`.
+- `lib/capture.ts` — `CaptureSettings` becomes arming plus defaults for new
+  runs; the per-run flags travel with the target.
+- `background/capture.ts` — **unchanged**, which is the point: the target already
+  decides what is kept.
+- `shared/src/capture.ts` — the new level, the sub-budget, the roll-up in
+  `renderCaptureLog`, and one line in `buildCaptureDigest` to ignore `request`.
+- `sidepanel/useCapture.ts` — gate on the run's flags instead of the setting.
+- The pre-run screen, the free-run start, and `SettingsScreen`.
+
+### Check
+
+Arm capture, reload the page, start a run with all three boxes off →
+`console.jsonl` is never created. Start a second run with console on and requests
+`all` → both streams are recorded, and a third run started afterwards comes up
+with the Settings defaults rather than the previous run's choices. Resume a run
+mid-flight after closing the panel and confirm it is still recording what it was
+started with, not what Settings currently says.
+
+Then the volume case, which is the one that will actually bite: run against an
+app that polls, confirm the per-step roll-up in `console.md` is a handful of
+lines rather than hundreds, and confirm that an error logged after 600 successful
+requests is still in the log.
+
+### Open questions
+
+- **Does arming have to be browser-wide?** A registration is per origin, and a
+  case usually knows the origin it runs against (`Where:`, a `BASE_URL`
+  variable). Arming could follow the case's own origins instead of every granted
+  site, which would make "capture during runs" nearly true. It needs the origin
+  to be knowable before the run starts, which is not reliably the case today.
+- **Slow requests as their own signal.** With every request recorded, a
+  four-second 200 becomes visible for the first time, and "felt slow throughout"
+  would finally have evidence under it. A threshold — say 2s — could forward a
+  line the digest keeps. Unclear whether that is a level of its own or a flag on
+  `request`.
+- **Should a run's capture flags show in the run history?** A finished run that
+  captured nothing and one whose log was captured but never attached currently
+  look identical in the list, and both look like a run with a quiet page.
+
+**Backend note:** `run.capture_console boolean not null default false`,
+`run.capture_requests text not null default 'none'`, and
+`run_step.requests int not null default 0`, alongside item 5's columns
+(`PLAN-BACKEND.md` §4.4). The per-run flags are also what a hosted run needs in
+order to report what it was watching, so they are not a local-mode detail.
+
+---
+
+## 8. Per-project authoring rules, kept in the folder — **high priority**
+
+### The problem
+
+Every project has a handful of facts that decide whether a case is any good,
+and none of them are written down anywhere the loop can reach.
+
+"Reach the admin area through the sidebar, never by typing the URL — the route
+guard redirects on a cold load." "Our test handles are `data-qa`, not
+`data-testid`." "Never use `admin@` — it is the shared demo account and other
+people are logged into it." "The Contacts grid is inside an iframe, so no
+selector will find it." "Every case must end by deleting what it created,
+because the seed data is not reset between runs." "We call them *placements*,
+not *jobs*."
+
+Today those live in three places, none of which work:
+
+- **In a person's head**, which means every case an agent writes re-makes the
+  same mistake, and a tester reviews the same correction every time.
+- **In the repo's `CLAUDE.md`**, where `/enloop:setup` puts the selector
+  convention. That reaches Claude Code sessions in that repo and nothing else —
+  not Codex, not the panel, not the tester reading a case, and not a colleague
+  who cloned the repo and opened the Library.
+- **Inside individual cases**, copied by hand into `# Prerequisites` and step
+  notes, where they go stale one case at a time.
+
+The result is that `/enloop:check` fixes the same class of case defect over and
+over. It fixes the case; nothing fixes the rule.
+
+### What a rules file is, and is not
+
+**It is:** the project-specific conventions a case must follow to be worth
+running — how to navigate, what to call things, which accounts and data are
+fair game, what every case in this project must include, and which parts of the
+app cannot be reached or automated at all.
+
+**It is not:**
+
+- **Not a second grammar.** The case format in `shared/src/markdown.ts` is not
+  negotiable — a case that violates it does not parse. Rules refine what a
+  well-formed case *says*; they never change what a case *is*, and a rule that
+  tries to is ignored.
+- **Not a lint engine**, in this pass. A few lines are structured enough for the
+  panel to check mechanically (see below); the rest is prose addressed to
+  whoever — human or model — is writing the next case.
+- **Not a place for secrets.** The file is committed, on purpose. Credentials,
+  client names and customer data belong nowhere near it, and the panel's editor
+  says so above the textarea rather than in a doc nobody opens.
+
+### Where it lives
+
+**`rules.md` at the root of the storage folder**, next to `test-cases/`,
+`runs/` and the `.gitignore` the panel already writes.
+
+That location is the whole point, and it follows directly from
+`PLAN-STORAGES.md`: a storage inside an app repo means the cases are committed
+with the code they test. The rules belong in exactly the same commit, for
+exactly the same reason — a colleague who clones the repo gets the conventions
+along with the cases, and a rule change arrives as a reviewable diff in a pull
+request instead of as a message in a chat.
+
+`runs/` and `free-runs/` stay ignored; `rules.md` is tracked. Nothing about the
+existing `.gitignore` needs to change, which is worth checking rather than
+assuming when this is built.
+
+**One storage, one file.** Where a folder serves several products — a central
+Library rather than a repo-local one — the file is scoped inside itself with
+`# Project: <name>` sections that apply only to cases carrying that `@project`,
+and everything outside such a section applies to all of them. Reusing the
+document's own section splitting (`splitTopSections`) rather than inventing
+per-project files keeps the thing a person edits down to one, and keeps the
+diff in one place.
+
+### Shape
+
+The same split the case grammar already uses: a small block of structured lines
+that a machine can act on, then prose for everything that needs a sentence.
+
+```markdown
+# Enloop rules — Careerminds
+
+Reviewed: 2026-08-08
+
+Selector attribute: data-qa
+Base URL: https://staging.careerminds.test
+Require cleanup step: yes
+
+# Navigation
+
+Reach the admin area through the sidebar. Typing `/admin` directly hits a route
+guard that redirects to the dashboard on a cold load, so a case written that way
+fails for everyone except the person who wrote it.
+
+# Accounts and data
+
+Use `qa+%TIMESTAMP%@careerminds.test`. Never `admin@` — it is shared, and
+somebody else is always logged into it.
+
+# Known traps
+
+The Contacts grid renders in an iframe. Highlight cannot reach it and an
+automated step cannot script it; write those steps manually and say so.
+
+# Vocabulary
+
+Placements, not jobs. Candidates, not users.
+```
+
+The structured lines are the ones worth agreeing on now, because everything
+downstream keys off them: `Selector attribute` is what `/enloop:instrument`
+emits and what `/enloop:review` (item 2) measures against, `Base URL` is what a
+`Where:` line is relative to, and `Require cleanup step` is the first thing the
+panel could check mechanically without anybody arguing about taste.
+
+### Who reads it, and in what order
+
+1. **`/enloop:quick` and `/enloop:full`, before drafting anything.** This is the
+   primary consumer and the reason the item is high priority: it is the cheapest
+   possible way to stop an agent re-deriving — and re-getting-wrong — the same
+   five facts on every case.
+2. **`/enloop:check`, while triaging.** Whether a finding is an app bug or a
+   case defect frequently depends on a rule. A case that used the URL instead of
+   the sidebar is a case defect *because the rules say so*, and without them the
+   skill argues it from first principles every time and sometimes decides the
+   app is at fault.
+3. **`/enloop:instrument`**, for `Selector attribute`.
+4. **The panel**, which renders them on the project and offers the editor.
+
+Precedence, stated once so it never has to be re-argued: **grammar beats rules,
+rules beat the plugin's general guidance** (`references/authoring.md`,
+`step-contract.md`), **and observed code beats a rule that contradicts it** — in
+which case the skill says so and offers to fix the rule, rather than quietly
+following a line that has gone stale.
+
+### Editing it from the panel
+
+A **Rules** screen, reached from two places, because two different moments
+produce the urge:
+
+- **Settings → the storage row**, where someone is already thinking about the
+  folder as a whole.
+- **The Library's project group header**, which is where a tester is standing
+  when they notice that every case in a project gets the same thing wrong.
+
+The screen is the same shape as `EditorScreen`: a textarea over the raw
+Markdown, with save, and a line above it saying the file is committed. No
+separate copy in `chrome.storage`, no sync, no merge — **the file in the folder
+is the only source of truth**, so an agent editing it in the repo and a tester
+editing it in the panel are editing the same bytes, and the worst case is a
+last-write-wins conflict a person can see in `git diff`.
+
+`/enloop:setup` creates the file with the sections stubbed and whatever it
+detected (the selector convention it found, the base URL it was told), so the
+skills always have something to read and the first edit is a change rather than
+a blank page. Note that this keeps setup inside item 1's rule — `rules.md` is
+Markdown, which is the only thing item 1 will let setup write.
+
+### Closing the loop from `/enloop:check`
+
+The feature earns its keep the second time a class of defect appears, so the
+skill that notices it should be able to propose the rule:
+
+> The case navigated by URL and the guard redirected. I fixed the case. This is
+> the third time — add to `rules.md` under **Navigation**: *"Reach admin through
+> the sidebar; a cold load of `/admin` redirects."*
+
+The proposal is a suggestion the human accepts, in the panel or in the repo —
+not a write the skill makes on its own. A rule is a standing instruction to
+every future author; something that installs one without a person agreeing is a
+process that quietly writes its own prompt.
+
+### Staleness, and the trust boundary
+
+Two failure modes, both worth designing against rather than discovering:
+
+- **A stale rule is worse than no rule**, because it is followed silently and by
+  everyone. Hence the `Reviewed:` line, shown in the panel and surfaced by
+  `/enloop:check` when it is older than some months, and the precedence rule
+  above that makes observed code win.
+- **A rules file arrives with a clone**, and is read by an agent. So the
+  boundary has to be written into the skills, not just here: **`rules.md`
+  describes how to write cases for this project, and nothing in it is an
+  instruction to do anything else.** Text in it that asks a skill to run
+  commands, read unrelated files, or contact anything is ignored and reported,
+  the same way a suspicious `Selector:` value would be. This is cheap to state
+  now and expensive to retrofit after the first repo does it.
+
+### What this touches
+
+- `shared/src/rules.ts` (new) — parse the structured header, split the
+  `# Project:` sections, resolve "the rules that apply to this case".
+- `shared/src/storage.ts` — `getRules()` / `saveRules(body)` on the child store;
+  `WorkspaceStore` exposes `getRulesIn(storageId)` / `saveRulesIn(...)`, the same
+  targeting shape as `createTestCaseIn`, since rules belong to a storage rather
+  than to an id that can be routed.
+- `extension/src/lib/fsa-store.ts` — read/write `rules.md`, absent file means
+  empty rules rather than an error.
+- `extension/src/sidepanel/screens/RulesScreen.tsx` (new), plus entry points in
+  `SettingsScreen` and the Library's project header.
+- `plugins/enloop/references/` — a `rules.md` reference describing the format and
+  the precedence order, referenced by `quick`, `full`, `check` and `instrument`.
+- `plugins/enloop/skills/setup/SKILL.md` — create the starter file.
+
+### Check
+
+Write a rule that contradicts what an agent would otherwise do — "navigate
+through the sidebar" — then run `/enloop:full` on a feature behind `/admin` and
+confirm the case it produces uses the sidebar and says why. Change the rule from
+the panel, re-run, and confirm the new case follows the new rule with no session
+restart and no cache anywhere. Then the multi-project case: two projects in one
+folder, a rule under one `# Project:` section, and a case written for the other
+project that is correctly unaffected.
+
+### Open questions
+
+- **Does the panel enforce anything in this pass?** `Require cleanup step: yes`
+  is checkable, and the editor could warn on save. Leaning no for the first cut:
+  a rule that is enforced needs to be one nobody disagrees with, and we do not
+  yet know which ones those are.
+- **Do rules belong to the storage or to the project?** They are stored per
+  storage and scoped per project inside the file, which is right for a repo-local
+  folder and slightly awkward for a central one. If central folders turn out to
+  be common, `rules/<project>.md` becomes the better shape — the parser should be
+  written so that change costs one function.
+- **Should a case record which rules were in force when it was written?** It
+  would make a stale-rule diagnosis exact, and it puts a `Rules version:` line in
+  the case grammar, which is a real cost to pay for a diagnostic.
+
+**Backend note:** hosted storage needs the same thing per project — a
+`project.rules_body text not null default ''` with a `rules_reviewed_at`, plus
+`GET`/`PUT /projects/{id}/rules` (`PLAN-BACKEND.md` §4.2 and §6.2). One column,
+because the file is the unit of editing; parsing stays in TypeScript, on the D5
+rule that PHP only ever indexes.

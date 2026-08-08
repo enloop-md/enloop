@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from "react";
-import type { FreeRun } from "@tcm/shared";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { describeCounts, type CapturedEntry, type FreeRun } from "@tcm/shared";
+import { CaptureNotice } from "../../components/CaptureNotice.js";
 import { ErrorNotice } from "../../components/ErrorNotice.js";
 import { Header } from "../../components/Header.js";
+import { freeRunCaptureKey } from "../../lib/capture.js";
 import { useReadyStore } from "../store/DataStoreProvider.js";
+import { useCaptureRecorder } from "../useCapture.js";
 
 const AUTOSAVE_DEBOUNCE_MS = 2000;
 
@@ -41,6 +44,22 @@ export function FreeRunScreen({
 
   const readOnly = !freeRun || freeRun.finishedAt != null;
 
+  const appendConsole = useCallback(
+    async (entries: CapturedEntry[]) => {
+      await store.appendFreeRunConsole(freeRunId, entries);
+    },
+    [store, freeRunId],
+  );
+  // An unscripted session is exactly where an unexplained console error is
+  // worth having, and there is no step for it to hang off — entries attach to
+  // the session and land in console.md next to notes.md.
+  const capture = useCaptureRecorder({
+    key: freeRunCaptureKey(freeRunId),
+    stepId: null,
+    active: !!freeRun && freeRun.finishedAt == null,
+    append: appendConsole,
+  });
+
   async function save(patch: { title?: string; notes?: string }) {
     try {
       const updated = await store.updateFreeRun(freeRunId, patch);
@@ -66,6 +85,9 @@ export function FreeRunScreen({
     setError(null);
     try {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      // console.md is rendered by finishFreeRun, so the last batch has to be
+      // on disk before it runs.
+      await capture.flush();
       await save({ title, notes });
       const updated = await store.finishFreeRun(freeRunId);
       setFreeRun(updated);
@@ -105,6 +127,7 @@ export function FreeRunScreen({
         />
       </div>
       <ErrorNotice error={error} className="px-3 pt-2" />
+      {!readOnly && <CaptureNotice wrapper={capture.wrapper} className="mx-3 mt-2" />}
       <div className="flex-1 overflow-hidden p-3">
         <textarea
           value={notes}
@@ -123,7 +146,14 @@ export function FreeRunScreen({
         />
       </div>
       {!readOnly && (
-        <div className="border-t border-slate-200 p-3">
+        <div className="space-y-2 border-t border-slate-200 p-3">
+          {capture.on && capture.total > 0 && (
+            <p className="text-[11px] text-slate-400">
+              Captured {describeCounts(capture.counts) || `${capture.total} entries`} from the
+              page — kept in <code>console.md</code> next to these notes, and not copied into the
+              handoff.
+            </p>
+          )}
           <button
             onClick={finish}
             disabled={busy}

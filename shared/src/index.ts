@@ -8,4 +8,5 @@ export * from "./variables.js";
 export * from "./selector-text.js";
 export * from "./viewer-link.js";
 export * from "./storage-id.js";
+export * from "./capture.js";
 export * from "./html.js";

@@ -1,12 +1,16 @@
 import {
+  buildCaptureDigest,
   buildRunSource,
   caseBookkeepingSchema,
+  countsByStep,
   filterToQuickSteps,
   freeRunFileSchema,
   newFreeRunId,
   newRunId,
   newTestCaseId,
   parseCaseDocument,
+  parseJsonl,
+  renderCaptureLog,
   renderFreeRunFeedback,
   renderRunFeedback,
   renderRunReport,
@@ -32,6 +36,8 @@ import {
   type VersionSummary,
 } from "@tcm/shared";
 import {
+  appendTextFile,
+  fileSize,
   getDir,
   listDirNames,
   nowIso,
@@ -56,6 +62,11 @@ const FEEDBACK_FILE = "feedback.md";
 const FREE_RUN_FILE = "free-run.json";
 const NOTES_FILE = "notes.md";
 const SUITE_FILE = "suite.md";
+/** What the page printed, as it arrived: one JSON object per line, appended a
+ * batch at a time. The machine record — see `shared/src/capture.ts`. */
+const CONSOLE_RECORD_FILE = "console.jsonl";
+/** The same thing rendered for a person, written once when the run finishes. */
+const CONSOLE_FILE = "console.md";
 
 function versionFile(version: number): string {
   return `v${version}.md`;
@@ -102,6 +113,56 @@ function byRecentlyUpdated(a: TestCaseSummary, b: TestCaseSummary): number {
   return b.updatedAt.localeCompare(a.updatedAt) || a.title.localeCompare(b.title);
 }
 
+/**
+ * Adds a batch to a folder's console record, and stops at the byte ceiling.
+ *
+ * The ceiling is checked with a stat rather than by counting entries, so an
+ * append stays a stat plus a positioned write however long the run has been
+ * going. Crossing it writes one `notice` line and refuses everything after —
+ * a marker in the log rather than a silence, because a reader has no way to
+ * tell a capped log from a quiet page.
+ *
+ * `CAPTURE_MAX_BYTES` is compared against character counts, which undercounts
+ * multi-byte text. It is a ceiling to keep a chatty app from making a run
+ * unsavable, not an accounting contract.
+ */
+async function appendCapture(
+  dir: FileSystemDirectoryHandle,
+  entries: CapturedEntry[],
+): Promise<void> {
+  if (entries.length === 0) return;
+  const size = await fileSize(dir, CONSOLE_RECORD_FILE);
+  if (size >= CAPTURE_MAX_BYTES) return;
+
+  let batch = entries;
+  if (size + toJsonl(entries).length >= CAPTURE_MAX_BYTES) {
+    const kept: CapturedEntry[] = [];
+    let used = size;
+    for (const entry of entries) {
+      const line = `${JSON.stringify(entry)}\n`;
+      if (used + line.length >= CAPTURE_MAX_BYTES) break;
+      used += line.length;
+      kept.push(entry);
+    }
+    kept.push({
+      level: "notice",
+      at: nowIso(),
+      url: "",
+      text:
+        `Capture stopped at ${Math.round(CAPTURE_MAX_BYTES / 1024)} KB. ` +
+        `${entries.length - kept.length} entries from this batch, and anything after it, ` +
+        "were not recorded.",
+    });
+    batch = kept;
+  }
+  await appendTextFile(dir, CONSOLE_RECORD_FILE, toJsonl(batch));
+}
+
+async function readCapture(dir: FileSystemDirectoryHandle): Promise<CapturedEntry[]> {
+  const file = await tryReadTextFile(dir, CONSOLE_RECORD_FILE);
+  return file ? parseJsonl(file.text) : [];
+}
+
 function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
   const stateByStepId = new Map(runFile.steps.map((s) => [s.stepId, s]));
   const steps = doc.steps.map((step) => {
@@ -114,6 +175,7 @@ function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
       automatedResult: null,
       startedAt: null,
       finishedAt: null,
+      ...ZERO_CAPTURE_COUNTS,
     };
     return {
       stepId: step.id,
@@ -132,6 +194,9 @@ function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
       automatedResult: state.automatedResult,
       startedAt: state.startedAt,
       finishedAt: state.finishedAt,
+      consoleErrors: state.consoleErrors,
+      consoleWarnings: state.consoleWarnings,
+      networkFailures: state.networkFailures,
     };
   });
   return {
@@ -142,6 +207,7 @@ function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
     status: runFile.status,
     comment: runFile.comment,
     tier: runFile.tier,
+    consoleInReport: runFile.consoleInReport,
     startedAt: runFile.startedAt,
     finishedAt: runFile.finishedAt,
     dependencies: doc.dependencies,
@@ -506,6 +572,7 @@ export class FsaDataStore implements DataStore {
       status: "in_progress",
       comment: "",
       tier,
+      consoleInReport: false,
       startedAt: now,
       finishedAt: null,
       steps: doc.steps.map((s) => ({
@@ -517,6 +584,7 @@ export class FsaDataStore implements DataStore {
         automatedResult: null,
         startedAt: null,
         finishedAt: null,
+        ...ZERO_CAPTURE_COUNTS,
       })),
     };
     await writeJson(runDir, RUN_FILE, runFile);
@@ -550,14 +618,18 @@ export class FsaDataStore implements DataStore {
   async updateRun(
     testCaseId: string,
     runId: string,
-    patch: { comment?: string },
+    patch: { comment?: string; consoleInReport?: boolean },
   ): Promise<Run> {
     const runDir = await this.getRunDir(testCaseId, runId);
     const [{ text: rawMarkdown }, runFile] = await Promise.all([
       readTextFile(runDir, CASE_FILE),
       readJson(runDir, RUN_FILE, runFileSchema),
     ]);
-    const updated: RunFile = { ...runFile, comment: patch.comment ?? runFile.comment };
+    const updated: RunFile = {
+      ...runFile,
+      comment: patch.comment ?? runFile.comment,
+      consoleInReport: patch.consoleInReport ?? runFile.consoleInReport,
+    };
     await writeJson(runDir, RUN_FILE, updated);
 
     const doc = parseCaseDocument(rawMarkdown, {
@@ -567,24 +639,72 @@ export class FsaDataStore implements DataStore {
     return composeRun(doc, updated);
   }
 
+  async appendConsole(
+    testCaseId: string,
+    runId: string,
+    entries: CapturedEntry[],
+  ): Promise<void> {
+    await appendCapture(await this.getRunDir(testCaseId, runId), entries);
+  }
+
   async finishRun(testCaseId: string, runId: string, status: RunStatus): Promise<Run> {
     const runDir = await this.getRunDir(testCaseId, runId);
-    const [{ text: rawMarkdown }, runFile] = await Promise.all([
+    const [{ text: rawMarkdown }, runFile, captured] = await Promise.all([
       readTextFile(runDir, CASE_FILE),
       readJson(runDir, RUN_FILE, runFileSchema),
+      readCapture(runDir),
     ]);
-    const updated: RunFile = { ...runFile, status, finishedAt: nowIso() };
+
+    // Counts are folded in here rather than on every append: they are only
+    // ever read after a run finishes, and rewriting run.json every few seconds
+    // for the sake of three integers would fight the step patches for the same
+    // file. Entries that arrived outside any step are in `console.md` and in
+    // the digest, but belong to no step's tally.
+    const byStep = countsByStep(captured);
+    const updated: RunFile = {
+      ...runFile,
+      status,
+      finishedAt: nowIso(),
+      steps: runFile.steps.map((step) => ({
+        ...step,
+        ...(byStep.get(step.stepId) ?? ZERO_CAPTURE_COUNTS),
+      })),
+    };
     await writeJson(runDir, RUN_FILE, updated);
 
     const doc = parseCaseDocument(rawMarkdown, {
       version: updated.testCaseVersion,
       createdAt: updated.startedAt,
     });
+
+    if (captured.length > 0) {
+      const stepNumbers = new Map(doc.steps.map((step, index) => [step.id, index + 1]));
+      await writeTextFile(
+        runDir,
+        CONSOLE_FILE,
+        renderCaptureLog(captured, {
+          title: doc.title,
+          subtitle: `Run ${updated.id} of v${updated.testCaseVersion}, started ${updated.startedAt}.`,
+          stepLabel: (stepId) => {
+            const number = stepNumbers.get(stepId);
+            const step = doc.steps.find((s) => s.id === stepId);
+            return number && step ? `Step ${number} — ${step.title}` : stepId;
+          },
+        }),
+      );
+    }
+
+    // The digest is what crosses into the two files an agent reads, so it is
+    // built only when the tester said it may. `console.md` stays on disk
+    // either way: the checkbox governs what is handed on, not what is kept.
+    const digest =
+      captured.length > 0 && updated.consoleInReport ? buildCaptureDigest(captured) : null;
+
     // Human-readable artifact for sharing outside the extension (e.g. email)
     // — run.json stays the JSON source of truth the UI actually reads back.
-    await writeTextFile(runDir, REPORT_FILE, renderRunReport(doc, updated));
+    await writeTextFile(runDir, REPORT_FILE, renderRunReport(doc, updated, digest));
 
-    const feedback = renderRunFeedback(doc, updated);
+    const feedback = renderRunFeedback(doc, updated, digest);
     if (feedback) await writeTextFile(runDir, FEEDBACK_FILE, feedback);
 
     return composeRun(doc, updated);
@@ -647,16 +767,36 @@ export class FsaDataStore implements DataStore {
     return { ...updated, notes };
   }
 
+  async appendFreeRunConsole(id: string, entries: CapturedEntry[]): Promise<void> {
+    await appendCapture(await getDir(await this.freeRunsDir(true), id), entries);
+  }
+
   async finishFreeRun(id: string): Promise<FreeRun> {
     const dir = await getDir(await this.freeRunsDir(true), id);
-    const [file, notesFile] = await Promise.all([
+    const [file, notesFile, captured] = await Promise.all([
       readJson(dir, FREE_RUN_FILE, freeRunFileSchema),
       tryReadTextFile(dir, NOTES_FILE),
+      readCapture(dir),
     ]);
     const notes = notesFile?.text ?? "";
     const updated: FreeRunFile = { ...file, finishedAt: nowIso() };
     await writeJson(dir, FREE_RUN_FILE, updated);
     await writeTextFile(dir, FEEDBACK_FILE, renderFreeRunFeedback(updated, notes));
+    // A free run has no steps to hang entries off, so everything groups under
+    // the session. It is also why nothing from here reaches `feedback.md`:
+    // there is no finish bar to ask the question in, and an unasked question
+    // is not consent.
+    if (captured.length > 0) {
+      await writeTextFile(
+        dir,
+        CONSOLE_FILE,
+        renderCaptureLog(captured, {
+          title: updated.title,
+          subtitle: `Free run ${updated.id}, started ${updated.startedAt}.`,
+          unstepped: "During the session",
+        }),
+      );
+    }
     return { ...updated, notes };
   }
 }

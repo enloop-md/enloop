@@ -1,14 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  describeCounts,
+  hasCaptureSignal,
   newNoteId,
   newTaskId,
   NOTE_TYPE_LABELS,
   NOTE_TYPES,
+  type CapturedEntry,
   type NoteType,
   type Run,
   type RunStep,
   type RunStepStatus,
 } from "@tcm/shared";
+import { CaptureNotice } from "../../components/CaptureNotice.js";
 import { ErrorNotice } from "../../components/ErrorNotice.js";
 import { Header } from "../../components/Header.js";
 import { Markdown } from "../../components/Markdown.js";
@@ -20,6 +24,8 @@ import { highlightSelectors } from "../../lib/highlight.js";
 import { getPageAccess, type PageAccess } from "../../lib/page-access.js";
 import { looksNavigable } from "../../lib/navigate.js";
 import { NavigateButton } from "../../components/NavigateButton.js";
+import { runCaptureKey } from "../../lib/capture.js";
+import { useCaptureRecorder } from "../useCapture.js";
 
 export function RunScreen({
   testCaseId,
@@ -80,6 +86,27 @@ export function RunScreen({
    * nothing and greys nothing — there is no "here" to be ahead of. */
   const currentStepId =
     run?.steps.find((s) => s.status === "pending" || s.status === "running")?.stepId ?? null;
+
+  const appendConsole = useCallback(
+    async (entries: CapturedEntry[]) => {
+      await store.appendConsole(testCaseId, runId, entries);
+    },
+    [store, testCaseId, runId],
+  );
+  // Entries arriving while this run is in progress are stamped with whatever
+  // step is current, which is what makes the log readable a day later.
+  const capture = useCaptureRecorder({
+    key: runCaptureKey(testCaseId, runId),
+    stepId: currentStepId,
+    active: run?.status === "in_progress",
+    append: appendConsole,
+  });
+  // Null until the tester touches the box. Until then it follows the evidence:
+  // a clean log is noise, a log with a stack trace in it is the reason capture
+  // exists — and defaulting off in both cases would mean the box only ever
+  // gets ticked by someone who already knew what they were looking for.
+  const [consoleChoice, setConsoleChoice] = useState<boolean | null>(null);
+  const consoleInReport = consoleChoice ?? capture.counts.consoleErrors > 0;
 
   // Follow the run: open the current step, close the one we opened for the
   // step before it. Driven by which step is current rather than by the
@@ -166,9 +193,17 @@ export function RunScreen({
     if (!run) return;
     setError(null);
     try {
-      // Land the comment first: report.md and feedback.md are rendered by
-      // finishRun, so a comment saved after it would not appear in either.
-      await saveComment(commentDraft);
+      // Everything the report is built from has to land before it is built:
+      // report.md and feedback.md are rendered by finishRun, so a comment, a
+      // decision about the log, or a last batch of entries saved after it
+      // would appear in neither. An abort takes the same path deliberately —
+      // an abandoned run is where the console most often explains what
+      // happened, and it needs no extra asking to keep it.
+      await capture.flush();
+      await store.updateRun(run.testCaseId, run.id, {
+        comment: commentDraft,
+        consoleInReport,
+      });
       const updated = await store.finishRun(run.testCaseId, run.id, status);
       setRun(updated);
     } catch (e) {
@@ -204,7 +239,8 @@ export function RunScreen({
         s.status === "warning" ||
         s.comment.trim().length > 0 ||
         s.notes.length > 0 ||
-        !!s.automatedResult?.error,
+        !!s.automatedResult?.error ||
+        s.consoleErrors > 0,
     );
 
   return (
@@ -252,6 +288,9 @@ export function RunScreen({
         </span>
       </div>
       <ErrorNotice error={error} className="px-3 pt-2" />
+      {/* Settings is not where anyone is looking while the evidence is being
+          lost, so the notice belongs here too. */}
+      {!readOnly && <CaptureNotice wrapper={capture.wrapper} className="mx-3 mt-2" />}
       {readOnly && hasFeedbackSignal && (
         <p className="border-b border-violet-100 bg-violet-50 px-3 py-2 text-xs text-violet-700">
           Feedback saved to feedback.md in this run's folder — point Claude Code at it.
@@ -294,6 +333,33 @@ export function RunScreen({
             placeholder="Comment on the whole run (optional) — anything that isn't about one step"
             className="w-full resize-y rounded border border-slate-300 px-2 py-1.5 text-xs"
           />
+          {/* Capturing is one decision; handing the log to a model is a second
+              one, made here because this is the moment the tester knows whether
+              the run was interesting and the log exists to be looked at rather
+              than guessed about. */}
+          {/* Shown once anything has been captured even if capture was since
+              switched off — the entries are on disk, and the question of what
+              happens to them is still open. */}
+          {(capture.on || capture.total > 0) && (
+            <label className="flex items-start gap-2 text-[11px] text-slate-600">
+              <input
+                type="checkbox"
+                checked={consoleInReport}
+                onChange={(e) => setConsoleChoice(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                Include console output in the report
+                {capture.total > 0
+                  ? ` (${describeCounts(capture.counts) || `${capture.total} entries, nothing alarming`})`
+                  : " — nothing captured so far"}
+                <span className="mt-0.5 block text-slate-400">
+                  A digest, not the raw log. <code>console.md</code> is kept in the run's folder
+                  either way; this decides what <code>report.md</code> hands on.
+                </span>
+              </span>
+            </label>
+          )}
           <div className="flex gap-2">
             <button
               onClick={() => finishRun(failCount > 0 ? "failed" : "passed")}
@@ -717,6 +783,17 @@ function StepRow({
                 <span className="font-medium">Note:</span>
                 <Markdown text={step.note} insertValues className="text-[11px] text-slate-400" />
               </div>
+            )}
+
+            {/* Counts are folded into run.json when the run finishes, so this
+                is a record on a finished run rather than a live meter. The
+                lines themselves are in console.md — pointing at the step is
+                what makes them findable. */}
+            {hasCaptureSignal(step) && (
+              <p className="text-[11px] text-slate-500">
+                <span className="font-medium">Console:</span> {describeCounts(step)}
+                <span className="text-slate-400"> — see console.md in this run's folder</span>
+              </p>
             )}
 
             {step.type === "automated" && step.automatedResult && (

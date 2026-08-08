@@ -103,6 +103,20 @@ export async function readTextFile(
   return { text, lastModified: new Date(file.lastModified).toISOString() };
 }
 
+/** Bytes on disk, `0` when the file isn't there — a stat, not a read, so it is
+ * cheap enough to check before every append. */
+export async function fileSize(
+  dir: FileSystemDirectoryHandle,
+  filename: string,
+): Promise<number> {
+  try {
+    const fileHandle = await dir.getFileHandle(filename, { create: false });
+    return (await fileHandle.getFile()).size;
+  } catch {
+    return 0;
+  }
+}
+
 export async function tryReadTextFile(
   dir: FileSystemDirectoryHandle,
   filename: string,
@@ -123,6 +137,25 @@ export async function writeTextFile(
   const fileHandle = await dir.getFileHandle(filename, { create: true });
   const writable = await fileHandle.createWritable();
   await writable.write(text);
+  await writable.close();
+}
+
+/**
+ * Adds to the end of a file, creating it if it isn't there.
+ *
+ * `keepExistingData` plus an explicit position, rather than read-then-rewrite:
+ * console capture appends every few seconds for as long as a run lasts, and
+ * rewriting a growing file each time turns a linear cost into a quadratic one.
+ */
+export async function appendTextFile(
+  dir: FileSystemDirectoryHandle,
+  filename: string,
+  text: string,
+): Promise<void> {
+  const fileHandle = await dir.getFileHandle(filename, { create: true });
+  const { size } = await fileHandle.getFile();
+  const writable = await fileHandle.createWritable({ keepExistingData: true });
+  await writable.write({ type: "write", position: size, data: text });
   await writable.close();
 }
 
