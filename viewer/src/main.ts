@@ -2,9 +2,9 @@
  * The online viewer: a case, out of a link, in a browser.
  *
  * There is no server here and no storage — the page is static, and the case
- * arrives inside the URL (`?c=<base64url>`, or `#c=` for a link that never
- * reaches a server at all). Decoding, parsing and rendering all happen on the
- * reader's own device.
+ * arrives inside the URL (`#c=<deflated base64url>`, or the older `?c=` form).
+ * Decoding, parsing and rendering all happen on the reader's own device, and
+ * with the case in the fragment the payload never leaves it at all.
  *
  * The rendering itself is not this module's job: `renderCaseBody` and
  * `attachCasePage` come from `@tcm/shared`, and the extension inlines the
@@ -17,12 +17,12 @@ import {
   attachCasePage,
   CASE_PAGE_CSS,
   decodeCaseParam,
-  encodeCaseParam,
   exampleCaseSource,
   parseCaseDocument,
   renderCaseBody,
   renderCasePage,
   VIEWER_CASE_PARAM,
+  viewerLink,
   type TestCaseVersion,
 } from "@tcm/shared";
 import { renderBuilder } from "./builder.js";
@@ -43,25 +43,35 @@ const pasteBox = document.querySelector<HTMLTextAreaElement>("#paste")!;
 let source: string | null = null;
 let simplified = false;
 
+/**
+ * The link to whatever is currently on screen.
+ *
+ * Encoding is asynchronous now that the case is compressed, and the toolbar's
+ * Copy has to write to the clipboard inside the click that asked for it —
+ * browsers withdraw clipboard permission across an `await`. So the link is
+ * computed once when the case is shown and kept here for the buttons to use.
+ */
+let currentLink: string | null = null;
+
 /** Where this deployment lives — read off the page rather than hard-coded,
  * so a fork or a local `vite preview` generates links to itself. */
 function baseUrl(): string {
   return location.origin + location.pathname;
 }
 
-function linkFor(markdown: string): string {
-  return `${baseUrl()}?${VIEWER_CASE_PARAM}=${encodeCaseParam(markdown)}`;
+function linkFor(markdown: string): Promise<string> {
+  return viewerLink(markdown, { baseUrl: baseUrl() });
 }
 
-/** The payload out of the query string, or out of the fragment — a fragment
- * is never sent to the host, which is the right default for a case naming
- * internal URLs, so both are accepted and `?c=` wins if somehow both are
- * there. */
+/** The payload out of the fragment, or out of the query string. The fragment
+ * is where links have carried the case since it started being compressed, and
+ * it is the one that never reaches the host at all — so it wins. `?c=` is
+ * still read for the links written before that. */
 function readParam(): string | null {
-  const fromQuery = new URLSearchParams(location.search).get(VIEWER_CASE_PARAM);
-  if (fromQuery) return fromQuery;
   const hash = location.hash.startsWith("#") ? location.hash.slice(1) : "";
-  return new URLSearchParams(hash).get(VIEWER_CASE_PARAM);
+  const fromHash = new URLSearchParams(hash).get(VIEWER_CASE_PARAM);
+  if (fromHash) return fromHash;
+  return new URLSearchParams(location.search).get(VIEWER_CASE_PARAM);
 }
 
 function say(message: string, ms = 1400): void {
@@ -152,8 +162,14 @@ function renderToolbar(doc: TestCaseVersion, markdown: string): void {
 
   toolbar.appendChild(
     button("🔗 Copy link", "A link with this case inside it — nothing is uploaded", () => {
-      const link = linkFor(markdown);
-      navigator.clipboard.writeText(link).then(
+      // `currentLink` is all but always ready by the time anyone reaches for
+      // the button; the address bar holds the same link, so on the one frame
+      // where it is not, say so rather than making the reader wait.
+      if (!currentLink) {
+        say("Still packing the link — it is in the address bar");
+        return;
+      }
+      navigator.clipboard.writeText(currentLink).then(
         () => say("Link copied"),
         () => say("Could not copy — the link is in the address bar"),
       );
@@ -162,15 +178,17 @@ function renderToolbar(doc: TestCaseVersion, markdown: string): void {
 
   toolbar.appendChild(
     button("⤓ HTML", "Save this page as one self-contained file that works offline", () => {
-      download(
-        `${fileSlug(doc.title)}${simplified ? "-simplified" : ""}.html`,
-        renderCasePage(doc, {
-          simplified,
-          exportedAt: new Date().toISOString(),
-          viewerUrl: linkFor(markdown),
-        }),
-        "text/html",
-      );
+      void (async () => {
+        download(
+          `${fileSlug(doc.title)}${simplified ? "-simplified" : ""}.html`,
+          renderCasePage(doc, {
+            simplified,
+            exportedAt: new Date().toISOString(),
+            viewerUrl: currentLink ?? (await linkFor(markdown)),
+          }),
+          "text/html",
+        );
+      })();
     }),
   );
 
@@ -201,8 +219,25 @@ function show(markdown: string, opts: { updateUrl?: boolean } = {}): void {
   attachCasePage(holder);
   renderToolbar(doc, markdown);
   document.title = `${doc.title} — Enloop`;
-  if (opts.updateUrl !== false) history.replaceState(null, "", linkFor(markdown));
+  currentLink = null;
+  void refreshLink(markdown, opts.updateUrl !== false);
   window.scrollTo(0, 0);
+}
+
+/**
+ * Encode the case into a link, hold on to it, and put it in the address bar.
+ *
+ * `replaceState` rather than assigning `location.hash`, so that opening a case
+ * does not stack a history entry the reader has to press back through — and so
+ * that it fires no `hashchange`, which would otherwise re-open the case that
+ * was just opened.
+ */
+async function refreshLink(markdown: string, updateUrl: boolean): Promise<void> {
+  const link = await linkFor(markdown);
+  // Another case may have been opened while this one was compressing.
+  if (source !== markdown) return;
+  currentLink = link;
+  if (updateUrl) history.replaceState(null, "", link);
 }
 
 /** The builder, in place of everything else. `initial` pre-fills it from an
@@ -225,6 +260,7 @@ function showBuilder(initial?: string): void {
 function showLanding(prefill = "", error?: string): void {
   caseRoot.replaceChildren();
   toolbar.hidden = true;
+  currentLink = null;
   landing.hidden = false;
   pasteBox.value = prefill;
   landingError.hidden = !error;
@@ -346,20 +382,35 @@ window.addEventListener("drop", (event) => {
   if (file) void openDroppedFile(file);
 });
 
-// Back/forward between links, and someone editing the address bar by hand.
-window.addEventListener("popstate", () => {
+/** Whatever the URL currently points at, on screen. */
+async function openFromUrl(): Promise<void> {
   const param = readParam();
-  if (param) open(decodeCaseParam(param));
-  else showLanding(source ?? "");
-});
-
-const initial = readParam();
-if (initial) {
+  if (!param) {
+    // A fragment that is not a case is not a request to close the one that is
+    // open — and closing it would take the reader's ticks with it. Only a URL
+    // stripped back to the bare page means "start over".
+    if (location.hash && source) return;
+    showLanding(source ?? "");
+    return;
+  }
+  let markdown: string;
   try {
-    open(decodeCaseParam(initial));
+    markdown = await decodeCaseParam(param);
   } catch (e) {
     showLanding("", e instanceof Error ? e.message : String(e));
+    return;
   }
-} else {
-  showLanding();
+  // Nothing to do when the URL already describes what is showing — which is
+  // what a `hashchange` fired by anything other than a reader pasting a new
+  // link would mean.
+  if (markdown !== source) open(markdown);
 }
+
+// Back/forward between links, and someone editing the address bar by hand —
+// which now changes only the fragment, so it arrives as `hashchange` rather
+// than as a load.
+window.addEventListener("popstate", () => void openFromUrl());
+window.addEventListener("hashchange", () => void openFromUrl());
+
+if (readParam()) void openFromUrl();
+else showLanding();

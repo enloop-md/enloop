@@ -18,7 +18,11 @@ import {
   runFileSchema,
   stripViewerComment,
   substituteVariables,
+  toJsonl,
   withViewerComment,
+  CAPTURE_MAX_BYTES,
+  ZERO_CAPTURE_COUNTS,
+  type CapturedEntry,
   type CaseBookkeeping,
   type DataStore,
   type FreeRun,
@@ -351,7 +355,7 @@ export class FsaDataStore implements DataStore {
     const parentDir = suiteId ? await getDir(casesDir, suiteId, { create: true }) : casesDir;
     const caseDir = await getDir(parentDir, id, { create: true });
     const versionsDir = await getDir(caseDir, "versions", { create: true });
-    await writeTextFile(versionsDir, versionFile(1), withViewerComment(bodyMarkdown));
+    await writeTextFile(versionsDir, versionFile(1), await withViewerComment(bodyMarkdown));
     await writeJson(caseDir, META_FILE, { archived: false } satisfies CaseBookkeeping);
     return this.getTestCase(id);
   }
@@ -366,7 +370,11 @@ export class FsaDataStore implements DataStore {
     // The link comment is appended on the way to disk rather than being the
     // author's to maintain: it encodes the file, so anything else would mean
     // a link that quietly stops matching the case it is attached to.
-    await writeTextFile(versionsDir, versionFile(nextVersion), withViewerComment(bodyMarkdown));
+    await writeTextFile(
+      versionsDir,
+      versionFile(nextVersion),
+      await withViewerComment(bodyMarkdown),
+    );
     return readVersion(versionsDir, nextVersion);
   }
 
