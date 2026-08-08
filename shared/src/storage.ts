@@ -1,3 +1,4 @@
+import type { CapturedEntry } from "./capture.js";
 import type {
   FreeRun,
   FreeRunFile,
@@ -70,10 +71,24 @@ export interface RunStore {
     tier?: RunTier,
   ): Promise<Run>;
   updateStep(testCaseId: string, runId: string, stepId: string, patch: StepPatch): Promise<Run>;
-  /** Run-level fields that are not step state — currently the tester's
-   * comment on the run as a whole. Saved as it is typed rather than handed
-   * to `finishRun`, so closing the panel mid-sentence does not lose it. */
-  updateRun(testCaseId: string, runId: string, patch: { comment?: string }): Promise<Run>;
+  /** Run-level fields that are not step state — the tester's comment on the
+   * run as a whole, and their decision about attaching captured output to the
+   * report. Saved as they are made rather than handed to `finishRun`, so
+   * closing the panel mid-sentence does not lose either. */
+  updateRun(
+    testCaseId: string,
+    runId: string,
+    patch: { comment?: string; consoleInReport?: boolean },
+  ): Promise<Run>;
+  /**
+   * Appends what the page printed while the run was in progress — see
+   * `shared/src/capture.ts` for the entry shape and the two artifacts.
+   *
+   * Deliberately not part of `updateStep`: entries arrive in batches, on a
+   * timer, at a volume the page decides, and `run.json` is rewritten on every
+   * step patch. Per-step counts are derived from these when the run finishes.
+   */
+  appendConsole(testCaseId: string, runId: string, entries: CapturedEntry[]): Promise<void>;
   finishRun(testCaseId: string, runId: string, status: RunStatus): Promise<Run>;
 }
 
@@ -84,6 +99,10 @@ export interface FreeRunStore {
   getFreeRun(id: string): Promise<FreeRun>;
   createFreeRun(title: string): Promise<FreeRun>;
   updateFreeRun(id: string, patch: { title?: string; notes?: string }): Promise<FreeRun>;
+  /** Same stream as `appendConsole`, attached to the session rather than to a
+   * step. An unscripted session is exactly where an unexplained console error
+   * is worth having, and there is no step for it to hang off. */
+  appendFreeRunConsole(id: string, entries: CapturedEntry[]): Promise<void>;
   finishFreeRun(id: string): Promise<FreeRun>;
 }
 

@@ -107,6 +107,30 @@ A `pending` status at the end of a run means the tester stopped there.
 That is a finding — usually a blocker earlier in the case — not an
 omission to skip over.
 
+### What the page itself said
+
+A run may also carry what the page printed while it was being driven — console
+lines, uncaught errors, and requests that failed or came back 4xx/5xx. Capture
+is off unless the tester turned it on, so most runs have none of this.
+
+- **`run.json` per step: `consoleErrors`, `consoleWarnings`,
+  `networkFailures`.** Always present, always readable. A console error during
+  a step the tester marked **passed** is a finding in its own right: a green
+  run with a stack trace in it is exactly what nobody notices.
+- **The `## Console and network` section of `report.md`** — a deduplicated
+  digest, present only when the tester ticked *Include console output in the
+  report* at finish. `×N` is an occurrence count, not N separate problems.
+- **`console.md` in the run folder — do not read it.** It is the full log, and
+  the tester deciding not to attach it is a decision about data that may
+  include a customer's. If `feedback.md` says output was captured and not
+  attached, say so in your report and ask for it; do not route around the
+  checkbox by opening the file that is sitting right there. Reading it anyway
+  is the locally helpful thing to do and it makes the checkbox a lie.
+
+When triaging, keep *the page threw* and *the step failed* apart. They usually
+coincide; when they do not, the console error is the more precise statement of
+what broke, and the step's verdict is what the tester could see of it.
+
 ## 4. Triage every finding
 
 For each failed step, warning step, `bug` note, and non-empty comment,
