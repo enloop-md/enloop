@@ -23,14 +23,10 @@ Bad — seven actions, one verdict:
 > the required `Client ID` / `Client Secret` / `Endpoint URL` fields, and
 > click `Save`.
 
-Good — split, each with its own verdict:
+Good — the arrival is a prerequisite, and each action gets its own verdict:
 
-> ## Open the integrations admin page
-> Where: /admin/integrations
-> Navigate to the page.
->
-> ### Expected
-> - The connections table renders with an `Add connection` button above it.
+> # Prerequisites
+> - Open %BASE_URL%/admin/integrations
 >
 > ## Open the new-connection form
 > Where: /admin/integrations
@@ -40,6 +36,14 @@ Good — split, each with its own verdict:
 > ### Expected
 > - A form appears with `Kind`, `Enabled`, `Name`, `Client ID`,
 >   `Client Secret` and `Endpoint URL` fields.
+>
+> ## Save the new connection
+> Where: /admin/integrations
+> Selector: button[data-testid="save-connection"]
+> Click `Save`.
+>
+> ### Expected
+> - The form closes and the connections table lists %CONNECTION_NAME%.
 
 Filling a single form is one step even though it touches several fields —
 the fields are one action with one result. Navigating, opening a form, and
@@ -48,31 +52,55 @@ submitting it are three.
 **Test:** if the instructions contain " then ", " and then ", or a
 numbered list of more than about three keystroke-level actions, split it.
 
-## 2. Every step says where it starts
+## 2. Every place is an address
 
-Use the `Where:` line for the route or screen the tester must already be
-on. Never make them infer location from prose, and never let a step begin
-somewhere the previous step didn't leave them.
+A tester should never have to know where something lives. *Navigate to the
+Reports page* makes them recall a menu path or hunt for it; `/admin/reports`
+makes them click. **Every place a case names carries its address** — in a
+`Where:` line, in a prerequisite, or as a link. Prose alone is for places
+that genuinely have no address.
+
+### 2a. The entry point is a prerequisite, not a step
+
+Most runs start with the tester already in the app, often on the very screen
+the case is about. A case whose step 1 is `## Open the Reports page` spends
+its first Pass/Fail on something that was true before the run began, and
+pushes the real work down a step. Put it where "what had to be true before
+step 1" already lives:
+
+    # Prerequisites
+    - Open %BASE_URL%/admin/reports
+
+Step 1 is then the first thing the case actually verifies, and its `Where:`
+still names the route — so a tester who wasn't there after all gets the Go
+control anyway, one line down.
+
+**An address in a prerequisite must be absolute.** That block is rendered
+Markdown with no page behind it, so a bare `/admin/reports` has no origin to
+resolve against: it points at the side panel itself, and at the repo host
+when the file is read on GitHub. Write the absolute URL, or declare a
+`BASE_URL` variable and write `%BASE_URL%/admin/reports`, which is
+substituted to an absolute URL before the run starts.
+
+Keep navigation as a step only when arriving at the page *is* what is under
+test — a redirect, a deep link, a permission gate on first load. Then it has
+a real `### Expected` and earns its verdict.
+
+### 2b. Every step's `Where:` names its route
+
+`Where:` is the route or screen the tester must already be on. Never make
+them infer location from prose, and never let a step begin somewhere the
+previous step didn't leave them.
 
     ## Sync the customer's events
     Where: /admin/sync-console
     Selector: #sync-events-btn
 
-When a step happens outside the app under test — in a third-party console,
-a terminal, a mail client — say so explicitly:
-
-    Where: the CRM's web console → Contacts → the %TEST_EMAIL% contact
-    Where: terminal, in the deployed app's project root
-
-A step whose `Where:` differs from the previous step's must begin by
-getting there. Don't leave the tester to navigate silently.
-
-**Write it as a route whenever it is one.** A `Where:` of `/admin/sync`,
-an absolute URL, or a local address like `localhost:3000/admin` gets a Go
+**Write it as a route whenever it is one.** A `Where:` of `/admin/sync`, an
+absolute URL, or a local address like `localhost:3000/admin` gets a Go
 control in the run screen that navigates the tab the run is using — one
-click instead of retyping a path. Prose gets nothing, which is correct
-when the place genuinely is prose (`the CRM's web console → Contacts`),
-and a waste when the step could have named the route.
+click instead of retyping a path. Prose gets nothing, which is a waste
+wherever the step could have named the route.
 
 A bare route resolves against whatever page the tester has open. That is
 right when they are already in the app, and refuses rather than guesses
@@ -80,6 +108,34 @@ when they are not. If a case must be certain — it starts from a blank tab,
 or spans two hosts — declare a `BASE_URL` variable and write
 `Where: %BASE_URL%/admin/sync`, which substitutes to an absolute URL
 before the run starts.
+
+Prose is the last resort, not the default for everything outside the app. A
+third-party console has URLs too, and the record inside it has a URL that
+differs every run — which is what variables are for:
+
+    Where: %CONTACT_URL%                       (a variable holding the record's URL)
+    Where: the CRM's web console → Contacts    (only when nothing addressable exists)
+    Where: terminal, in the deployed app's project root
+
+A step whose `Where:` differs from the previous step's is a move, and that
+line is how the tester makes it. So it must be an address there above all: a
+prose `Where:` on a step that changes location leaves them to find their own
+way, silently.
+
+### 2c. A place named in prose carries its link
+
+The `Where:` line already says where the tester is and hands them Go, so
+instructions that restate it — *Navigate to the settings page.* — add a
+sentence and no address. Delete them. A step's instructions start at the
+action.
+
+When prose names a *second* place, link it:
+
+    Open [the contact record](%CONTACT_URL%) in a second tab.
+    Confirm the job cleared in [the worker dashboard](https://jobs.example.com/queues).
+
+Absolute only, for the same reason as 2a. And a fragment href is not a page
+link: `[the Sync button](#sync-btn)` is a Highlight control, per rule 3.
 
 ## 3. Every UI step carries a `Selector:`
 
@@ -323,6 +379,13 @@ Before writing the file, check every step. Any hit means fix it:
 - [ ] A UI step has no `Selector:`
 - [ ] Any step has no `Where:`
 - [ ] A `Where:` is prose where the step could have named a route
+- [ ] Step 1 only opens the app, instead of the entry point being a
+      `# Prerequisites` bullet
+- [ ] Instructions restate the navigation the `Where:` line already gives
+- [ ] A screen, record or external page is named in prose with no address
+      beside it, where one exists
+- [ ] An address in a prerequisite or a Markdown link is a bare route rather
+      than an absolute URL or `%BASE_URL%/…`
 - [ ] No step carries `Kind: quick`, in a case that has a core path
 - [ ] More than half the steps are marked `Kind: quick`
 - [ ] An edge case, error state or permission variant is marked `Kind: quick`

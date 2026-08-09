@@ -23,18 +23,10 @@ Email of a contact present in both the CRM and the mailer.
 Default: qa.bot@example.com
 
 # Prerequisites
+- Open https://admin.example.com/admin/sync-console
 - Logged in to the admin as a super-admin
 
 # Steps
-
-## Open the sync console
-Where: /admin/sync-console
-Selector: #account-tabs
-Navigate to the page.
-
-### Expected
-- The account picker renders as tabs.
-- Each tab shows the account name with its sync purpose beneath it.
 
 ## Sync the contact
 Where: /admin/sync-console
@@ -85,6 +77,11 @@ next step expects. A bare route resolves against whatever page is open and
 refuses rather than guesses when there is nothing to resolve against; write
 `Where: %BASE_URL%/admin/sync` when a case has to be certain.
 
+The contract's wider rule is that **every place a case names carries its
+address** — never "navigate to the Reports page" with the path left to memory.
+Where the app has no address for a place (a third-party console, a terminal),
+prose is correct; where it has one, prose is a defect.
+
 ## Values the tester types
 
 Every literal a tester must type is written in **double quotes** —
@@ -111,8 +108,13 @@ run history — a quick pass and a full pass are not the same evidence.
 
 ## Prerequisites, project and variables
 
-`# Prerequisites` is where services the tester must start themselves belong,
-with the command for each. The run screen renders Prerequisites and
+`# Prerequisites` is where the run begins and where services the tester must
+start themselves belong — the address for the first, the command for each of
+the rest. The entry point lives here rather than in a step, because a tester is
+usually already in the app and a step spent on arriving is a Pass/Fail on
+something that was already true. An address here is absolute or
+`%BASE_URL%`-built: unlike a step's `Where:`, this block has no open page to
+resolve a bare route against. The run screen renders Prerequisites and
 Dependencies together in a **"Before you start"** block, collapsed by default —
 most runs happen against an environment that is already up, so it stays out of
 the way of the current step without being absent, which is what it was before.
@@ -146,7 +148,9 @@ The rules, in brief:
 
 1. One step is one action with one observable result. If it contains "then",
    split it.
-2. Every step states where it starts, via `Where:`.
+2. Every place is an address. The entry point is a `# Prerequisites` bullet,
+   not a first step; every step states where it starts via `Where:`, as a
+   route wherever the app has one; a place named in prose carries a link.
 3. Every UI step carries a `Selector:`, taken from source — never invented,
    never a structural path. Repeat the line for ordered fallbacks when the
    element can genuinely move (a modal, a portal, a handle not yet deployed),
