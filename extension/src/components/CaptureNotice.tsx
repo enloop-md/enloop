@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { reloadActiveTab, type WrapperState } from "../lib/capture.js";
 
 /**
@@ -26,6 +27,8 @@ export function CaptureNotice({
    * second notice about the same missing grant is noise. */
   explainUnknown?: boolean;
 }) {
+  const [why, setWhy] = useState(false);
+
   if (wrapper === "present") return null;
 
   if (wrapper === "unknown") {
@@ -44,9 +47,22 @@ export function CaptureNotice({
       className={`flex flex-wrap items-center gap-2 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900 ${className}`}
     >
       <span className="flex-1">
-        <span className="font-medium">Reload the page to start capturing.</span> This page's
-        console has already run — Enloop can only wrap it from the next page load.
+        <span className="font-medium">The page needs a reload before it is captured.</span> This
+        page's console has already run — Enloop can only wrap it from the next page load.
       </span>
+      {/* The "why" is a technical limitation rather than a preference, and a
+          tester told to reload for no stated reason reasonably suspects the
+          feature is broken. Folded away because it is read once, ever. */}
+      <button
+        type="button"
+        onClick={() => setWhy((open) => !open)}
+        aria-expanded={why}
+        aria-label="Why a reload is needed"
+        title="Why a reload is needed"
+        className="shrink-0 rounded-full border border-amber-300 px-1.5 py-0.5 text-[11px] leading-none text-amber-700 hover:bg-amber-100"
+      >
+        ⓘ
+      </button>
       <button
         type="button"
         onClick={() => void reloadActiveTab()}
@@ -54,6 +70,16 @@ export function CaptureNotice({
       >
         Reload page
       </button>
+      {why && (
+        <p className="w-full border-t border-amber-200 pt-1.5 text-amber-800">
+          Enloop captures by replacing the page's own <code>console</code> and <code>fetch</code>{" "}
+          with wrappers, and Chrome can only install those at the very start of a page load,
+          before the page's scripts run. It cannot reach into a page that has already loaded, so
+          capture begins with the <em>next</em> one — and everything this page logged while
+          loading, usually the part worth having, has already happened. Turning capture off needs
+          no reload: the wrapper is still there and simply stops forwarding.
+        </p>
+      )}
     </div>
   );
 }

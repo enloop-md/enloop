@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { describeCounts, type CapturedEntry, type FreeRun } from "@tcm/shared";
-import { CaptureNotice } from "../../components/CaptureNotice.js";
+import { CaptureToggles } from "../../components/CaptureToggles.js";
 import { ErrorNotice } from "../../components/ErrorNotice.js";
 import { Header } from "../../components/Header.js";
 import { freeRunCaptureKey } from "../../lib/capture.js";
@@ -127,7 +127,18 @@ export function FreeRunScreen({
         />
       </div>
       <ErrorNotice error={error} className="px-3 pt-2" />
-      {!readOnly && <CaptureNotice wrapper={capture.wrapper} className="mx-3 mt-2" />}
+      {/* A free run has no screen in front of it to put these on — it starts
+          from one click in the Library — so they live here, at the top of the
+          session they apply to. */}
+      {!readOnly && (
+        <CaptureToggles
+          settings={capture.settings}
+          wrapper={capture.wrapper}
+          onChange={capture.set}
+          compact
+          className="border-b border-slate-100 bg-slate-50 px-3 py-2"
+        />
+      )}
       <div className="flex-1 overflow-hidden p-3">
         <textarea
           value={notes}
