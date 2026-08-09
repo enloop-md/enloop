@@ -13,10 +13,12 @@ import {
   type TestCaseVersion,
   type VersionSummary,
 } from "@tcm/shared";
+import { CaptureToggles } from "../../components/CaptureToggles.js";
 import { ErrorNotice } from "../../components/ErrorNotice.js";
 import { Header } from "../../components/Header.js";
 import { Markdown } from "../../components/Markdown.js";
 import { useReadyStore } from "../store/DataStoreProvider.js";
+import { useCaptureSettings } from "../useCapture.js";
 import { getActivePageUrl } from "../../lib/automation.js";
 import { downloadTextFile, fileSlug } from "../../lib/download.js";
 
@@ -55,6 +57,11 @@ export function CaseDetailScreen({
   const [valuesOpen, setValuesOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Asked here rather than left in Settings: whether this run's console is
+  // worth keeping is a thought people have on the way into a run, and capture
+  // only starts from the page's next load — so it has to be decided before the
+  // run, not once something interesting has already scrolled past.
+  const capture = useCaptureSettings();
 
   useEffect(() => {
     let cancelled = false;
@@ -383,6 +390,13 @@ export function CaseDetailScreen({
             }
           />
         )}
+        <CaptureToggles
+          settings={capture.settings}
+          wrapper={capture.wrapper}
+          onChange={capture.set}
+          compact
+          className="border-b border-slate-100 bg-slate-50 px-3 py-2"
+        />
         <div className="space-y-2 p-3">
           <div className="flex gap-2">
             <button

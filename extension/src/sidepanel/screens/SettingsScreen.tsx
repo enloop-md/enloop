@@ -1,16 +1,9 @@
-import { useEffect, useState } from "react";
-import { CaptureNotice } from "../../components/CaptureNotice.js";
+import { useState } from "react";
+import { CaptureToggles } from "../../components/CaptureToggles.js";
 import { Header } from "../../components/Header.js";
 import { useWorkspace } from "../store/DataStoreProvider.js";
+import { useCaptureSettings } from "../useCapture.js";
 import { getBuildInfo } from "../../lib/build-info.js";
-import {
-  captureIsOn,
-  readCaptureSettings,
-  wrapperState,
-  writeCaptureSettings,
-  type CaptureSettings,
-  type WrapperState,
-} from "../../lib/capture.js";
 import { relativeTime } from "../../lib/time.js";
 
 export function SettingsScreen({ onBack }: { onBack: () => void }) {
@@ -91,99 +84,23 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
 /**
  * What the page says about itself, kept with the run.
  *
- * Off by default, and two toggles rather than one, because the two streams ask
- * for different things. Console output leaks whatever the app chose to print;
- * requests carry auth headers, cookies and bodies by design — so a tester who
- * agreed to keep logs has not thereby agreed to keep traffic. What is captured
- * of a request is method, URL without its query string, status and duration,
- * and only when it failed.
+ * The same two checkboxes stand in front of every run, which is where they are
+ * actually decided; this is where they can be read about. Off by default,
+ * because console output can contain tokens and customer data and runs are
+ * written to a folder people commit.
  */
 function CaptureSection() {
-  const [settings, setSettings] = useState<CaptureSettings>({ console: false, network: false });
-  const [wrapper, setWrapper] = useState<WrapperState>("unknown");
-
-  useEffect(() => {
-    let cancelled = false;
-    void readCaptureSettings().then((next) => !cancelled && setSettings(next));
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Re-asked after every change, because turning capture on is exactly when
-  // the answer matters and exactly when it is "no": the page in front of the
-  // tester loaded before the registration existed.
-  useEffect(() => {
-    if (!captureIsOn(settings)) {
-      setWrapper("unknown");
-      return;
-    }
-    let cancelled = false;
-    // A registration takes a moment to land; asking immediately would report
-    // "absent" for a page that is about to be fine after its next load anyway.
-    const timer = setTimeout(() => {
-      void wrapperState().then((state) => !cancelled && setWrapper(state));
-    }, 300);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [settings]);
-
-  async function update(next: CaptureSettings) {
-    setSettings(next);
-    await writeCaptureSettings(next);
-  }
+  const capture = useCaptureSettings();
 
   return (
     <section className="space-y-2">
       <h2 className="text-xs font-semibold uppercase text-slate-400">Capture during runs</h2>
-      <div className="space-y-2 rounded border border-slate-200 p-3 text-sm">
-        <label className="flex items-start gap-2">
-          <input
-            type="checkbox"
-            checked={settings.console}
-            onChange={(e) => void update({ ...settings, console: e.target.checked })}
-            className="mt-0.5"
-          />
-          <span>
-            <span className="font-medium text-slate-800">Capture console output</span>
-            <span className="mt-0.5 block text-xs text-slate-500">
-              Wraps <code>console.log</code>/<code>warn</code>/<code>error</code> — plus uncaught
-              errors — on pages you run cases against, and files what they print with the run.
-              Console output can contain tokens and customer data, and runs are written to a
-              folder people commit.
-            </span>
-          </span>
-        </label>
-        <label className="flex items-start gap-2">
-          <input
-            type="checkbox"
-            checked={settings.network}
-            onChange={(e) => void update({ ...settings, network: e.target.checked })}
-            className="mt-0.5"
-          />
-          <span>
-            <span className="font-medium text-slate-800">Capture failed requests</span>
-            <span className="mt-0.5 block text-xs text-slate-500">
-              Method, URL, status and duration for requests that failed or came back 4xx/5xx.
-              Never headers, never bodies, and query strings are redacted. A button that did
-              nothing because a request 500'd shows up here and often nowhere else.
-            </span>
-          </span>
-        </label>
-        {captureIsOn(settings) && (
-          <>
-            <CaptureNotice wrapper={wrapper} explainUnknown />
-            <p className="text-[11px] text-slate-400">
-              Capture covers the sites you have granted Enloop access to, and starts at the next
-              load of each page. Turning it off needs no reload. Entries land in{" "}
-              <code>console.md</code> in the run's folder; whether any of it reaches{" "}
-              <code>report.md</code> is a separate question, asked when you finish the run.
-            </p>
-          </>
-        )}
-      </div>
+      <CaptureToggles
+        settings={capture.settings}
+        wrapper={capture.wrapper}
+        onChange={capture.set}
+        className="rounded border border-slate-200 p-3 text-sm"
+      />
     </section>
   );
 }

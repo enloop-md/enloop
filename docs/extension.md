@@ -122,27 +122,37 @@ happens.
 A run records what the tester can see. The console is where the cheapest
 evidence of a bug lives and where it is invisible by default — an uncaught
 `TypeError` behind a button that appears to do nothing, a 401 logged by a fetch
-wrapper. **Settings → Capture during runs** turns that into part of the run,
-with two independent toggles, both **off** by default:
+wrapper. Two checkboxes turn that into part of the run, both **off** by
+default:
 
-- **Capture console output** — `log`/`info`/`warn`/`error`/`debug`, plus
-  uncaught errors and unhandled rejections.
-- **Capture failed requests** — method, URL, status and duration for requests
-  that failed or came back 4xx/5xx. Never headers, never bodies; query strings
-  are redacted to `?…`. It is a separate toggle because it is a separate
-  question: agreeing to keep logs is not agreeing to keep traffic.
+- **Console output** — `log`/`info`/`warn`/`error`/`debug`, plus uncaught
+  errors and unhandled rejections.
+- **Failed requests** — method, URL, status and duration for requests that
+  failed or came back 4xx/5xx. Never headers, never bodies; query strings are
+  redacted to `?…`. It is a separate box because it is a separate question:
+  agreeing to keep logs is not agreeing to keep traffic.
 
 Both are off by default because console output can contain tokens and customer
 data, and runs are written to a folder people commit.
 
-**Turning capture on needs a page reload; turning it off does not.** Enloop
+They sit **directly above Start run** on a case screen, at the top of a free
+run, and in **Settings → Capture during runs**, which is the same setting in
+three places rather than three settings: capture is a browser-wide content
+script registration, so ticking a box applies to every run from then on, not
+to the one you are about to start. Untick it when you are done — while either
+box is on, every `console` call and every request on the sites you have
+granted Enloop runs through a wrapper, which costs a little of the speed you
+are there to judge.
+
+Before the run is also the only moment the decision is any use, because
+**turning capture on needs a page reload; turning it off does not.** Enloop
 wraps `console.*` and `fetch` in the page's own world, and the wrapper has to be
 installed before any page script runs — otherwise it misses everything logged
 during load, which is usually the interesting part. Chrome can only guarantee
-that from the *next* page load, so the panel says so and offers a **Reload
-page** button, in Settings and again at the top of a run. Switching capture off
-reaches every loaded page immediately. Capture covers the sites you have granted
-Enloop access to, and no others.
+that from the *next* page load, so the panel says so, offers a **Reload page**
+button, and explains why behind the ⓘ next to it. Switching capture off reaches
+every loaded page immediately. Capture covers the sites you have granted Enloop
+access to, and no others.
 
 What lands in the run's folder:
 
