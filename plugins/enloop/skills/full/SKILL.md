@@ -2,7 +2,7 @@
 name: full
 description: Write a complete test case for Enloop — happy path plus edge cases, error states and cleanup — covering a feature, ticket, or branch in the app repo you are currently in. Every route, UI label and selector is derived from that repo's source rather than recalled, and the finished case is parsed with the real grammar parser before it is written. Extends an existing quick case in place rather than starting a second one. Use when the user asks to write/author/generate a test case, QA checklist, or manual verification plan — e.g. "write a test case for PROJ-1234", "full QA case for this branch". Not for demo cases exercising the grammar itself; that is enloop-demo, which only runs inside the Enloop repo.
 disable-model-invocation: true
-allowed-tools: Read Grep Glob Write Edit Bash(git diff *) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(rg *) Bash(node *) Bash(npx tsc *) Bash(mkdir -p *) Bash(openssl rand *)
+allowed-tools: Read Grep Glob Write Edit Bash(git diff *) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(rg *) Bash(node *) Bash(mkdir -p *)
 ---
 
 # Write a full test case

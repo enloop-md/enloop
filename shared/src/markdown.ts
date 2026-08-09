@@ -30,7 +30,12 @@ import type {
 export const CURRENT_FORMAT_VERSION = "0.0.4";
 
 /**
- * Grammar (see README-less by design — this comment is the spec). The very
+ * Grammar. There is no separate spec by design: this comment is it, sitting
+ * against the parser that implements it, and `scripts/build-plugin.mjs`
+ * lifts it verbatim into the plugin as `references/grammar.md` so the
+ * authoring skills read the same words without needing this repo.
+ *
+ * The very
  * first `# ` heading in the file is special-cased as the case title;
  * every other heading level is one below what you'd naively expect, since
  * that first H1 already "used up" the top level:
@@ -76,12 +81,18 @@ export const CURRENT_FORMAT_VERSION = "0.0.4";
  *   - Seeded test user
  *
  *   # Prerequisites                             (optional, bullet list)
- *   - Browser open at https://app.example.com
+ *   - Open https://app.example.com/admin/reports
  *   - API running locally: `npm run dev` in the app repo
  *
  *   Anything the tester must *do* before step 1 belongs in Prerequisites,
- *   including starting services locally — with the command, so it is
- *   actionable rather than a reminder. Dependencies is for what must
+ *   including where the run begins and starting any service locally — with
+ *   the address and the command, so each is actionable rather than a
+ *   reminder. A tester is usually already in the app, so the entry point
+ *   earns a bullet here rather than a first step that spends a verdict on
+ *   arriving. This block is rendered Markdown with no page behind it,
+ *   unlike a step's `Where:`, so an address in it is absolute or built from
+ *   a variable (`%BASE_URL%/admin/reports`) — a bare route has no origin to
+ *   resolve against here. Dependencies is for what must
  *   already be true and is not the tester's to arrange: a deployed branch,
  *   a migration, an access level. The run screen renders both in one
  *   collapsed "Before you start" block, since the usual case is an

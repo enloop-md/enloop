@@ -30,15 +30,11 @@ step 2.
 
 ```bash
 git rev-parse --show-toplevel
-echo "ENLOOP_HOME=${ENLOOP_HOME:-unset}"
 ```
 
-This must run in the **app repo under test**, not the Enloop repo. If
-the repo root (`git rev-parse --show-toplevel`) equals `$ENLOOP_HOME`, stop:
-there is nothing to set up there.
-
-If `ENLOOP_HOME` is unset, note it — step 6 fixes it. Do not stop for it;
-the instructions work does not depend on it.
+This must run in the **app repo under test**, not the Enloop repo. If this
+repo has both `shared/src/markdown.ts` and `plugins/enloop/skills/`, it is
+Enloop itself — stop, there is nothing to set up there.
 
 ## 2. Establish the project name
 
@@ -201,7 +197,6 @@ a teammate's checkout is wrong on their machine by definition.
 ```json
 {
   "env": {
-    "ENLOOP_HOME": "/path/to/enloop",
     "ENLOOP_DATA_DIR": "/path/to/the/folder/you/connected",
     "ENLOOP_PROJECT": "<the name from step 2>"
   }
@@ -213,7 +208,6 @@ settings file, so the durable home is the user's shell profile or a
 project-level `.envrc` if they use direnv:
 
 ```bash
-export ENLOOP_HOME=/path/to/enloop
 export ENLOOP_DATA_DIR=/path/to/the/folder/you/connected
 export ENLOOP_PROJECT="<the name from step 2>"
 ```
@@ -222,8 +216,12 @@ Never write to a shell profile without asking — it is outside the repo and
 outside what the user pointed this skill at. Show the lines and let them
 paste, unless they ask you to do it.
 
-- `ENLOOP_HOME` — the Enloop repo, where the case grammar lives. Without
-  it, the authoring skills ask every time.
+**Two variables, and both are optional.** Installing the plugin installs
+everything the skills need to run — the grammar and the parser ship inside
+it. What is left is where cases go and what this app is called, and each of
+those has an answer without configuration. Never add a third asking where
+Enloop itself lives; there is no such setting any more.
+
 - `ENLOOP_DATA_DIR` — the folder *this repo* writes to, chosen above. It is
   the one users most often point one level too deep; read
   `references/data-folder.md` at the plugin root, one level above this
@@ -235,9 +233,9 @@ paste, unless they ask you to do it.
 - `ENLOOP_PROJECT` — belt and braces with the agent-instructions line, and
   the value the authoring skills check first.
 
-`ENLOOP_HOME` and `ENLOOP_DATA_DIR` are machine-specific. Under Claude Code,
-if `.claude/settings.json` is committed, put them in `settings.local.json`
-and leave only `ENLOOP_PROJECT` in the shared file. Under Codex the shell
+`ENLOOP_DATA_DIR` is machine-specific. Under Claude Code, if
+`.claude/settings.json` is committed, put it in `settings.local.json` and
+leave only `ENLOOP_PROJECT` in the shared file. Under Codex the shell
 handles that separation already. Say which you did and why.
 
 ## 7. Offer the first backfill

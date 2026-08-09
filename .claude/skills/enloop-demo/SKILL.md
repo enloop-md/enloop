@@ -86,22 +86,19 @@ mis-parses (wrong heading level, a label regex that doesn't match, etc.).
 Prove it parses before trusting it:
 
 ```bash
-cd shared && npx tsc -p tsconfig.json --noEmit false --outDir dist --declaration false
+npm run build:plugin                                    # only if shared/src changed
+node plugins/enloop/validator/enloop-case.mjs validate <scratch file>
 ```
 
-Then run a throwaway Node script against `shared/dist/markdown.js` (and
-`shared/dist/variables.js` if variables are involved) that:
-- calls `parseCaseDocument` on the raw text and checks step/variable
-  counts match what you intended,
-- if there are variables, calls `resolveVariableValues` +
-  `substituteVariables` and confirms no `%NAME%` placeholders remain
-  (`!/%[A-Za-z_]+%/.test(substituted)`), then re-parses the substituted
-  text to confirm it's still valid,
-- prints the final automated-step scripts so you can eyeball the
-  substituted values.
+That is the same command the shipped skills run, against the same bundle
+users get — so validating this way also smoke-tests the artifact. It prints
+the document as parsed and splits its findings into errors (certainly wrong)
+and warnings (yours to judge). Check the counts against what you intended,
+read every finding, and never edit a case just to quiet a warning.
 
-Delete `shared/dist` and the throwaway script afterward — they're
-scratch, not source.
+Automated steps are the one thing it does not show you: print the
+substituted `script` bodies yourself before step 6, since those are what you
+are about to run in a live page.
 
 ### 6. Live-verify every automated step in Chrome — never skip this either
 

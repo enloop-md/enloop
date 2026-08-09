@@ -2,7 +2,7 @@
 name: quick
 description: Write a quick test case for Enloop — the happy path only — covering a feature, ticket, or branch in the app repo you are currently in. Every route, UI label and selector is derived from that repo's source rather than recalled, and the finished case is parsed with the real grammar parser before it is written. Use when the user asks for a quick/short/smoke case, or wants to check their own branch in a couple of minutes — e.g. "quick case for PROJ-1234", "smoke test this branch". For the complete article with edge cases and cleanup, that is the full skill. Not for demo cases exercising the grammar itself; that is enloop-demo, which only runs inside the Enloop repo.
 disable-model-invocation: true
-allowed-tools: Read Grep Glob Write Edit Bash(git diff *) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(rg *) Bash(node *) Bash(npx tsc *) Bash(mkdir -p *) Bash(openssl rand *)
+allowed-tools: Read Grep Glob Write Edit Bash(git diff *) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(rg *) Bash(node *) Bash(mkdir -p *)
 ---
 
 # Write a quick test case

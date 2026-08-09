@@ -105,8 +105,9 @@ write anything. It is the cheapest possible correction point.
 Once you have a folder, never assume which level the path names — detect it:
 
 ```bash
-d="${ENLOOP_DATA_DIR:-${ENLOOP_CASES_DIR:-$ENLOOP_HOME/private/test-cases}}"
+d="${ENLOOP_DATA_DIR:-$ENLOOP_CASES_DIR}"        # or the in-repo folder from branch 3
 d="${d%/}"
+[ -n "$d" ] || { echo "no data folder resolved — go back to step 4 and ask"; exit 1; }
 
 if [ -d "$d/test-cases" ] || [ -d "$d/runs" ] || [ -d "$d/free-runs" ]; then
   echo "DATA_DIR=$d"                        # already the data folder
@@ -144,9 +145,9 @@ Read the result:
   a stray `test-cases/`.
 
 If nothing resolved, you are at step 4 above: ask, using *Asking well*.
-Never write into `$ENLOOP_HOME/private/test-cases` as a silent fallback —
-that is this repo's own scratch folder, and a case that lands there is a
-case in nobody's Library.
+There is no default to fall back to, deliberately: a folder nobody named is
+a folder nobody connected, and a case that lands there is a case in nobody's
+Library.
 
 ## Verify after writing — always
 

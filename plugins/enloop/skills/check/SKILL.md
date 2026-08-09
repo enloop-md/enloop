@@ -2,7 +2,7 @@
 name: check
 description: Triage a finished Enloop test run from inside the app repo being tested. Reads the run's feedback.md/report.md, then decides for each failure, warning and tester note whether it is an app bug (with the file and line), a defect in the test case itself, or an environment/data problem — and fixes what it owns. Use after a run has been executed in the extension and the user asks to check/review/triage the run, the results, or the feedback — e.g. "check the last run", "what did the run find", "triage run failures". Not for authoring a case; those are the enloop:quick and enloop:full skills.
 disable-model-invocation: true
-allowed-tools: Read Grep Glob Write Edit Bash(git diff *) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(rg *) Bash(ls *) Bash(cat *) Bash(node *) Bash(npx tsc *) Bash(openssl rand *)
+allowed-tools: Read Grep Glob Write Edit Bash(git diff *) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(rg *) Bash(ls *) Bash(cat *) Bash(node *)
 ---
 
 # Check a test run
@@ -36,12 +36,10 @@ Two roots. Never hardcode either.
   level of the right one — does not error; it reports "no runs found" for a
   case that ran fine.
 
-```bash
-echo "ENLOOP_HOME=${ENLOOP_HOME:-unset}"
-```
-
-If `ENLOOP_HOME` is unset, ask for the path and tell the user to add it to
-their settings `env` block so it is a one-time cost.
+Those are the only two paths this skill needs. Everything about Enloop
+itself — the grammar, the parser — ships with the plugin you are reading
+from, so there is nothing to install and no environment variable to ask the
+user for.
 
 ## 2. Find the run
 
