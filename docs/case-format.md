@@ -164,8 +164,11 @@ The rules, in brief:
 7. No conditionals inside a step. A conditional becomes its own skippable step.
 8. Cleanup is explicit. A case that can't be run twice will be run once.
 
-It ends in a reject list the skill checks mechanically before writing
-anything. If the generated cases drift, tighten that list rather than
-re-explaining the goal in the prompt.
+It ends in two lists the skill checks before writing anything: the mechanical
+half, which `enloop-case.mjs validate` enforces and names the offending step
+for, and a by-eye half that needs the app's source or a judgement about the
+case. If the generated cases drift, tighten those rather than re-explaining
+the goal in the prompt — and prefer tightening the linter, since a rule in
+code is checked identically every time and costs no context.
 
 ---

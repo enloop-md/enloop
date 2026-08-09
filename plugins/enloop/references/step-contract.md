@@ -1,7 +1,11 @@
 # The step contract
 <!-- Read by the quick and full skills. Also the reference enloop-demo
-     should follow for any case it writes. -->
+     should follow for any case it writes.
 
+     Every rule here is one an author has to apply while writing. The
+     reasoning behind the less obvious ones lives in rationale.md, which
+     nothing loads at authoring time — a justification that changes no output
+     is not worth its weight in every session's context. -->
 
 The rule every step in an authored test case must satisfy. The goal is a
 case a tester can execute without thinking — no inference, no hunting, no
@@ -9,7 +13,7 @@ deciding. If a tester has to stop and work something out, the case is
 wrong, not the tester.
 
 Read this before writing any step, and check every finished step against
-the Reject list at the bottom.
+the by-eye list at the bottom.
 
 ## 1. One step = one action = one observable result
 
@@ -64,9 +68,8 @@ that genuinely have no address.
 
 Most runs start with the tester already in the app, often on the very screen
 the case is about. A case whose step 1 is `## Open the Reports page` spends
-its first Pass/Fail on something that was true before the run began, and
-pushes the real work down a step. Put it where "what had to be true before
-step 1" already lives:
+its first Pass/Fail on something that was true before the run began. Put it
+where "what had to be true before step 1" already lives:
 
     # Prerequisites
     - Open %BASE_URL%/admin/reports
@@ -79,8 +82,7 @@ control anyway, one line down.
 Markdown with no page behind it, so a bare `/admin/reports` has no origin to
 resolve against: it points at the side panel itself, and at the repo host
 when the file is read on GitHub. Write the absolute URL, or declare a
-`BASE_URL` variable and write `%BASE_URL%/admin/reports`, which is
-substituted to an absolute URL before the run starts.
+`BASE_URL` variable and write `%BASE_URL%/admin/reports`.
 
 Keep navigation as a step only when arriving at the page *is* what is under
 test — a redirect, a deep link, a permission gate on first load. Then it has
@@ -99,15 +101,13 @@ previous step didn't leave them.
 **Write it as a route whenever it is one.** A `Where:` of `/admin/sync`, an
 absolute URL, or a local address like `localhost:3000/admin` gets a Go
 control in the run screen that navigates the tab the run is using — one
-click instead of retyping a path. Prose gets nothing, which is a waste
-wherever the step could have named the route.
+click instead of retyping a path. Prose gets nothing.
 
 A bare route resolves against whatever page the tester has open. That is
 right when they are already in the app, and refuses rather than guesses
 when they are not. If a case must be certain — it starts from a blank tab,
 or spans two hosts — declare a `BASE_URL` variable and write
-`Where: %BASE_URL%/admin/sync`, which substitutes to an absolute URL
-before the run starts.
+`Where: %BASE_URL%/admin/sync`.
 
 Prose is the last resort, not the default for everything outside the app. A
 third-party console has URLs too, and the record inside it has a URL that
@@ -152,36 +152,29 @@ stable handle, that is a finding worth a `### Note` and often worth a
 ### Fallbacks: repeat the line, best handle first
 
 `Selector:` may appear several times on one step. Highlight tries them in
-order and stops at the first that matches the page, so a second line is
-free insurance for anything the DOM can change out from under you:
+order and stops at the first that matches:
 
     Selector: [data-testid="sync-console"]
     Selector: #sync-console
     Selector: .modal--sync [role="tablist"]
 
-Write fallbacks when — and only when — the first selector can genuinely
-miss:
+Write a fallback when — and only when — the first selector can genuinely
+miss: the element lives in a **modal, drawer or portal** that renders under a
+different root; the exact handle is **in your branch but may not be deployed**
+where the tester runs; or it is a **framework-generated class or id**, stable
+within a build but not across them.
 
-- **A dynamic container.** The element lives in a modal, drawer or portal
-  that renders under a different root depending on how it was opened.
-- **A handle that may not have shipped yet.** The exact `data-testid` is
-  in your branch but not in the environment the tester is on; a looser
-  `id` or `aria-label` behind it keeps the step usable today.
-- **A framework-generated class or id** that is stable within a build but
-  not across them.
+Do not pad a step with three variations of the same reliable handle — every
+fallback is a claim that the one above it can fail. Two entries is usually
+the whole of it.
 
-Do not pad a step with three variations of the same reliable handle.
-Every fallback is a claim that the one above it can fail; a list of near
-duplicates just makes "matched #3 of 3" meaningless when the tester sees
-it. Two entries is usually the whole of it.
+**Most specific and most stable first, loosest last.** A loose selector
+first will match something *plausible* and flash the wrong element, which is
+worse than not matching at all.
 
-Order matters and is the point: most specific and most stable first,
-loosest last. A loose selector first will match something *plausible* and
-flash the wrong element, which is worse than not matching at all.
-
-One line is always one selector, even with commas — `.a, .b` is a CSS
-group, and the browser returns whichever comes first in the *document*,
-not the one you wrote first. Ordered fallback needs separate lines.
+**One line is always one selector, even with commas.** `.a, .b` is a CSS
+group, and the browser returns whichever comes first in the *document*, not
+the one you wrote first. Ordered fallback needs separate lines.
 
 ### Selectors named in prose are clickable too
 
@@ -193,14 +186,12 @@ control. So a step that mentions a second element in passing —
 
 — gives the tester a way to find that element without it competing with
 the step's own `Selector:`, which stays the element the step *acts on*.
-
 For prose instead of a raw selector, link it: `[the Sync button](#sync-btn)`.
 
 This changes nothing about how you write. Keep quoting visible labels in
 backticks (`` `Save changes` ``) — those are left as plain code, because
 only text that could not be a label is treated as a selector. The one
-thing to avoid is inventing a selector for prose value; the same
-never-invent rule applies here as to `Selector:`.
+thing to avoid is inventing a selector for prose value.
 
 ## 3b. Mark the core path with `Kind: quick`
 
@@ -231,8 +222,7 @@ prep steps are never filtered, so do not mark them to "make sure they run" —
 they always do.
 
 A case with no marks is full-only, which is a fine answer for a case that is
-all edge cases. The run screen only offers the choice when a case actually
-distinguishes the two.
+all edge cases.
 
 ## 4. `### Expected` is pass criteria only
 
@@ -242,14 +232,9 @@ be able to decide Pass or Fail without reading anything else.
 Bad — assertion buried in rationale and history:
 
 > ### Expected
-> The modal opens immediately and finishes loading within a few seconds —
-> it must NOT hang, spin indefinitely, time out, or crash the page. (This
-> step regression-checks a real bug: the lookup used to walk the whole
-> account's event history across every event type before filtering to this
-> one customer, which could exhaust the request's memory/time limit on any
-> account with real history — it's now bounded to the last 24 months with a
-> hard page cap.) Two columns, "CRM" and "Mailer", each list that system's
-> calls/emails/tasks/meetings...
+> The modal opens immediately and finishes loading within a few seconds — it
+> must NOT hang, spin indefinitely or time out. (This regression-checks a
+> real bug: the lookup used to walk the whole account's event history…)
 
 Good:
 
@@ -263,9 +248,8 @@ Good:
 >
 > ### Note
 > Regression check. The lookup used to walk the account's entire event
-> history across every type before filtering to one customer, which could
-> exhaust the request's time limit on any account with real history. Now
-> bounded to 24 months with a hard page cap.
+> history before filtering to one customer, which could exhaust the
+> request's time limit. Now bounded to 24 months with a hard page cap.
 
 Prefer exact quoted strings, counts, and thresholds over adjectives. "The
 button shows a spinner" is checkable; "the UI responds appropriately" is
@@ -311,27 +295,12 @@ exactly what should be typed.
     Search for "**qa.bot@example.com**".
 
 Not: *Put value Buy milk in input.* Where the value ends is then the
-tester's guess, and a two-word value in the middle of a sentence is
-genuinely ambiguous.
+tester's guess.
 
-**Why both marks.** The panel turns each one into a control: clicking it
-arms the page, and the next input, textarea or **select** the tester clicks
-receives the value — with a copy fallback for anywhere the extension cannot
-reach. So the markup is not decoration; it is what makes a value insertable
-instead of retyped. It takes both marks because either alone is something
-people already write for other reasons. Quotes alone are ordinary
-punctuation — *the row shows "Undefined property"* quotes an error message,
-not a value to type. Bold alone is emphasis. Requiring the pair means the
-author opts in deliberately, and never trips it by writing normal prose.
-
-**And why this pair.** A case file is read on GitHub, in editors, in code
-review — by people who never open the extension — far more often than it is
-run. `"**Buy milk**"` renders as a quoted value with the value emphasised in
-any Markdown viewer, so the file reads correctly to them and the extension
-still gets an unambiguous signal. A sigil like `(!)"Buy milk"` would parse
-just as well and would litter the text for every human reader.
-
-This is a different mark from backticks, and the difference is load-bearing:
+The markup is not decoration — the panel turns each one into a control that
+inserts the value into the next field the tester clicks. It takes **both**
+marks because either alone is something people already write for other
+reasons, and this is a different mark from backticks:
 
 | Mark | Means | Panel behaviour |
 | --- | --- | --- |
@@ -343,16 +312,15 @@ This is a different mark from backticks, and the difference is load-bearing:
 
 So: ``Set `Priority` to "**High**"`` — `Priority` is the field's visible
 label, `"**High**"` is the option to choose. Marking the label as a value or
-backticking the value inverts both behaviours.
+backticking the value inverts both behaviours. (Why this pair and not a
+sigil: `rationale.md`.)
 
 For a value that comes from a variable, mark up the placeholder:
 `Enter "**%TEST_EMAIL%**"`. It is substituted before the run, so the tester
 sees and inserts the real value.
 
 Values are insertable wherever they appear in a running case — instructions,
-`### Expected`, `### Note`. They belong in the instruction that asks for
-them, but a note that says *if the seeded user is missing, use
-"**admin@example.com**"* is a value too, and the panel treats it as one.
+`### Expected`, `### Note`.
 
 ## 7. No conditionals inside a step
 
@@ -371,42 +339,42 @@ that can't be run twice in a row is a case that will be run once.
 
 ---
 
-## Reject list
+## Checking a finished case
 
-Before writing the file, check every step. Any hit means fix it:
+Two lists, and the split is what makes this cheap. **The validator checks the
+mechanical half** — run it, read what it says, and do not re-walk those items
+by hand:
 
-- [ ] Instructions contain " then " or list more than ~3 discrete actions
-- [ ] A UI step has no `Selector:`
-- [ ] Any step has no `Where:`
-- [ ] A `Where:` is prose where the step could have named a route
-- [ ] Step 1 only opens the app, instead of the entry point being a
-      `# Prerequisites` bullet
-- [ ] Instructions restate the navigation the `Where:` line already gives
+> missing or prose `Where:` · missing `Selector:` · structural selectors ·
+> "then" in instructions · instructions restating the navigation · a step 1
+> spent on arriving · no entry point in `# Prerequisites` · a bare route in a
+> prerequisite · `### Expected` missing, prose rather than bullets, carrying
+> rationale, or using an unmeasurable adjective · a variable with no way to
+> get its value · an undeclared `%NAME%` · a missing `@project` or title
+> prefix · `@version` drift · a `Kind: quick` subset that does not parse to
+> the marked steps
+
+### The by-eye list
+
+These are the ones no tool can settle, because they need the app's source or
+a judgement about the case. Check every step against them:
+
+- [ ] A UI label, route, or selector appears that was not read from source
 - [ ] A screen, record or external page is named in prose with no address
       beside it, where one exists
-- [ ] An address in a prerequisite or a Markdown link is a bare route rather
-      than an absolute URL or `%BASE_URL%/…`
-- [ ] No step carries `Kind: quick`, in a case that has a core path
-- [ ] More than half the steps are marked `Kind: quick`
-- [ ] An edge case, error state or permission variant is marked `Kind: quick`
-- [ ] A service the tester must start is missing from `# Prerequisites`,
-      or is listed without the command that starts it
-- [ ] `### Expected` is prose rather than bullets
-- [ ] `### Expected` contains "why", "used to", "this regression-checks",
-      or any parenthetical longer than a clause — move it to `### Note`
-- [ ] `### Expected` uses an unmeasurable adjective (quickly, properly,
-      correctly, appropriately, as expected) with no observable behind it
-- [ ] A variable has no `Default:`, no `Generator:`, and no explicit
-      instructions for obtaining the value
-- [ ] A step body contains "if", "or", "optionally" in a way that makes
-      the tester choose
-- [ ] A UI label, route, or selector appears that was not read from source
+- [ ] An address in a Markdown link is a bare route rather than an absolute
+      URL or `%BASE_URL%/…`
 - [ ] A value the tester must type is not written as `"**value**"`
 - [ ] A visible label is marked up as a value, or a typed value is in
       backticks
+- [ ] Instructions list more than ~3 discrete actions
+- [ ] A step body contains "if", "or", "optionally" in a way that makes
+      the tester choose
+- [ ] More than half the steps are marked `Kind: quick`, or an edge case,
+      error state or permission variant is marked
+- [ ] A service the tester must start is missing from `# Prerequisites`,
+      or is listed without the command that starts it
 - [ ] A step lists fallback `Selector:` lines that are near-duplicates of
       each other, or puts the loosest one first
-- [ ] The case has no `@project` line naming the app under test
-- [ ] The title does not begin with the project prefix
 - [ ] The run leaves state behind with no cleanup step and no `### Note`
       acknowledging it

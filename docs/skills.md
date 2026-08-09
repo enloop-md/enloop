@@ -160,8 +160,9 @@ What it does, in order:
    and later runs get it free.
 5. Writes the case, deriving **every** route, label, and selector from source
    read during that session.
-6. Validates by parsing the result with the real parser and checking it against
-   the contract's reject list.
+6. Validates by parsing the result with the real parser and linter that ship
+   with the plugin, then checking what those cannot see — invented labels,
+   routes and selectors — against the contract's by-eye list.
 7. Writes `<id>/meta.json` and `<id>/versions/v1.md` into `test-cases/` in
    your data folder, then verifies the file landed where the extension reads
    from and reports the absolute path.

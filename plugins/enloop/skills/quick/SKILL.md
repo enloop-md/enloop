@@ -38,7 +38,7 @@ differ, and you have just been told which column you are in.
 
 Nothing about being quick relaxes the rest: every route, label and selector
 still comes from source, and the case is still parsed with the real parser
-and checked against the step contract's reject list before it is written.
+and checked against the step contract before it is written.
 Quick means smaller, not looser.
 
 ## In your report
