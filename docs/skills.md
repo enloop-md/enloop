@@ -27,11 +27,12 @@ Copying it into another project gives you a skill whose every path is wrong.
 
 ## What the skills need to know
 
-Three values, wherever your agent reads environment from — see the per-agent
-pages above for where that is.
+Two values, both optional, wherever your agent reads environment from — see
+the per-agent pages above for where that is. Installing the plugin installs
+everything the skills *run*: the grammar and the parser ship inside it, so
+there is nothing to clone and no path to Enloop to configure. What is left is
+where your cases go and what your app is called.
 
-- **`ENLOOP_HOME`** — this repo, where the case grammar lives. Without it the
-  write skill asks every time.
 - **`ENLOOP_DATA_DIR`** — the folder *this repo* writes to. It contains
   `test-cases/`, `runs/` and `free-runs/`. Optional, and often better left
   unset — see below.
@@ -74,11 +75,12 @@ rules are in
 shared by every skill that touches the folder so they can't drift apart.
 
 `ENLOOP_CASES_DIR` is the former name for `ENLOOP_DATA_DIR` and still works.
-Unset, it defaults to `$ENLOOP_HOME/private/test-cases` — this repo's
-git-ignored scratch folder, which is rarely what you want for real cases.
+With neither set and no folder inside the repo, the skills ask rather than
+defaulting: a folder nobody named is a folder nobody connected.
 
 No skill hardcodes a path: the app repo is wherever you invoke it, and
-everything about Enloop itself comes from `$ENLOOP_HOME`.
+everything about Enloop itself — the grammar, the parser that validates what
+the skills write — is inside the installed plugin.
 
 ## Setting up a repo
 
@@ -111,9 +113,9 @@ that your production build doesn't strip test attributes (if it does, every
 selector you add would resolve in dev and nowhere else), and shows you the
 block before touching either file. Re-running it updates that section in place.
 
-It can also write `ENLOOP_HOME`, `ENLOOP_DATA_DIR` and `ENLOOP_PROJECT` into
-the project's settings for you, which is the same configuration described
-above — done once, with the data folder detection already applied.
+It can also write `ENLOOP_DATA_DIR` and `ENLOOP_PROJECT` into the project's
+settings for you, which is the same configuration described above — done once,
+with the data folder detection already applied.
 
 ## Writing a case
 
@@ -145,9 +147,10 @@ It never runs implicitly — `disable-model-invocation` in Claude Code,
 
 What it does, in order:
 
-1. Resolves the two roots and reads the case grammar fresh from
-   `$ENLOOP_HOME/shared/src/markdown.ts`. It never works from a remembered
-   version of the grammar and never carries a vendored copy.
+1. Resolves the two roots and reads the case grammar from the copy shipped in
+   the plugin (`references/grammar.md`), which is lifted verbatim from the
+   comment above the parser at build time. It never works from a remembered
+   version of the grammar.
 2. Reads the [step contract](../plugins/enloop/references/step-contract.md).
 3. Works out the scope from the diff and states it back to you in one line, so
    a wrong reading costs seconds instead of a whole case.

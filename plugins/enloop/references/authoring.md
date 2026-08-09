@@ -28,12 +28,31 @@ step contract's reject list. A case that merely reads well is not done.
 
 ## 1. Resolve where things live
 
-Three paths. Never hardcode any of them.
+Three paths, and only one of them is ever the user's to configure.
 
 - **App repo** — where you are now: the repo root
   (`git rev-parse --show-toplevel`). Source of
   every route, label and selector.
-- **Enloop repo** — `$ENLOOP_HOME`. Source of the grammar.
+- **The plugin** — where you are reading this from. It carries the grammar
+  (`references/grammar.md`) and the real parser
+  (`validator/enloop-case.mjs`), so authoring needs nothing installed
+  besides `node` and no copy of the Enloop repo. You read this file at an
+  absolute path: its directory is the plugin's `references/`, and the plugin
+  root is one level above. Under Claude Code that path is also
+  `$CLAUDE_PLUGIN_ROOT`.
+
+  Confirm it before relying on it — the command prints the grammar version
+  the shipped parser implements:
+
+  ```bash
+  ENLOOP_PLUGIN="<the directory holding this references/ folder>"
+  node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" version
+  ```
+
+  If that fails, the plugin is installed wrong. Say so and stop; do not fall
+  back to writing a case you cannot validate, and never ask the user to
+  clone Enloop or set an environment variable pointing at it. Nothing here
+  needs one.
 - **Data folder** — where this repo's cases live. Resolve it by following
   `data-folder.md`, beside this file, which you must read now. It answers
   two questions in order: *which folder this repo writes to*, and *which
@@ -48,21 +67,10 @@ Three paths. Never hardcode any of them.
   request, that wins outright, which is how a case goes somewhere other than
   the usual place without reconfiguring anything.
 
-```bash
-echo "ENLOOP_HOME=${ENLOOP_HOME:-unset}"
-```
-
-If `ENLOOP_HOME` is unset, ask the user for the path and tell them to add it
-to their settings `env` block so this is a one-time cost:
-
-```json
-{ "env": { "ENLOOP_HOME": "/path/to/enloop" } }
-```
-
-Verify each path exists before continuing. If the repo root
-(`git rev-parse --show-toplevel`) and
-`$ENLOOP_HOME` are the same directory, you are in the wrong repo — that means
-the user wants the `enloop-demo` skill, not this one.
+Verify each path exists before continuing. If the repo you are in *is*
+Enloop itself — it has both `shared/src/markdown.ts` and
+`plugins/enloop/skills/` — then there is no app under test here and the user
+wants the `enloop-demo` skill, not this one.
 
 Then resolve the **project name** — the app under test. One data folder
 serves every repo a user writes cases from, so a Library without it is a
@@ -78,17 +86,21 @@ order:
 Use it verbatim, including capitalisation. It goes in two places in the
 finished case (step 7): the `@project` line and the title prefix.
 
-## 2. Read the grammar fresh from source
+## 2. Read the grammar the plugin ships
 
-The grammar is a doc comment at the top of
-`$ENLOOP_HOME/shared/src/markdown.ts`. It changes. **Read it every time** —
-never write a case from a remembered version of the grammar, and never
-copy the grammar into this skill.
+Read `$ENLOOP_PLUGIN/references/grammar.md`. It is lifted verbatim from the
+doc comment above the parser, by the same build that produces the validator
+you will run in step 8, so the words you read and the code that will judge
+your output cannot disagree.
 
-Note the value of `CURRENT_FORMAT_VERSION` there; it goes in the case's
-`@version` line. If what you read disagrees with anything below, the
-source file wins — say so in your report rather than silently following
-this file.
+The grammar changes between releases. **Read it every time** — never write a
+case from a remembered version of it.
+
+The format version is in that file's heading and is what goes in the case's
+`@version` line; `node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" version`
+prints the same thing. If what you read disagrees with anything below, the
+grammar wins — say so in your report rather than silently following this
+file.
 
 ## 3. Read the step contract
 
@@ -152,7 +164,12 @@ session.** No exceptions and no recall.
 
 Practically, for each step you intend to write:
 
-- Route → the router config or route attribute.
+- Route → the router config or route attribute. A route is the address of a
+  place, and contract rule 2 wants one for every place the case names: the
+  entry point in `# Prerequisites`, every step's `Where:`, and any screen or
+  record mentioned in prose. Bare in `Where:`; absolute — a literal URL or
+  `%BASE_URL%/…` — in a prerequisite or a link, which have no open page to
+  resolve against.
 - Visible label → the JSX/template/i18n entry. Quote it exactly, including
   capitalisation, in backticks.
 - Value the tester types → as `"**value**"`, quoted *and* bolded, exactly
@@ -195,11 +212,22 @@ Follow the grammar from step 2 and the contract from step 3. Structure:
   or ticket). Two or three sentences.
 - **`# Variables`** — every value the tester supplies. Contract rule 6:
   each gets a `Default:`, a `Generator:`, or explicit acquisition steps.
+  Declare `BASE_URL` here as soon as the case needs one absolute address —
+  the entry point, a link, a `Where:` that must not depend on whatever tab
+  is open — with the environment these cases are normally run against as its
+  `Default:`. One variable then moves the whole case between environments.
 - **`# Dependencies`** — what must already be true and is not the tester's
   to arrange: deployed branch, migrations, access levels.
-- **`# Prerequisites`** — what the tester must *do* before step 1. Data
-  that must exist, and **every service they have to start themselves**,
-  each with the command that starts it and the directory to run it in:
+- **`# Prerequisites`** — what the tester must *do* before step 1, starting
+  with **where the run begins** (contract rule 2a). The tester is usually
+  already in the app, so the entry point belongs here rather than in a step
+  that spends a verdict on arriving:
+
+      - Open %BASE_URL%/admin/integrations
+
+  Then data that must exist, and **every service they have to start
+  themselves**, each with the command that starts it and the directory to
+  run it in:
 
       - API running locally: `npm run dev` in the app repo
       - Worker running: `php bin/console messenger:consume async`
@@ -214,7 +242,9 @@ Follow the grammar from step 2 and the contract from step 3. Structure:
   section collapsed by default, so listing what is usually already running
   costs nothing.
 - **`# Steps`** — per the contract, including `Kind: quick` on the core
-  path (contract rule 3b). Cleanup steps at the end.
+  path (contract rule 3b). Step 1 is the first thing the case *verifies*,
+  not the navigation that got there (rule 2a) — unless arriving is itself
+  what is under test. Cleanup steps at the end.
 
 Write it to a scratch file first. It is not going into the cases folder
 until it parses and passes the reject list.
@@ -224,39 +254,41 @@ until it parses and passes the reject list.
 ### 8a. Parse with the real parser
 
 Hand-written Markdown mis-parses silently — a heading at the wrong level,
-a label line that does not match its regex.
+a label line that does not match its regex. The parser that will read this
+case in the panel ships with the plugin, so run it against your scratch
+file:
 
 ```bash
-cd "$ENLOOP_HOME/shared" && npx tsc -p tsconfig.json --noEmit false --outDir dist --declaration false
+node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" validate <scratch file> --project "<project name>"
 ```
 
-Then run a throwaway Node script against `$ENLOOP_HOME/shared/dist/markdown.js`
-that:
+No build step, no `npm install`, no copy of the Enloop repo — the bundle is
+the same parser the extension uses, built from the same source as the
+grammar you read in step 2.
 
-- calls `parseCaseDocument(raw, { version: 1, createdAt: new Date().toISOString() })`
-  and asserts the step count, variable count, dependency and prerequisite
-  counts match what you intended,
-- asserts `doc.project` is the project name from step 1, and that
-  `doc.title` starts with it,
-- asserts the steps you marked `Kind: quick` came back with `quick: true`,
-  and that `filterToQuickSteps` on your text still parses — a quick run
-  freezes that filtered document, so a case whose quick subset does not
-  parse on its own is broken in a way a full parse will not show,
-- asserts every step you gave a `Where:`/`Selector:`/`### Note` actually
-  came back with those fields populated (a mis-indented header line
-  silently becomes body prose — this check is what catches it). Note that
-  `step.selectors` is an **array**, in written order: a step with two
-  fallback lines must come back with `selectors.length === 2`, and a step
-  whose selectors silently collapsed to one is the exact failure this
-  check exists to catch,
-- if there are variables, calls `resolveVariableValues` +
-  `substituteVariables` from `dist/variables.js` and asserts no `%NAME%`
-  survives: `!/%[A-Za-z_]+%/.test(substituted)`,
-- prints each step's title, `where`, `selectors` and `expected` so you can
-  read the parsed result rather than the source you just wrote.
+It prints **the document as parsed** — every step's title, `where`,
+`selectors`, `expected` and `note` — and that printout is the point. Read
+it against what you meant to write, because this is where a mis-indented
+`Selector:` shows up as body prose, and where two fallback selectors that
+silently collapsed into one become visible. Then read its findings:
 
-Delete `$ENLOOP_HOME/shared/dist` and the script afterward. They are scratch,
-not source — and leaving a stale `dist` in that repo is confusing.
+- **ERRORS** mean the document is wrong and the tool is sure: a step with no
+  `Where:`, an `### Expected` that is prose rather than bullets, a `%NAME%`
+  nothing declares, a title missing its project prefix, a quick subset that
+  does not parse to the steps you marked. Fix and re-run. Exit code 1.
+- **WARNINGS** are the judgements the contract leaves to you — a prose
+  `Where:`, a step with no `Selector:`, an unmeasurable adjective in
+  `### Expected`. Answer each one. Some are correct for your case; a
+  third-party console has no route, and a HubSpot card has no DOM to carry a
+  `data-testid`. **Never edit a case just to silence one** — that trades a
+  real judgement for a green tick.
+
+Check the counts on the first lines against what you intended: steps,
+variables, dependencies, prerequisites, and how many are marked quick.
+
+`validate` cannot see your app, so it says nothing about the specifics that
+matter most: a label you invented, a route that does not exist, a selector
+that is not in this repo. Those are step 8b's job and yours.
 
 ### 8b. Run the reject list
 
@@ -279,10 +311,17 @@ Then run the verification at the end of `data-folder.md`. It is
 two `ls` calls and it is the only thing standing between a misplaced file
 and a user staring at an empty Library.
 
-`<id>` follows `newTestCaseId` in `$ENLOOP_HOME/shared/src/id.ts`: the title
-lowercased with every non-alphanumeric run replaced by `-`, trimmed of
-leading/trailing `-`, cut to 40 characters, then `-` and 8 hex characters
-(`openssl rand -hex 4`).
+`<id>` comes from the same code the extension uses — ask for it rather than
+building it by hand:
+
+```bash
+node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" id "<the case title>"
+```
+
+(For the record, it is the title lowercased with every non-alphanumeric run
+replaced by `-`, trimmed, cut to 40 characters, then `-` and 8 hex
+characters. A hand-built id that differs in the slug still works; one that
+differs in *shape* is a case the store may not find.)
 
 Placeholders stay literal in the stored file — `%NAME%` is substituted per
 run, not at authoring time.

@@ -58,25 +58,18 @@ have wanted them.
 
 ## Configure
 
-The skills run from *other* repos and read the grammar and run data from this
-one, so they need to know where it lives. Set it once in your user
-`settings.json`:
+Installing the plugin is the whole installation: the case grammar and the
+parser the skills validate against ship inside it, so there is nothing to
+clone and no path to Enloop to set.
+
+The one thing worth telling them is your **data folder** — the directory you
+picked with "Connect folder…" in the extension. Skip even this if the repo
+keeps its cases in an `enloop/` folder of its own; the skills find that
+without configuration.
 
 ```json
 {
   "env": {
-    "ENLOOP_HOME": "/path/to/enloop"
-  }
-}
-```
-
-Then point them at your **data folder** — the directory you picked with
-"Connect folder…" in the extension:
-
-```json
-{
-  "env": {
-    "ENLOOP_HOME": "/path/to/enloop",
     "ENLOOP_DATA_DIR": "/path/to/the/folder/you/connected"
   }
 }
@@ -85,8 +78,7 @@ Then point them at your **data folder** — the directory you picked with
 If you keep a **separate data folder per project**, set `ENLOOP_DATA_DIR` in
 that project's `.claude/settings.json` rather than your user one — the project
 value wins, so each repo writes to its own folder and you're never relying on
-remembering which one is current. Keep `ENLOOP_HOME` in the user settings; it's
-the same everywhere.
+remembering which one is current.
 
 What each variable means, and why the data folder is the one people get wrong,
 is in [skills.md](skills.md#what-the-skills-need-to-know).

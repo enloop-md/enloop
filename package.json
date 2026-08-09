@@ -12,6 +12,7 @@
     "dev:viewer": "npm run dev -w viewer",
     "build": "npm run build -w extension",
     "build:viewer": "npm run build -w viewer",
+    "build:plugin": "node scripts/build-plugin.mjs",
     "typecheck": "npm run typecheck -w shared && npm run typecheck -w extension && npm run typecheck -w viewer"
   }
 }

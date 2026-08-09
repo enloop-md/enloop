@@ -1,0 +1,50 @@
+name: Plugin artifacts are current
+
+# The plugin ships a bundled parser and a copy of the grammar so that
+# authoring a case needs nothing but `node` — see scripts/build-plugin.mjs.
+# Both are generated from shared/src and both are committed, which is a
+# standing invitation to drift: change the grammar comment or the parser,
+# forget to rebuild, and every installed plugin validates against yesterday's
+# rules while telling its user it read the spec. This job is what makes that
+# impossible rather than merely discouraged.
+on:
+  push:
+    branches: [master]
+    paths:
+      - "shared/**"
+      - "plugins/**"
+      - "scripts/build-plugin.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/plugin.yml"
+  pull_request:
+    paths:
+      - "shared/**"
+      - "plugins/**"
+      - "scripts/build-plugin.mjs"
+  workflow_dispatch:
+
+jobs:
+  artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck -w shared
+      - run: npm run build:plugin
+      - name: Committed artifacts match a fresh build
+        run: |
+          if ! git diff --exit-code -- plugins/enloop/validator plugins/enloop/references/grammar.md; then
+            echo "::error::plugins/enloop artifacts are stale. Run 'npm run build:plugin' and commit the result."
+            exit 1
+          fi
+      # The validator is what every authored case is checked against, so a
+      # bundle that cannot even read the example case is worth failing on.
+      - name: Validator runs
+        run: |
+          node plugins/enloop/validator/enloop-case.mjs version
+          node plugins/enloop/validator/enloop-case.mjs id "Smoke: a title"

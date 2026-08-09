@@ -57,20 +57,23 @@ else changes.
 
 ## Configure
 
-The skills run from *other* repos and read the grammar and run data from this
-one, so they need to know where it lives. Codex takes these from the shell
-rather than from a per-repo settings file, so the durable home is your shell
-profile — or a project-level `.envrc` if you use direnv, which is the closest
-equivalent to a per-project value:
+Installing the plugin is the whole installation: the case grammar and the
+parser the skills validate against ship inside it, so there is nothing to
+clone and no path to Enloop to set.
+
+What is left is optional, and Codex takes it from the shell rather than from a
+per-repo settings file — so the durable home is your shell profile, or a
+project-level `.envrc` if you use direnv, which is the closest equivalent to a
+per-project value:
 
 ```bash
-export ENLOOP_HOME=/path/to/enloop
 export ENLOOP_DATA_DIR=/path/to/the/folder/you/connected
 export ENLOOP_PROJECT="Your App"        # optional; the setup skill records it
 ```
 
 `ENLOOP_DATA_DIR` is the directory you picked with "Connect folder…" in the
-extension. What each variable means, and why the data folder is the one people
+extension. Leave it unset when the repo keeps its cases in an `enloop/` folder
+of its own. What each variable means, and why the data folder is the one people
 get wrong, is in [skills.md](skills.md#what-the-skills-need-to-know).
 
 ## What is not included
