@@ -96,6 +96,10 @@ the document as parsed and splits its findings into errors (certainly wrong)
 and warnings (yours to judge). Check the counts against what you intended,
 read every finding, and never edit a case just to quiet a warning.
 
+Add `--findings-only` on every re-run after a fix: the parsed dump is worth
+reading once, and re-printing it for each round trip costs more than the
+whole skill.
+
 Automated steps are the one thing it does not show you: print the
 substituted `script` bodies yourself before step 6, since those are what you
 are about to run in a live page.

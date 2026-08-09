@@ -223,11 +223,11 @@ those has an answer without configuration. Never add a third asking where
 Enloop itself lives; there is no such setting any more.
 
 - `ENLOOP_DATA_DIR` — the folder *this repo* writes to, chosen above. It is
-  the one users most often point one level too deep; read
-  `references/data-folder.md` at the plugin root, one level above this
-  skill's own directory, and run its detection before recording anything, so
-  you write a value that resolves cleanly rather than one the next skill has
-  to correct. Leave it unset when the repo has its own `enloop/` folder —
+  the one users most often point one level too deep, so check the value
+  before recording it — `validator/enloop-case.mjs data-folder --want <path>`
+  at the plugin root prints the level it actually names, corrected. Record
+  what that prints, not what you were handed, so the next skill has nothing
+  to fix. Leave it unset when the repo has its own `enloop/` folder —
   the authoring skills find that without configuration, and an unset variable
   cannot go stale.
 - `ENLOOP_PROJECT` — belt and braces with the agent-instructions line, and

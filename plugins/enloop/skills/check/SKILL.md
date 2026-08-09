@@ -26,15 +26,22 @@ Two roots. Never hardcode either.
 - **App repo** — where you are now: the repo root
   (`git rev-parse --show-toplevel`). The place a
   bug gets confirmed and fixed.
-- **Data folder** — where this repo's cases and runs live. Resolve it by
-  following `references/data-folder.md` (at the plugin root, one level above
-  this skill's folder — if it is not there, search the plugin directory for
-  `data-folder.md`), which you must read now. Resolve it the same way the
-  quick and full skills do, per repo: with several folders connected, the run you are
-  looking for is in the one this repo writes to, and a user-level default
-  may name a different one. Pointing at the wrong folder — or the wrong
-  level of the right one — does not error; it reports "no runs found" for a
-  case that ran fine.
+- **Data folder** — where this repo's cases and runs live. Ask the plugin,
+  which is two levels above this skill's folder and holds `validator/` and
+  `references/` (under Claude Code it is also `$CLAUDE_PLUGIN_ROOT`):
+
+  ```bash
+  ENLOOP_PLUGIN="<that directory>"
+  node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" data-folder
+  ```
+
+  `RESOLVED` prints the folder; use it. `AMBIGUOUS` or `NONE` exits non-zero
+  and means you must ask — read `references/data-folder.md` at the plugin
+  root for how. Resolve **per repo**: with several folders connected, the run
+  you are looking for is in the one this repo writes to, and a user-level
+  default may name a different one. Pointing at the wrong folder — or the
+  wrong level of the right one — does not error; it reports "no runs found"
+  for a case that ran fine.
 
 Those are the only two paths this skill needs. Everything about Enloop
 itself — the grammar, the parser — ships with the plugin you are reading
@@ -214,11 +221,19 @@ $DATA_DIR/test-cases/<testCaseId>/versions/v<n+1>.md
 
 Read the current highest `v<n>.md`, apply the fix, and add a
 `Change note:` line under the title saying what changed and which run
-prompted it. Before writing, read
-`../../references/step-contract.md` (the plugin's references folder) and check the
-edited steps against its reject list — a fix that reintroduces a contract
-violation is not a fix. The `@version` line stays as it is unless the
-grammar itself changed.
+prompted it. Before writing, put the edited case through the validator that
+ships with the plugin — a fix that reintroduces a contract violation is not a
+fix:
+
+```bash
+node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" validate <the edited file> --findings-only
+```
+
+`--findings-only` because you are checking an edit, not reading a document
+for the first time. For the half it cannot see, read
+`../../references/step-contract.md` (the plugin's references folder) and walk
+its by-eye list over the steps you touched. The `@version` line stays as it
+is unless the grammar itself changed.
 
 **App bugs — report precisely, then ask.** Give file, line, the mechanism,
 and the fix you would make. Do not edit app source as part of triage: the
