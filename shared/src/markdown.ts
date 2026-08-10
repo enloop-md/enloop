@@ -6,11 +6,12 @@ import {
   type CaptureCounts,
   type CaptureDigest,
 } from "./capture.js";
-import { VARIABLE_GENERATORS } from "./schemas.js";
+import { COMMENT_AUDIENCES, VARIABLE_GENERATORS } from "./schemas.js";
 import { stripViewerComment } from "./viewer-link.js";
 import type {
+  CommentAudience,
   FreeRunFile,
-  NoteType,
+  RunComment,
   RunFile,
   RunStepState,
   Step,
@@ -651,12 +652,45 @@ const STATUS_ICON: Record<string, string> = {
   pending: "⬜",
 };
 
-export const NOTE_TYPE_LABELS: Record<NoteType, string> = {
-  note: "note",
-  feature: "feature request",
-  bug: "bugfix required",
-  docs: "docs update required",
+/** What each audience is called on screen and in the files. */
+export const AUDIENCE_LABELS: Record<CommentAudience, string> = {
+  developer: "Developer",
+  product: "Product",
+  "test-writer": "Test writer",
+  docs: "Docs",
+  ops: "Ops",
 };
+
+/** When to pick each one. Shown next to the checkbox in the panel, so the
+ * choice is made from the description rather than from the word — "Product"
+ * means nothing to a tester mid-run; "works, but should work differently"
+ * does. */
+export const AUDIENCE_HINTS: Record<CommentAudience, string> = {
+  developer: "the app did something wrong",
+  product: "it works, but should work differently",
+  "test-writer": "the case was wrong, unclear, or missing something",
+  docs: "the documentation is wrong or missing",
+  ops: "environment or test data, not the app itself",
+};
+
+/** The heading each audience gets in `feedback.md`, addressed rather than
+ * categorised: whoever picks the file up should be able to find their own
+ * name in it. */
+export const AUDIENCE_SECTIONS: Record<CommentAudience, string> = {
+  developer: "For the developer",
+  product: "For product",
+  "test-writer": "For the test writer",
+  docs: "For the docs writer",
+  ops: "For ops",
+};
+
+/** `[Developer · Docs] ` — the prefix a comment carries in a rendered file.
+ * Empty for an untagged comment, which is context and not addressed to
+ * anyone. */
+function audiencePrefix(comment: RunComment): string {
+  if (comment.audiences.length === 0) return "";
+  return `[${comment.audiences.map((a) => AUDIENCE_LABELS[a]).join(" · ")}] `;
+}
 
 /** The counts a step carries, as the report and feedback both phrase them. */
 function stepCounts(state: RunStepState): CaptureCounts {
@@ -730,19 +764,12 @@ export function renderRunReport(
     const state = byId.get(step.id);
     const status = state?.status ?? "pending";
     lines.push(`### ${STATUS_ICON[status] ?? ""} ${index + 1}. ${step.title} (${status})`);
-    if (state?.comment) {
+    if (state?.comments.length) {
       lines.push("");
-      lines.push(`Comment: ${state.comment}`);
-    }
-    if (state?.notes.length) {
-      lines.push("");
-      lines.push("Notes:");
-      for (const note of state.notes) lines.push(`- [${NOTE_TYPE_LABELS[note.type]}] ${note.text}`);
-    }
-    if (state?.tasks.length) {
-      lines.push("");
-      lines.push("Tasks:");
-      for (const task of state.tasks) lines.push(`- [${task.done ? "x" : " "}] ${task.text}`);
+      lines.push("Comments:");
+      for (const comment of state.comments) {
+        lines.push(`- ${audiencePrefix(comment)}${comment.text}`);
+      }
     }
     if (state?.automatedResult?.error) {
       lines.push("");
@@ -772,8 +799,7 @@ function hasStepSignal(state: RunStepState): boolean {
   return (
     state.status === "failed" ||
     state.status === "warning" ||
-    state.comment.trim().length > 0 ||
-    state.notes.length > 0 ||
+    state.comments.some((c) => c.text.trim().length > 0) ||
     !!state.automatedResult?.error ||
     // A console error during a step the tester marked passed is signal in its
     // own right, on the same argument as the run comment below: a green run
@@ -817,7 +843,7 @@ export function renderRunFeedback(
 
   const failedCount = run.steps.filter((s) => s.status === "failed").length;
   const warningCount = run.steps.filter((s) => s.status === "warning").length;
-  const noteCount = run.steps.reduce((n, s) => n + s.notes.length, 0);
+  const noteCount = run.steps.reduce((n, s) => n + s.comments.length, 0);
 
   const captured: CaptureCounts = {
     consoleErrors: run.steps.reduce((n, s) => n + s.consoleErrors, 0),
@@ -825,26 +851,32 @@ export function renderRunFeedback(
     networkFailures: run.steps.reduce((n, s) => n + s.networkFailures, 0),
   };
 
-  const bugItems: string[] = [];
-  const featureItems: string[] = [];
-  const docsItems: string[] = [];
+  // One bucket per audience, in the order the checkboxes appear, so a reader
+  // scanning for their own section finds it in the same place every time.
+  const addressed = new Map<CommentAudience, string[]>(COMMENT_AUDIENCES.map((a) => [a, []]));
   const failedItems: string[] = [];
   const consoleItems: string[] = [];
 
   for (const { step, index, state } of signalSteps) {
     const stepNum = index + 1;
-    const hasBugNote = state.notes.some((n) => n.type === "bug");
-    for (const note of state.notes) {
-      if (note.type === "bug") {
-        bugItems.push(`- **${step.title}** (step ${stepNum}, ${state.status}): ${note.text}`);
-      } else if (note.type === "feature") {
-        featureItems.push(`- **${step.title}** (step ${stepNum}): ${note.text}`);
-      } else if (note.type === "docs") {
-        docsItems.push(`- **${step.title}** (step ${stepNum}): ${note.text}`);
+    const toDeveloper = state.comments.some((c) => c.audiences.includes("developer"));
+    for (const comment of state.comments) {
+      for (const audience of comment.audiences) {
+        addressed
+          .get(audience)!
+          .push(`- **${step.title}** (step ${stepNum}, ${state.status}): ${comment.text}`);
       }
     }
-    if (state.status === "failed" && !hasBugNote) {
-      const detail = [state.comment.trim(), state.automatedResult?.error]
+    // A failure the tester did not address to anyone still has to reach the
+    // developer — silence about a red step is not a decision to ignore it.
+    if (state.status === "failed" && !toDeveloper) {
+      const detail = [
+        state.comments
+          .map((c) => c.text.trim())
+          .filter(Boolean)
+          .join("; "),
+        state.automatedResult?.error,
+      ]
         .filter((s): s is string => !!s)
         .join(" — ");
       failedItems.push(`- **${step.title}** (step ${stepNum})${detail ? `: ${detail}` : ""}`);
@@ -870,7 +902,7 @@ export function renderRunFeedback(
     `Human verification run finished ${run.finishedAt ?? "—"} with status **${run.status}**` +
       `${run.tier === "quick" ? ", covering the quick (core) steps only" : ""}.`,
   );
-  lines.push(`${failedCount} failed, ${warningCount} warnings, ${noteCount} feedback notes.`);
+  lines.push(`${failedCount} failed, ${warningCount} warnings, ${noteCount} tester comments.`);
   if (hasCaptureSignal(captured)) {
     lines.push(
       digest
@@ -882,14 +914,13 @@ export function renderRunFeedback(
     );
   }
   lines.push("");
-  const hasActionItems =
-    bugItems.length + featureItems.length + docsItems.length + failedItems.length +
-      consoleItems.length >
-    0;
+  const addressedCount = [...addressed.values()].reduce((n, items) => n + items.length, 0);
+  const hasActionItems = addressedCount + failedItems.length + consoleItems.length > 0;
   lines.push(
     hasActionItems
-      ? "This file was written by a human tester reviewing the feature. Address the " +
-          "action items below. Step-by-step detail follows for context."
+      ? "This file was written by a human tester reviewing the feature. Each section below " +
+          "is addressed to whoever the tester marked the comment for — take the ones that " +
+          "are yours. Step-by-step detail follows for context."
       : "This file was written by a human tester reviewing the feature. Nothing " +
           "failed; what follows is what they wanted you to know anyway.",
   );
@@ -901,22 +932,38 @@ export function renderRunFeedback(
     lines.push(runComment);
   }
 
-  const actionSections: Array<[string, string[]]> = [
-    ["Bugfix required", bugItems],
-    ["Feature requests", featureItems],
-    ["Docs updates", docsItems],
-    ["Failed steps", failedItems],
-    ["Errors the page threw", consoleItems],
+  const actionSections: Array<{ heading: string; items: string[]; lead?: string }> = [
+    ...COMMENT_AUDIENCES.map((audience) => ({
+      heading: AUDIENCE_SECTIONS[audience],
+      items: addressed.get(audience)!,
+      // The one audience whose feedback is not only about this run: a tester
+      // saying the case was unclear is sometimes reporting a defect in one
+      // case and sometimes stating how cases for this app should always be
+      // written. Only a reader can tell which, so the file asks rather than
+      // deciding — see the check skill, which promotes the standing ones.
+      lead:
+        audience === "test-writer"
+          ? "Fix the case where this is a one-off. Where it is how cases for this " +
+            "project should *always* be written, promote it to a project rule instead."
+          : undefined,
+    })),
+    { heading: "Failed steps the tester left uncommented", items: failedItems },
+    { heading: "Errors the page threw", items: consoleItems },
   ];
   // A comment-only handoff has nothing to list, and an empty "Action items"
   // heading reads as a bug in this renderer rather than as an all-clear.
   if (hasActionItems) {
     lines.push("");
     lines.push("## Action items");
-    for (const [heading, items] of actionSections) {
+    for (const { heading, items, lead } of actionSections) {
       if (items.length === 0) continue;
       lines.push("");
       lines.push(`### ${heading}`);
+      if (lead) {
+        lines.push("");
+        lines.push(lead);
+        lines.push("");
+      }
       lines.push(...items);
     }
   }
@@ -930,10 +977,11 @@ export function renderRunFeedback(
     lines.push("");
     lines.push(`### ${STATUS_ICON[state.status] ?? ""} ${index + 1}. ${step.title} (${state.status})`);
     if (step.expected) lines.push(`Expected: ${step.expected}`);
-    if (state.comment) lines.push(`Comment: ${state.comment}`);
-    if (state.notes.length > 0) {
-      lines.push("Notes:");
-      for (const note of state.notes) lines.push(`- [${NOTE_TYPE_LABELS[note.type]}] ${note.text}`);
+    if (state.comments.length > 0) {
+      lines.push("Comments:");
+      for (const comment of state.comments) {
+        lines.push(`- ${audiencePrefix(comment)}${comment.text}`);
+      }
     }
     if (state.automatedResult?.error) lines.push(`Automated error: ${state.automatedResult.error}`);
     if (hasCaptureSignal(stepCounts(state))) {

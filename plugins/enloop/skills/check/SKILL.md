@@ -1,6 +1,6 @@
 ---
 name: check
-description: Triage a finished Enloop test run from inside the app repo being tested. Reads the run's feedback.md/report.md, then decides for each failure, warning and tester note whether it is an app bug (with the file and line), a defect in the test case itself, or an environment/data problem — and fixes what it owns. Use after a run has been executed in the extension and the user asks to check/review/triage the run, the results, or the feedback — e.g. "check the last run", "what did the run find", "triage run failures". Not for authoring a case; those are the enloop:quick and enloop:full skills.
+description: Triage a finished Enloop test run from inside the app repo being tested. Reads the run's feedback.md/report.md, then decides for each failure, warning and tester comment whether it is an app bug (with the file and line), a defect in the test case itself, or an environment/data problem — fixes what it owns, and promotes standing feedback into this project's authoring rules. Use after a run has been executed in the extension and the user asks to check/review/triage the run, the results, or the feedback — e.g. "check the last run", "what did the run find", "triage run failures". Not for authoring a case; those are the enloop:quick and enloop:full skills.
 disable-model-invocation: true
 allowed-tools: Read Grep Glob Write Edit Bash(git diff *) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(rg *) Bash(ls *) Bash(cat *) Bash(node *)
 ---
@@ -54,7 +54,7 @@ Runs live under the data folder in a fixed layout:
 
 ```
 <data folder>/runs/<testCaseId>/<runId>/case.md       the exact case text that was run (frozen)
-                                       /run.json      per-step status, comments, notes, tasks
+                                       /run.json      per-step status and comments
                                        /report.md     human-readable summary of every step
                                        /feedback.md   action items — written only when there is signal
 <data folder>/free-runs/<freeRunId>/free-run.json     unscripted session
@@ -84,16 +84,23 @@ confirmed, say so plainly: the case exists but has no runs.
 ## 3. Read the run
 
 **`feedback.md` first** when present — it is already the distilled action
-list (bugs, feature requests, docs gaps, failed steps), written by the
-extension when the run finished. It exists only when a run had signal; a
-silent clean pass has none, and that is itself the answer.
+list, written by the extension when the run finished, and its sections are
+**addressed**: *For the developer*, *For product*, *For the test writer*,
+*For the docs writer*, *For ops*. Take every section, not only the one that
+sounds like yours; you are the one triaging all of them.
 
 Then read, always:
 
 - **`run.json`** — the authoritative per-step state. `status` per step
-  (`success` / `failed` / `warning` / `skipped` / `pending`), free-text
-  `comment`, typed `notes` (`bug` / `feature` / `docs` / `note`), `tasks`,
+  (`success` / `failed` / `warning` / `skipped` / `pending`), the step's
+  `comments` — each with the `audiences` the tester ticked, or none at all —
   and `automatedResult.error` for automated steps.
+
+  **An audience is the tester's hypothesis, not a verdict.** "For the
+  developer" says they thought the app misbehaved; confirming that against
+  source is still your job, and it is routine for a comment addressed to the
+  developer to turn out to be a case defect, or the reverse. Use it as the
+  order to check things in, never as the answer.
 - **`run.json`'s own `comment` and `tier`**, before any of the steps:
   - `comment` is the tester's account of the run as a whole — "ran against
     an old build", "felt slow throughout". It routinely reframes what the
@@ -138,8 +145,8 @@ what broke, and the step's verdict is what the tester could see of it.
 
 ## 4. Triage every finding
 
-For each failed step, warning step, `bug` note, and non-empty comment,
-land on exactly one verdict. Do not batch them into a general impression.
+For each failed step, warning step, and non-empty comment, land on exactly
+one verdict. Do not batch them into a general impression.
 
 ### App bug
 
@@ -243,6 +250,43 @@ say go, fix it then.
 **Environment problems — state the precondition** the rerun needs. If it
 belongs in the case as a `# Dependencies` or `# Prerequisites` entry,
 that is a case defect too; fix it under the rule above.
+
+### Standing rules — the part that outlives this run
+
+A comment addressed **to the test writer** is one of two things, and only a
+reader can tell which:
+
+- **A one-off.** This case's step 4 was wrong. Fix it in the new version and
+  you are done.
+- **A rule.** *Every* case for this app should have done it differently —
+  "always start from the admin dashboard, never the marketing site", "our
+  selects are custom components, so `Selector:` must point at the wrapper",
+  "never assume the seeded demo tenant; it is wiped nightly".
+
+The second kind is worth more than the fix and used to be thrown away: it
+went into one case's next version and was learned again from scratch by the
+next case anyone wrote. Promote it:
+
+```bash
+node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" rules "$DATA_DIR" "<project>"
+```
+
+It prints the file's path and whatever is already in it. Add the rule there,
+in the imperative, one bullet per rule, each saying what to do rather than
+what went wrong — a rule that reads as a complaint about one case will not be
+followed when writing the next. Merge with what is there instead of appending
+a near-duplicate, and delete a rule the app has outgrown; this file is read in
+full before every case this project ever gets, so its length is a cost
+everyone pays.
+
+Be conservative. One tester's preference is not a project rule, and a rules
+file that accumulates every passing remark becomes an instruction nobody can
+follow. When it is genuinely unclear, fix the case and **say in your report
+that you considered it a rule and did not promote it** — that puts the
+judgement in front of the person who can settle it.
+
+The **quick** and **full** skills read this file before authoring and must
+obey it, so a rule you write here is enforced from the next case onward.
 
 ## 7. Report
 

@@ -103,11 +103,51 @@ time, Chrome keeps what it already granted — nothing to re-approve.
 
 ## During a run
 
-Before finishing a run you can leave a **comment on the run as a whole** —
+Every step takes **comments**, and each comment says **who it is for**:
+
+| Tick | When |
+| --- | --- |
+| Developer | the app did something wrong |
+| Product | it works, but should work differently |
+| Test writer | the case was wrong, unclear, or missing something |
+| Docs | the documentation is wrong or missing |
+| Ops | environment or test data, not the app itself |
+
+Tick as many as apply, or none — an untagged comment is context, kept with
+the run and addressed to nobody. This replaced a free-text box, a note with a
+category dropdown, and a task list, which between them asked a tester holding
+a fact to first decide what kind of thing it was. Audience is a question
+anyone can answer mid-run; taxonomy is not.
+
+Each audience gets its own section in `feedback.md`, so whoever picks the
+file up can find their own name in it. Anything ticked for the **test writer**
+goes one step further — see [project rules](#project-rules).
+
+Before finishing a run you can also leave a **comment on the run as a whole** —
 "ran against an old build", "felt slow throughout". It lands in `report.md`
 above the steps, and it counts as feedback signal on its own, so a run that
 passed while worrying the tester still produces a `feedback.md` for
 the **check** skill to read.
+
+### Project rules
+
+A tester saying "this case should have started from the admin dashboard" is
+sometimes reporting one broken case and sometimes stating how every case for
+this app ought to be written. The second kind used to be thrown away: it went
+into one case's next version and was learned again from scratch by the next
+case anybody wrote.
+
+So comments marked for the **test writer** are read by the **check** skill,
+which decides which are one-offs and which are standing rules, and writes the
+standing ones to `rules/<project>.md` in your connected folder. The **quick**
+and **full** skills read that file before authoring and are told to obey it.
+The rules live beside the cases rather than in the app repo because that is
+the one place both halves can reach — the extension has a handle on the data
+folder and nothing else.
+
+The extension never writes that file itself. A rule is a judgement about
+which of two things a comment was, and the skill that has read the run is the
+one placed to make it.
 
 A side panel closes whenever you click into the page you are testing, which
 during a run is constantly, and closing it destroys the panel. Reopening

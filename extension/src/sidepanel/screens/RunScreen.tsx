@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AUDIENCE_HINTS,
+  AUDIENCE_LABELS,
+  COMMENT_AUDIENCES,
   describeCounts,
   hasCaptureSignal,
-  newNoteId,
-  newTaskId,
-  NOTE_TYPE_LABELS,
-  NOTE_TYPES,
+  newCommentId,
   type CapturedEntry,
-  type NoteType,
+  type CommentAudience,
   type Run,
   type RunStep,
   type RunStepStatus,
@@ -237,8 +237,7 @@ export function RunScreen({
       (s) =>
         s.status === "failed" ||
         s.status === "warning" ||
-        s.comment.trim().length > 0 ||
-        s.notes.length > 0 ||
+        s.comments.some((c) => c.text.trim().length > 0) ||
         !!s.automatedResult?.error ||
         s.consoleErrors > 0,
     );
@@ -507,8 +506,8 @@ function VerdictButton({
   );
 }
 
-/** How many notes a collapsed step will list before it stops and counts. */
-const COLLAPSED_NOTE_LIMIT = 2;
+/** How many comments a collapsed step will list before it stops and counts. */
+const COLLAPSED_COMMENT_LIMIT = 2;
 
 /**
  * What the tester wrote on a step that did not simply pass, kept visible
@@ -518,29 +517,26 @@ const COLLAPSED_NOTE_LIMIT = 2;
  *
  * Only for `failed` and `warning`: a comment on a passed step is usually an
  * aside, and showing every one of them turns the list back into the wall of
- * text that collapsing was meant to fix. Clamped to two lines and two notes
- * for the same reason — this is a reminder of what is inside, not a second
- * copy of it.
+ * text that collapsing was meant to fix. Clamped to two for the same reason —
+ * this is a reminder of what is inside, not a second copy of it.
  */
 function CollapsedFindings({ step, hidden }: { step: RunStep; hidden: boolean }) {
-  const comment = step.comment.trim();
   const needsAttention = step.status === "failed" || step.status === "warning";
-  if (hidden || !needsAttention || (!comment && step.notes.length === 0)) return null;
+  if (hidden || !needsAttention || step.comments.length === 0) return null;
 
-  const shown = step.notes.slice(0, COLLAPSED_NOTE_LIMIT);
-  const overflow = step.notes.length - shown.length;
+  const shown = step.comments.slice(0, COLLAPSED_COMMENT_LIMIT);
+  const overflow = step.comments.length - shown.length;
 
   return (
     <div className="space-y-0.5 pb-2 pl-8 pr-3 text-[11px] leading-snug">
-      {comment && <p className="line-clamp-2 text-slate-500">{comment}</p>}
-      {shown.map((n) => (
-        <p key={n.id} className="flex items-baseline gap-1">
-          <span
-            className={`shrink-0 rounded px-1 py-px text-[9px] ${NOTE_TYPE_STYLES[n.type]}`}
-          >
-            {NOTE_TYPE_LABELS[n.type]}
-          </span>
-          <span className="truncate text-slate-500">{n.text}</span>
+      {shown.map((c) => (
+        <p key={c.id} className="flex items-baseline gap-1">
+          {c.audiences.map((a) => (
+            <span key={a} className={`shrink-0 rounded px-1 py-px text-[9px] ${AUDIENCE_STYLES[a]}`}>
+              {AUDIENCE_LABELS[a]}
+            </span>
+          ))}
+          <span className="truncate text-slate-500">{c.text}</span>
         </p>
       ))}
       {overflow > 0 && <p className="text-slate-400">+{overflow} more</p>}
@@ -548,12 +544,145 @@ function CollapsedFindings({ step, hidden }: { step: RunStep; hidden: boolean })
   );
 }
 
-const NOTE_TYPE_STYLES: Record<NoteType, string> = {
-  note: "bg-slate-100 text-slate-600",
-  feature: "bg-violet-100 text-violet-700",
-  bug: "bg-red-100 text-red-700",
+const AUDIENCE_STYLES: Record<CommentAudience, string> = {
+  developer: "bg-red-100 text-red-700",
+  product: "bg-violet-100 text-violet-700",
+  "test-writer": "bg-emerald-100 text-emerald-700",
   docs: "bg-sky-100 text-sky-700",
+  ops: "bg-amber-100 text-amber-800",
 };
+
+/**
+ * Everything the tester has to say about one step: a box, and who it is for.
+ *
+ * This replaced three inputs — a free-text comment, a typed note with a
+ * category dropdown, and a task list — which between them asked the tester to
+ * classify an observation before writing it down, and gave no honest answer
+ * for most observations. "The save button did nothing" is not a note *or* a
+ * task, and choosing between `bug` and `note` is a taxonomy question at the
+ * exact moment the tester is holding a fact they want to put down.
+ *
+ * So: one box, and checkboxes for who needs to see it. Audience is something
+ * a tester genuinely knows in the moment, several can be right at once, and
+ * none being ticked is a real answer — context for whoever reads the run.
+ * The hints matter as much as the labels: "Product" means nothing mid-run,
+ * "it works, but should work differently" is a question anyone can answer.
+ */
+function StepComments({
+  step,
+  readOnly,
+  onUpdateFields,
+}: {
+  step: RunStep;
+  readOnly: boolean;
+  onUpdateFields: (patch: Partial<RunStep>) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const [audiences, setAudiences] = useState<CommentAudience[]>([]);
+
+  function add() {
+    if (!draft.trim()) return;
+    onUpdateFields({
+      comments: [
+        ...step.comments,
+        { id: newCommentId(), text: draft.trim(), audiences: [...audiences] },
+      ],
+    });
+    // The box empties, the ticks do not: a tester writing three things for the
+    // developer should not have to re-tick Developer three times.
+    setDraft("");
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <label className="text-[10px] font-medium text-slate-400">Comments</label>
+
+      <ul className="space-y-1">
+        {step.comments.map((c) => (
+          <li key={c.id} className="flex items-start gap-1.5 text-xs text-slate-600">
+            <span className="flex-1">
+              {c.text}
+              {c.audiences.length > 0 && (
+                <span className="mt-0.5 flex flex-wrap gap-1">
+                  {c.audiences.map((a) => (
+                    <span
+                      key={a}
+                      className={`rounded px-1.5 py-0.5 text-[10px] ${AUDIENCE_STYLES[a]}`}
+                    >
+                      {AUDIENCE_LABELS[a]}
+                    </span>
+                  ))}
+                </span>
+              )}
+            </span>
+            {!readOnly && (
+              <button
+                onClick={() =>
+                  onUpdateFields({ comments: step.comments.filter((cc) => cc.id !== c.id) })
+                }
+                className="text-slate-400 hover:text-red-600"
+                aria-label="Remove comment"
+              >
+                ×
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {!readOnly && (
+        <>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={2}
+            placeholder="What did you see?"
+            className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+          />
+          <div className="space-y-0.5">
+            <p className="text-[10px] text-slate-400">This comment is for:</p>
+            {COMMENT_AUDIENCES.map((audience) => (
+              <label
+                key={audience}
+                title={AUDIENCE_HINTS[audience]}
+                className="flex items-start gap-1.5 text-[11px]"
+              >
+                <input
+                  type="checkbox"
+                  checked={audiences.includes(audience)}
+                  onChange={(e) =>
+                    setAudiences((prev) =>
+                      e.target.checked
+                        ? [...prev, audience]
+                        : prev.filter((a) => a !== audience),
+                    )
+                  }
+                  className="mt-0.5"
+                />
+                {/* Label and hint in one span so a hint that wraps stays
+                    aligned under the label rather than under the checkbox. */}
+                <span className="text-slate-700">
+                  {AUDIENCE_LABELS[audience]}{" "}
+                  <span className="text-slate-400">— {AUDIENCE_HINTS[audience]}</span>
+                </span>
+              </label>
+            ))}
+            <p className="pl-5 text-[10px] text-slate-400">
+              Tick none and it is context: kept with the run, addressed to nobody.
+            </p>
+          </div>
+          <button
+            onClick={add}
+            disabled={!draft.trim()}
+            className="w-full rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-40"
+          >
+            Add comment
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
 
 function StepRow({
   index,
@@ -580,10 +709,6 @@ function StepRow({
   onRunAutomated: () => void;
   onUpdateFields: (patch: Partial<RunStep>) => void;
 }) {
-  const [commentDraft, setCommentDraft] = useState(step.comment);
-  const [noteDraft, setNoteDraft] = useState("");
-  const [noteTypeDraft, setNoteTypeDraft] = useState<NoteType>("note");
-  const [taskDraft, setTaskDraft] = useState("");
   const [highlightState, setHighlightState] = useState<"idle" | "highlighting" | "not-found">(
     "idle",
   );
@@ -597,8 +722,6 @@ function StepRow({
   const [matchedSelector, setMatchedSelector] = useState<string | null>(null);
   const selectorKey = step.selectors.join("\n");
   const rowRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => setCommentDraft(step.comment), [step.comment]);
 
   async function highlight() {
     if (step.selectors.length === 0) return;
@@ -826,122 +949,7 @@ function StepRow({
               </div>
             )}
 
-            <div className="space-y-1">
-              <label className="text-[10px] font-medium text-slate-400">Comment</label>
-              <textarea
-                value={commentDraft}
-                disabled={readOnly}
-                onChange={(e) => setCommentDraft(e.target.value)}
-                onBlur={() => {
-                  if (commentDraft !== step.comment) onUpdateFields({ comment: commentDraft });
-                }}
-                rows={2}
-                className="w-full rounded border border-slate-300 px-2 py-1 text-xs disabled:bg-slate-50"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[10px] font-medium text-slate-400">Notes</label>
-              <ul className="space-y-1">
-                {step.notes.map((n) => (
-                  <li key={n.id} className="flex items-center gap-1.5 text-xs text-slate-600">
-                    <span className={`rounded px-1.5 py-0.5 text-[10px] ${NOTE_TYPE_STYLES[n.type]}`}>
-                      {NOTE_TYPE_LABELS[n.type]}
-                    </span>
-                    <span className="flex-1">{n.text}</span>
-                    {!readOnly && (
-                      <button
-                        onClick={() =>
-                          onUpdateFields({ notes: step.notes.filter((nn) => nn.id !== n.id) })
-                        }
-                        className="text-slate-400 hover:text-red-600"
-                        aria-label="Remove note"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              {!readOnly && (
-                <div className="flex gap-1">
-                  <select
-                    value={noteTypeDraft}
-                    onChange={(e) => setNoteTypeDraft(e.target.value as NoteType)}
-                    className="rounded border border-slate-300 px-1 py-1 text-xs"
-                  >
-                    {NOTE_TYPES.map((t) => (
-                      <option key={t} value={t}>
-                        {NOTE_TYPE_LABELS[t]}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    value={noteDraft}
-                    onChange={(e) => setNoteDraft(e.target.value)}
-                    placeholder="Add a note…"
-                    className="flex-1 rounded border border-slate-300 px-2 py-1 text-xs"
-                  />
-                  <button
-                    onClick={() => {
-                      if (!noteDraft.trim()) return;
-                      onUpdateFields({
-                        notes: [...step.notes, { id: newNoteId(), type: noteTypeDraft, text: noteDraft.trim() }],
-                      });
-                      setNoteDraft("");
-                    }}
-                    className="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
-                  >
-                    Add
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[10px] font-medium text-slate-400">Tasks</label>
-              <ul className="space-y-0.5">
-                {step.tasks.map((t) => (
-                  <li key={t.id} className="flex items-center gap-1.5 text-xs text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={t.done}
-                      disabled={readOnly}
-                      onChange={(e) =>
-                        onUpdateFields({
-                          tasks: step.tasks.map((tt) =>
-                            tt.id === t.id ? { ...tt, done: e.target.checked } : tt,
-                          ),
-                        })
-                      }
-                    />
-                    <span className={t.done ? "line-through text-slate-400" : ""}>{t.text}</span>
-                  </li>
-                ))}
-              </ul>
-              {!readOnly && (
-                <div className="flex gap-1">
-                  <input
-                    value={taskDraft}
-                    onChange={(e) => setTaskDraft(e.target.value)}
-                    placeholder="Add a task…"
-                    className="flex-1 rounded border border-slate-300 px-2 py-1 text-xs"
-                  />
-                  <button
-                    onClick={() => {
-                      if (!taskDraft.trim()) return;
-                      onUpdateFields({
-                        tasks: [...step.tasks, { id: newTaskId(), text: taskDraft.trim(), done: false }],
-                      });
-                      setTaskDraft("");
-                    }}
-                    className="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
-                  >
-                    Add
-                  </button>
-                </div>
-              )}
-            </div>
+            <StepComments step={step} readOnly={readOnly} onUpdateFields={onUpdateFields} />
 
             {/* The verdict goes last, after everything it is a verdict on:
                 the tester reads the step, does it, writes down what they
