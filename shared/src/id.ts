@@ -28,10 +28,6 @@ export function newFreeRunId(): string {
   return `free-${stamp}-${shortId()}`;
 }
 
-export function newTaskId(): string {
-  return `task-${shortId()}`;
-}
-
-export function newNoteId(): string {
-  return `note-${shortId()}`;
+export function newCommentId(): string {
+  return `comment-${shortId()}`;
 }

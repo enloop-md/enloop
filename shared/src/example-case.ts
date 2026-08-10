@@ -164,29 +164,32 @@ during development.
 
 ## Say something about this step
 Kind: quick
-Every step takes notes and tasks, and this is the one to try them on.
+Every step takes comments, and this is the one to try them on.
 
-This one needs the side panel — a case being read in the viewer has no note
-box to type into.
+This one needs the side panel — a case being read in the viewer has no
+comment box to type into.
 
-Under **Notes**, enter "**demo %RUN_TAG%**" and add it. Then open the type
-menu beside it: a note is a *note*, a *feature request*, *bugfix required*,
-or *docs update required*. Pick one of the last three.
-
-Under **Tasks**, add "**check this on mobile too**" and tick it off.
+Under **Comments**, type "**demo %RUN_TAG%**". Below the box, tick who it is
+for: **Developer** if the app did something wrong, **Test writer** if the
+case was unclear, and so on. Tick one, press **Add comment**, then add a
+second comment with nothing ticked.
 
 ### Expected
-- The note carries the type you picked as a coloured label.
+- The first comment carries a coloured label for each audience you ticked.
+- The second carries none, which is what "context, addressed to nobody"
+  looks like.
 - \`%RUN_TAG%\` in what you typed came out as a short random string — that is
   the generator from the values panel, resolved when this run started.
-- The task can be ticked and unticked.
 
 ### Note
-Typed notes are what makes a finished run actionable rather than a verdict:
-anything marked *bugfix required*, *feature request* or *docs update
-required* is collected into \`feedback.md\` when the run finishes, which is
-what the **check** skill reads back in the app repo. A plain note stays in
-the report for a human.
+Who a comment is for is what makes a finished run actionable rather than a
+verdict. Every comment with an audience on it becomes an addressed action
+item in \`feedback.md\` when the run finishes — that is the file the **check**
+skill reads back in the app repo, and it hands each section to whoever it is
+addressed to. Anything ticked for the **test writer** goes further: the check
+skill decides whether it was a one-off or a rule this project's cases should
+always follow, and writes the standing ones into the project's rules file.
+An untagged comment stays in the report for a human.
 
 ## Log out
 Where: %BASE_URL%/secure
@@ -273,7 +276,8 @@ Press **Finish run** and pick a verdict.
   *full*), and a count of what passed, warned and failed.
 - In your connected folder, \`runs/<case-id>/<run-id>/\` now holds
   \`case.md\` — the exact case this run executed, frozen — plus \`run.json\`,
-  a readable \`report.md\`, and \`feedback.md\` for the notes you left.
+  a readable \`report.md\`, and \`feedback.md\` for the comments you left,
+  grouped by who you addressed each one to.
 
 ### Note
 That frozen \`case.md\` is why a run stays meaningful after the case is

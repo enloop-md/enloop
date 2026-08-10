@@ -11,7 +11,7 @@ sent you here**, and it changes three things and nothing else:
 | | quick | full |
 | --- | --- | --- |
 | Coverage | the happy path only | edge cases, error states, cleanup |
-| App map (§5) | read only the screens the path touches; do not build or refresh the cached map | build or refresh it |
+| App map (§6) | read only the screens the path touches; do not build or refresh the cached map | build or refresh it |
 | `Kind: quick` | on every step | on the core path only |
 
 Everything below applies to both. Two failure modes the procedure exists to
@@ -23,8 +23,9 @@ prevent, whichever tier you are in:
 2. **Prose that offloads thinking onto the tester.** Multi-action steps,
    rationale mixed into pass criteria, test data discovered mid-run.
 
-The deliverable is a case that parses with the real parser and passes the
-step contract's reject list. A case that merely reads well is not done.
+The deliverable is a case that obeys this project's rules, parses with the
+real parser, and passes the step contract's by-eye list. A case that merely
+reads well is not done.
 
 ## 1. Resolve where things live
 
@@ -80,9 +81,30 @@ order:
    them the **setup** skill records it once so this question stops recurring.
 
 Use it verbatim, including capitalisation. It goes in two places in the
-finished case (step 7): the `@project` line and the title prefix.
+finished case (step 8): the `@project` line and the title prefix.
 
-## 2. Read the grammar the plugin ships
+## 2. Read this project's rules
+
+```bash
+node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" rules "$DATA_DIR" "<project name>"
+```
+
+Rules this app's cases must follow, accumulated by the **check** skill from
+what testers said about earlier runs — where a run begins, how this app's
+selectors have to be written, which fixtures cannot be trusted. They are how
+Enloop gets better at *this* project rather than in general, and they are the
+one input here that came from someone who has actually run these cases.
+
+**They are binding.** A rule outranks a habit and outranks anything below in
+this file that is not the grammar. If you believe one is wrong, say so in your
+report and follow it anyway; changing it is the user's call, and a rule
+silently ignored is worse than no rules file at all.
+
+`(no rules recorded for … yet)` is the normal answer for a new project. Do not
+invent any, and do not write to this file — promoting a rule is the check
+skill's job, because it is the one that has seen the run that justified it.
+
+## 3. Read the grammar the plugin ships
 
 Read `$ENLOOP_PLUGIN/references/grammar.md` — lifted verbatim from the doc
 comment above the parser, so the words you read and the code that will judge
@@ -93,14 +115,14 @@ Its heading carries the format version, which is what goes in the case's
 `@version` line. If it disagrees with anything below, the grammar wins — say
 so in your report rather than silently following this file.
 
-## 3. Read the step contract
+## 4. Read the step contract
 
 Read `step-contract.md`, beside this file in the plugin's `references/`
 folder, in full. It defines what a step must look like and ends with the
-by-eye list you will check against in step 8b. It is the whole point of this
+by-eye list you will check against in step 9b. It is the whole point of this
 skill.
 
-## 4. Establish scope
+## 5. Establish scope
 
 Turn $ARGUMENTS into a concrete change set. In order of preference:
 
@@ -118,14 +140,14 @@ feature area.
 State the scope back to the user in one line before writing anything, so a
 wrong interpretation costs seconds rather than a whole case.
 
-## 5. Build or refresh the app map
+## 6. Build or refresh the app map
 
 The expensive part of authoring is learning the app's surface. Do it once
 and cache it at `<repo root>/.claude/test-map.md`.
 
 **If it exists**, read it, and spot-check two or three entries against
 source before trusting it. Note its `Generated:` date — if the diff from
-step 4 touches routing or UI files, refresh those sections.
+step 5 touches routing or UI files, refresh those sections.
 
 **If it does not exist**, build it. Detect the stack first, then apply the
 matching recipe:
@@ -146,7 +168,7 @@ Then, for the specific screens this case touches, read the actual
 component or template. The map tells you where to look; it does not
 replace looking.
 
-## 6. Derive every specific from source
+## 7. Derive every specific from source
 
 Hard rule: **every route, button label, field label, message string and
 selector in the case must be one you have read in this repo during this
@@ -181,9 +203,9 @@ test handle, and mention it in your final report as a suggested
 the **instrument** skill to add them, which is the only way those steps ever
 gain a working Highlight.
 
-## 7. Write the case
+## 8. Write the case
 
-The grammar from step 2 defines every section and where it goes. What it does
+The grammar from step 3 defines every section and where it goes. What it does
 not say, and this skill does:
 
 - **Title** — `<Project>: <what this verifies>`, e.g.
@@ -194,7 +216,7 @@ not say, and this skill does:
 - **`@project`** — the project name from step 1, *as well as* the title
   prefix. The prefix serves the Library list; this line serves anyone reading
   the raw Markdown, and is what the run report and `feedback.md` carry back
-  to the repo. Both, always. `@version` is the format version from step 2;
+  to the repo. Both, always. `@version` is the format version from step 3;
   `Tags:` takes the ticket id, the feature area, and `manual`.
 - **Description** — what this verifies and why it exists now (which branch
   or ticket). Two or three sentences.
@@ -223,9 +245,9 @@ not say, and this skill does:
 Write it to a scratch file first. It is not going into the cases folder
 until it parses clean and passes the by-eye list.
 
-## 8. Validate — never skip this
+## 9. Validate — never skip this
 
-### 8a. Parse with the real parser
+### 9a. Parse with the real parser
 
 Hand-written Markdown mis-parses silently — a heading at the wrong level,
 a label line that does not match its regex. The parser that will read this
@@ -238,7 +260,7 @@ node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" validate <scratch file> --projec
 
 No build step, no `npm install`, no copy of the Enloop repo — the bundle is
 the same parser the extension uses, built from the same source as the
-grammar you read in step 2.
+grammar you read in step 3.
 
 It prints **the document as parsed** — every step's title, `where`,
 `selectors`, `expected` and `note` — and that printout is the point of the
@@ -268,16 +290,16 @@ variables, dependencies, prerequisites, and how many are marked quick.
 
 `validate` cannot see your app, so it says nothing about the specifics that
 matter most: a label you invented, a route that does not exist, a selector
-that is not in this repo. Those are step 8b's job and yours.
+that is not in this repo. Those are step 9b's job and yours.
 
-### 8b. Walk the by-eye list
+### 9b. Walk the by-eye list
 
 At the end of the step contract, under *Checking a finished case*. It is
 only the items no tool can settle — the mechanical half is what you just
 ran, so do not re-check those by hand. Fix what it catches and re-validate
 with `--findings-only`. Do not rationalise a hit.
 
-## 9. Write the files
+## 10. Write the files
 
 `$DATA_DIR` is what you resolved in step 1. The `test-cases/` segment is
 not optional — it is where `FsaDataStore` looks, and a case written beside
@@ -315,7 +337,7 @@ If you are revising an existing case rather than creating one, write
 `Change note:` line under the title describing the delta. Never edit a
 previous version in place; the version history is the audit trail.
 
-## 10. Report
+## 11. Report
 
 Tell the user:
 

@@ -3702,25 +3702,45 @@ z.object({
 	/** Set when this case lives inside a suite folder rather than standalone. */
 	suiteId: z.string().optional()
 });
-var noteTypeSchema = z.enum([
-	"note",
-	"feature",
-	"bug",
-	"docs"
+var commentAudienceSchema = z.enum([
+	"developer",
+	"product",
+	"test-writer",
+	"docs",
+	"ops"
 ]);
-/** One typed feedback note on a run step. Legacy run.json files stored
-* plain strings; the union below upgrades those to type "note" on read,
-* and the next write persists the normalized shape. */
-var runNoteSchema = z.object({
+/** One comment a tester left on a step, and who they left it for. */
+var runCommentSchema = z.object({
 	id: z.string(),
-	type: noteTypeSchema,
-	text: z.string()
+	text: z.string(),
+	audiences: z.array(commentAudienceSchema)
 });
-var runNoteOrLegacySchema = z.union([runNoteSchema, z.string().transform((text) => ({
-	id: `note-${crypto.randomUUID().slice(0, 8)}`,
-	type: "note",
+/** Note types as they were: a single choice from a list that mixed a category
+* (`bug`, `feature`) with a severity-free catch-all (`note`). Mapped to the
+* audience that type was always a proxy for. */
+var LEGACY_NOTE_AUDIENCES = {
+	bug: ["developer"],
+	feature: ["product"],
+	docs: ["docs"],
+	note: []
+};
+var legacyNoteSchema = z.union([z.object({
+	id: z.string().optional(),
+	type: z.string().optional(),
+	text: z.string()
+}), z.string().transform((text) => ({
+	id: void 0,
+	type: void 0,
 	text
 }))]);
+var legacyTaskSchema = z.object({
+	id: z.string().optional(),
+	text: z.string(),
+	done: z.boolean().default(false)
+});
+function commentId() {
+	return `comment-${crypto.randomUUID().slice(0, 8)}`;
+}
 var runStepStatusSchema = z.enum([
 	"pending",
 	"running",
@@ -3729,11 +3749,6 @@ var runStepStatusSchema = z.enum([
 	"warning",
 	"skipped"
 ]);
-var runTaskSchema = z.object({
-	id: z.string(),
-	text: z.string(),
-	done: z.boolean()
-});
 var automatedResultSchema = z.object({
 	status: z.enum([
 		"success",
@@ -3750,9 +3765,16 @@ var automatedResultSchema = z.object({
 var runStepStateSchema = z.object({
 	stepId: z.string(),
 	status: runStepStatusSchema,
-	comment: z.string(),
-	notes: z.array(runNoteOrLegacySchema),
-	tasks: z.array(runTaskSchema),
+	comments: z.array(runCommentSchema).default([]),
+	/** Legacy: the single free-text box each step used to have, alongside a
+	* list of typed notes and a list of tasks. All three said the same thing
+	* in three places, and a tester could not tell which one their sentence
+	* belonged in. They fold into `comments` on read, and the next write
+	* persists only the new shape — nothing is lost and nothing is migrated
+	* in place. */
+	comment: z.string().optional(),
+	notes: z.array(legacyNoteSchema).optional(),
+	tasks: z.array(legacyTaskSchema).optional(),
 	automatedResult: automatedResultSchema.nullable(),
 	startedAt: z.string().nullable(),
 	finishedAt: z.string().nullable(),
@@ -3765,6 +3787,28 @@ var runStepStateSchema = z.object({
 	consoleErrors: z.number().int().nonnegative().default(0),
 	consoleWarnings: z.number().int().nonnegative().default(0),
 	networkFailures: z.number().int().nonnegative().default(0)
+}).transform(({ comment, notes, tasks, comments, ...rest }) => {
+	const migrated = [
+		...comment?.trim() ? [{
+			id: commentId(),
+			text: comment.trim(),
+			audiences: []
+		}] : [],
+		...(notes ?? []).map((note) => ({
+			id: note.id ?? commentId(),
+			text: note.text,
+			audiences: LEGACY_NOTE_AUDIENCES[note.type ?? "note"] ?? []
+		})),
+		...(tasks ?? []).map((task) => ({
+			id: task.id ?? commentId(),
+			text: `${task.done ? "[done]" : "[to do]"} ${task.text}`,
+			audiences: []
+		}))
+	];
+	return {
+		...rest,
+		comments: [...migrated, ...comments]
+	};
 });
 var runStatusSchema = z.enum([
 	"in_progress",
@@ -3804,9 +3848,7 @@ z.object({
 var runStepSchema = stepSchema.omit({ id: true }).extend({
 	stepId: z.string(),
 	status: runStepStatusSchema,
-	comment: z.string(),
-	notes: z.array(runNoteOrLegacySchema),
-	tasks: z.array(runTaskSchema),
+	comments: z.array(runCommentSchema),
 	automatedResult: automatedResultSchema.nullable(),
 	startedAt: z.string().nullable(),
 	finishedAt: z.string().nullable(),
@@ -3841,9 +3883,7 @@ z.object({
 });
 z.object({
 	status: runStepStatusSchema.optional(),
-	comment: z.string().optional(),
-	notes: z.array(runNoteSchema).optional(),
-	tasks: z.array(runTaskSchema).optional(),
+	comments: z.array(runCommentSchema).optional(),
 	automatedResult: automatedResultSchema.nullable().optional(),
 	startedAt: z.string().nullable().optional(),
 	finishedAt: z.string().nullable().optional()

@@ -114,28 +114,62 @@ export const testCaseMetaSchema = z.object({
   suiteId: z.string().optional(),
 });
 
-export const NOTE_TYPES = ["note", "feature", "bug", "docs"] as const;
-export const noteTypeSchema = z.enum(NOTE_TYPES);
+/**
+ * Who a comment on a step is addressed to.
+ *
+ * A tester who has just seen something wrong knows *who needs to hear it* long
+ * before they could classify it. "The developer should see this" is a judgement
+ * they can make in the moment; "is this a bug or a feature request" is one they
+ * stall on, which is how a run ends with an empty comment box and the finding
+ * in nobody's head but theirs.
+ *
+ * So the axis is audience, not category, and it is a set rather than a choice:
+ * one observation is regularly for two people at once — the app is wrong *and*
+ * the case never said what to expect. An empty set is meaningful and common:
+ * context for whoever reads the run, addressed to nobody, and never an action
+ * item.
+ */
+export const COMMENT_AUDIENCES = ["developer", "product", "test-writer", "docs", "ops"] as const;
+export const commentAudienceSchema = z.enum(COMMENT_AUDIENCES);
 
-/** One typed feedback note on a run step. Legacy run.json files stored
- * plain strings; the union below upgrades those to type "note" on read,
- * and the next write persists the normalized shape. */
-export const runNoteSchema = z.object({
+/** One comment a tester left on a step, and who they left it for. */
+export const runCommentSchema = z.object({
   id: z.string(),
-  type: noteTypeSchema,
   text: z.string(),
+  audiences: z.array(commentAudienceSchema),
 });
 
-const runNoteOrLegacySchema = z.union([
-  runNoteSchema,
-  z.string().transform(
-    (text): z.infer<typeof runNoteSchema> => ({
-      id: `note-${crypto.randomUUID().slice(0, 8)}`,
-      type: "note",
-      text,
-    }),
-  ),
+// ---- what these replaced, still on disk in every run recorded before now ----
+
+/** Note types as they were: a single choice from a list that mixed a category
+ * (`bug`, `feature`) with a severity-free catch-all (`note`). Mapped to the
+ * audience that type was always a proxy for. */
+const LEGACY_NOTE_AUDIENCES: Record<string, Array<z.infer<typeof commentAudienceSchema>>> = {
+  bug: ["developer"],
+  feature: ["product"],
+  docs: ["docs"],
+  note: [],
+};
+
+const legacyNoteSchema = z.union([
+  z.object({
+    id: z.string().optional(),
+    type: z.string().optional(),
+    text: z.string(),
+  }),
+  // Older still: a bare string.
+  z.string().transform((text) => ({ id: undefined, type: undefined, text })),
 ]);
+
+const legacyTaskSchema = z.object({
+  id: z.string().optional(),
+  text: z.string(),
+  done: z.boolean().default(false),
+});
+
+function commentId(): string {
+  return `comment-${crypto.randomUUID().slice(0, 8)}`;
+}
 
 export const runStepStatusSchema = z.enum([
   "pending",
@@ -145,12 +179,6 @@ export const runStepStatusSchema = z.enum([
   "warning",
   "skipped",
 ]);
-
-export const runTaskSchema = z.object({
-  id: z.string(),
-  text: z.string(),
-  done: z.boolean(),
-});
 
 export const automatedResultSchema = z.object({
   status: z.enum(["success", "failed", "warning"]),
@@ -162,25 +190,54 @@ export const automatedResultSchema = z.object({
 /** Pure execution state for one step, as stored in `run.json`. No step
  * definition fields (title/type/script/...) live here — those only ever
  * live in the frozen `case.md`, and are joined in by stepId at read time. */
-export const runStepStateSchema = z.object({
-  stepId: z.string(),
-  status: runStepStatusSchema,
-  comment: z.string(),
-  notes: z.array(runNoteOrLegacySchema),
-  tasks: z.array(runTaskSchema),
-  automatedResult: automatedResultSchema.nullable(),
-  startedAt: z.string().nullable(),
-  finishedAt: z.string().nullable(),
-  /** What the page printed while this step was running — see
-   * `shared/src/capture.ts`. Counts only: the entries themselves live in
-   * `console.jsonl`/`console.md`, because console volume is unbounded and
-   * `run.json` is rewritten on every step patch. Written when the run
-   * finishes, and `.default(0)` so every run recorded before capture existed
-   * still parses. */
-  consoleErrors: z.number().int().nonnegative().default(0),
-  consoleWarnings: z.number().int().nonnegative().default(0),
-  networkFailures: z.number().int().nonnegative().default(0),
-});
+export const runStepStateSchema = z
+  .object({
+    stepId: z.string(),
+    status: runStepStatusSchema,
+    comments: z.array(runCommentSchema).default([]),
+    /** Legacy: the single free-text box each step used to have, alongside a
+     * list of typed notes and a list of tasks. All three said the same thing
+     * in three places, and a tester could not tell which one their sentence
+     * belonged in. They fold into `comments` on read, and the next write
+     * persists only the new shape — nothing is lost and nothing is migrated
+     * in place. */
+    comment: z.string().optional(),
+    notes: z.array(legacyNoteSchema).optional(),
+    tasks: z.array(legacyTaskSchema).optional(),
+    automatedResult: automatedResultSchema.nullable(),
+    startedAt: z.string().nullable(),
+    finishedAt: z.string().nullable(),
+    /** What the page printed while this step was running — see
+     * `shared/src/capture.ts`. Counts only: the entries themselves live in
+     * `console.jsonl`/`console.md`, because console volume is unbounded and
+     * `run.json` is rewritten on every step patch. Written when the run
+     * finishes, and `.default(0)` so every run recorded before capture existed
+     * still parses. */
+    consoleErrors: z.number().int().nonnegative().default(0),
+    consoleWarnings: z.number().int().nonnegative().default(0),
+    networkFailures: z.number().int().nonnegative().default(0),
+  })
+  .transform(({ comment, notes, tasks, comments, ...rest }) => {
+    const migrated = [
+      // The step comment carried no audience by definition — it was the box
+      // for "anything else", which is exactly what an untagged comment is.
+      ...(comment?.trim() ? [{ id: commentId(), text: comment.trim(), audiences: [] }] : []),
+      ...(notes ?? []).map((note) => ({
+        id: note.id ?? commentId(),
+        text: note.text,
+        audiences: LEGACY_NOTE_AUDIENCES[note.type ?? "note"] ?? [],
+      })),
+      // A task was a reminder to somebody unnamed. Its state is kept in the
+      // text because there is nowhere else for it to go, and a half-finished
+      // checklist that silently loses its ticks is worse than a wordy one.
+      ...(tasks ?? []).map((task) => ({
+        id: task.id ?? commentId(),
+        text: `${task.done ? "[done]" : "[to do]"} ${task.text}`,
+        audiences: [],
+      })),
+    ];
+    return { ...rest, comments: [...migrated, ...comments] };
+  });
 
 export const runStatusSchema = z.enum(["in_progress", "passed", "failed", "aborted"]);
 
@@ -221,9 +278,7 @@ export const runFileSchema = z.object({
 export const runStepSchema = stepSchema.omit({ id: true }).extend({
   stepId: z.string(),
   status: runStepStatusSchema,
-  comment: z.string(),
-  notes: z.array(runNoteOrLegacySchema),
-  tasks: z.array(runTaskSchema),
+  comments: z.array(runCommentSchema),
   automatedResult: automatedResultSchema.nullable(),
   startedAt: z.string().nullable(),
   finishedAt: z.string().nullable(),
@@ -267,9 +322,7 @@ export const freeRunFileSchema = z.object({
 /** All fields optional by design — a partial update applied to one run step. */
 export const stepPatchSchema = z.object({
   status: runStepStatusSchema.optional(),
-  comment: z.string().optional(),
-  notes: z.array(runNoteSchema).optional(),
-  tasks: z.array(runTaskSchema).optional(),
+  comments: z.array(runCommentSchema).optional(),
   automatedResult: automatedResultSchema.nullable().optional(),
   startedAt: z.string().nullable().optional(),
   finishedAt: z.string().nullable().optional(),

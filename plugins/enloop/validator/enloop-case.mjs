@@ -11,6 +11,7 @@
  *   node enloop-case.mjs validate <case.md> [--project <name>] [--findings-only]
  *   node enloop-case.mjs data-folder [--want <path>]   where this repo's cases go
  *   node enloop-case.mjs verify <data folder> <caseId> did the case land right
+ *   node enloop-case.mjs rules <data folder> <project> this project's authoring rules
  *   node enloop-case.mjs id "Project: Case title"      the case folder's id
  *   node enloop-case.mjs version                       the grammar format version
  *
@@ -310,6 +311,45 @@ switch (command) {
     process.exit(1);
   }
 
+  /**
+   * How cases for one app must be written, accumulated from the runs of them.
+   *
+   * A tester who says "this case should have started from the admin dashboard"
+   * is sometimes reporting one broken case and sometimes stating a rule every
+   * case for this app should follow. The second kind is worth more than the
+   * fix, and had nowhere to live: it went into one case's next version and was
+   * re-learned from scratch by the next case anybody wrote.
+   *
+   * It lives beside the cases rather than in the app repo because that is the
+   * one place both halves can reach — the extension has a handle on the data
+   * folder and nothing else, and an agent authoring from the app repo has this
+   * command. One file per project, because a folder serves several.
+   *
+   * Reading and locating are the same command on purpose: an authoring skill
+   * that has to be told a path is an authoring skill that will be told the
+   * wrong one.
+   */
+  case "rules": {
+    const [dataDir, ...projectParts] = rest.filter((a) => !a.startsWith("--"));
+    const project = projectParts.join(" ").trim();
+    if (!dataDir || !project) die('usage: enloop-case.mjs rules <data folder> "<project>"');
+
+    const slug = project
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    const file = path.join(path.resolve(dataDir).replace(/\/+$/, ""), "rules", `${slug}.md`);
+    console.log(`PATH ${file}`);
+    try {
+      console.log("");
+      console.log(readFileSync(file, "utf8").trimEnd());
+    } catch {
+      console.log("");
+      console.log(`(no rules recorded for ${project} yet)`);
+    }
+    break;
+  }
+
   case "id": {
     const title = rest.join(" ").trim();
     if (!title) die('usage: enloop-case.mjs id "Project: Case title"');
@@ -327,6 +367,7 @@ switch (command) {
         "  enloop-case.mjs validate <case.md> [--project <name>] [--findings-only]\n" +
         "  enloop-case.mjs data-folder [--want <path>]\n" +
         "  enloop-case.mjs verify <data folder> <caseId>\n" +
+        '  enloop-case.mjs rules <data folder> "<project>"\n' +
         '  enloop-case.mjs id "Project: Case title"\n' +
         "  enloop-case.mjs version",
     );

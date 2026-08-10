@@ -173,8 +173,9 @@ Then open the extension, find the case in the Library, and run it.
 
 When a run finishes, the extension writes `report.md` (every step, for
 sharing) and — only when there was something to act on — `feedback.md`, an
-action list built from the failures and the tester's typed notes
-(`bug` / `feature` / `docs`). Both land next to `run.json` in
+action list built from the failures and from the tester's comments, in
+sections addressed to whoever each comment was marked for: developer,
+product, test writer, docs, ops. Both land next to `run.json` in
 `runs/<case-id>/<run-id>/`.
 
 Back in the app repo:
@@ -203,12 +204,25 @@ steps that passed, and including fallback selectors a passing run never
 reached — against current source, because a selector that changed under a
 passing step is next run's mystery failure.
 
+An audience the tester ticked is a hypothesis, not a verdict — "for the
+developer" says they thought the app misbehaved, and confirming that against
+source is still the skill's job.
+
 Then it acts on what it owns. **Case defects it fixes itself**, writing
 `versions/v<n+1>.md` with a `Change note:` and re-checking the edited steps
 against the step contract; previous versions are never edited in place.
 **App bugs it reports and stops** — file, line, and the fix it would make —
 because you may want a ticket or a different fix rather than an edit
 appearing under you. Say go and it implements it.
+
+**Comments for the test writer that turn out to be rules** rather than
+one-off defects — "always start from the admin dashboard", "our selects are
+custom components, so point `Selector:` at the wrapper" — it promotes to
+`rules/<project>.md` in your data folder. That file is read before every case
+this project ever gets, and the authoring skills are told to obey it, which is
+how Enloop gets better at *your* app rather than in general. It is asked to be
+conservative, and to say when it considered something a rule and left it as a
+fix.
 
 Nothing is rerun, and it won't claim otherwise: a fixed case and a patched
 bug both need another pass through the extension.

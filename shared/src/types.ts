@@ -7,10 +7,9 @@ import type {
   testCaseVersionSchema,
   caseBookkeepingSchema,
   testCaseMetaSchema,
-  noteTypeSchema,
-  runNoteSchema,
+  commentAudienceSchema,
+  runCommentSchema,
   runStepStatusSchema,
-  runTaskSchema,
   automatedResultSchema,
   runStepStateSchema,
   runFileSchema,
@@ -45,12 +44,12 @@ export type CaseBookkeeping = z.infer<typeof caseBookkeepingSchema>;
 /** Composed view: bookkeeping + the current version's parsed content. */
 export type TestCaseMeta = z.infer<typeof testCaseMetaSchema>;
 
-export type NoteType = z.infer<typeof noteTypeSchema>;
-/** One typed feedback note on a run step. */
-export type RunNote = z.infer<typeof runNoteSchema>;
+/** Who a comment is addressed to — see `commentAudienceSchema`. */
+export type CommentAudience = z.infer<typeof commentAudienceSchema>;
+/** One comment a tester left on a step, and who for. */
+export type RunComment = z.infer<typeof runCommentSchema>;
 
 export type RunStepStatus = z.infer<typeof runStepStatusSchema>;
-export type RunTask = z.infer<typeof runTaskSchema>;
 export type AutomatedResult = z.infer<typeof automatedResultSchema>;
 /** On-disk per-step state inside `run.json` — no step-definition fields. */
 export type RunStepState = z.infer<typeof runStepStateSchema>;
