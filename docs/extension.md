@@ -119,6 +119,12 @@ category dropdown, and a task list, which between them asked a tester holding
 a fact to first decide what kind of thing it was. Audience is a question
 anyone can answer mid-run; taxonomy is not.
 
+**The box saves as you type**, and what is in it counts as a comment whether
+or not you press **Add comment** — the button is for starting a *second* one.
+That matters because a side panel is destroyed every time you click into the
+page you are testing, and because the most natural moment to write something
+is right before pressing Finish.
+
 Each audience gets its own section in `feedback.md`, so whoever picks the
 file up can find their own name in it. Anything ticked for the **test writer**
 goes one step further — see [project rules](#project-rules).

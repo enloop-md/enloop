@@ -16,6 +16,7 @@ import {
   renderRunReport,
   resolveVariableValues,
   runFileSchema,
+  stepComments,
   stripViewerComment,
   substituteVariables,
   toJsonl,
@@ -174,6 +175,7 @@ function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
       stepId: step.id,
       status: "pending" as const,
       comments: [],
+      draft: null,
       automatedResult: null,
       startedAt: null,
       finishedAt: null,
@@ -191,6 +193,7 @@ function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
       quick: step.quick,
       status: state.status,
       comments: state.comments,
+      draft: state.draft,
       automatedResult: state.automatedResult,
       startedAt: state.startedAt,
       finishedAt: state.finishedAt,
@@ -583,6 +586,7 @@ export class FsaDataStore implements DataStore {
         stepId: s.id,
         status: "pending",
         comments: [],
+        draft: null,
         automatedResult: null,
         startedAt: null,
         finishedAt: null,
@@ -669,6 +673,11 @@ export class FsaDataStore implements DataStore {
       finishedAt: nowIso(),
       steps: runFile.steps.map((step) => ({
         ...step,
+        // A comment left in the box is a comment. Promoting it here means the
+        // stored run is canonical from the moment it finishes, rather than
+        // every future reader having to remember the box existed.
+        comments: stepComments(step),
+        draft: null,
         ...(byStep.get(step.stepId) ?? ZERO_CAPTURE_COUNTS),
       })),
     };

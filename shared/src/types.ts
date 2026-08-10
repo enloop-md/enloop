@@ -9,6 +9,7 @@ import type {
   testCaseMetaSchema,
   commentAudienceSchema,
   runCommentSchema,
+  runCommentDraftSchema,
   runStepStatusSchema,
   automatedResultSchema,
   runStepStateSchema,
@@ -48,6 +49,8 @@ export type TestCaseMeta = z.infer<typeof testCaseMetaSchema>;
 export type CommentAudience = z.infer<typeof commentAudienceSchema>;
 /** One comment a tester left on a step, and who for. */
 export type RunComment = z.infer<typeof runCommentSchema>;
+/** The comment being typed — stored, and counted as a comment everywhere. */
+export type RunCommentDraft = z.infer<typeof runCommentDraftSchema>;
 
 export type RunStepStatus = z.infer<typeof runStepStatusSchema>;
 export type AutomatedResult = z.infer<typeof automatedResultSchema>;
