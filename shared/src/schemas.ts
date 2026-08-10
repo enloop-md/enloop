@@ -139,6 +139,24 @@ export const runCommentSchema = z.object({
   audiences: z.array(commentAudienceSchema),
 });
 
+/**
+ * The comment being written right now — what is in the box before Add is
+ * pressed.
+ *
+ * It is stored, not held in the panel, because a side panel is destroyed
+ * every time the tester clicks into the page they are testing, which during a
+ * run is constantly. An unsubmitted draft that lived in component state was
+ * therefore not "unfinished", it was gone — and it went without a trace, since
+ * the tester had already written the thing they wanted to say.
+ *
+ * Everything that reads a run treats a non-empty draft as a comment. Pressing
+ * Add is how you start writing the *next* one, not how you save this one.
+ */
+export const runCommentDraftSchema = z.object({
+  text: z.string(),
+  audiences: z.array(commentAudienceSchema),
+});
+
 // ---- what these replaced, still on disk in every run recorded before now ----
 
 /** Note types as they were: a single choice from a list that mixed a category
@@ -195,6 +213,10 @@ export const runStepStateSchema = z
     stepId: z.string(),
     status: runStepStatusSchema,
     comments: z.array(runCommentSchema).default([]),
+    /** Written through as the tester types; promoted to a comment when they
+     * press Add, and again when the run finishes. Null when the box is
+     * empty. */
+    draft: runCommentDraftSchema.nullable().default(null),
     /** Legacy: the single free-text box each step used to have, alongside a
      * list of typed notes and a list of tasks. All three said the same thing
      * in three places, and a tester could not tell which one their sentence
@@ -279,6 +301,7 @@ export const runStepSchema = stepSchema.omit({ id: true }).extend({
   stepId: z.string(),
   status: runStepStatusSchema,
   comments: z.array(runCommentSchema),
+  draft: runCommentDraftSchema.nullable(),
   automatedResult: automatedResultSchema.nullable(),
   startedAt: z.string().nullable(),
   finishedAt: z.string().nullable(),
@@ -323,6 +346,7 @@ export const freeRunFileSchema = z.object({
 export const stepPatchSchema = z.object({
   status: runStepStatusSchema.optional(),
   comments: z.array(runCommentSchema).optional(),
+  draft: runCommentDraftSchema.nullable().optional(),
   automatedResult: automatedResultSchema.nullable().optional(),
   startedAt: z.string().nullable().optional(),
   finishedAt: z.string().nullable().optional(),

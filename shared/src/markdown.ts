@@ -12,6 +12,7 @@ import type {
   CommentAudience,
   FreeRunFile,
   RunComment,
+  RunCommentDraft,
   RunFile,
   RunStepState,
   Step,
@@ -692,6 +693,32 @@ function audiencePrefix(comment: RunComment): string {
   return `[${comment.audiences.map((a) => AUDIENCE_LABELS[a]).join(" · ")}] `;
 }
 
+/**
+ * Everything the tester wrote on a step, including whatever was still in the
+ * box.
+ *
+ * A comment that was typed but never Added is finished work as far as its
+ * author is concerned — they said the thing. Dropping it because a button went
+ * unpressed loses exactly the observation the run existed to collect, and
+ * loses it silently, which is the worst way. So every reader goes through
+ * here, and `Add` is only how you start writing the next one.
+ */
+export function stepComments(state: {
+  comments: RunComment[];
+  draft: RunCommentDraft | null;
+}): RunComment[] {
+  const draft = state.draft?.text.trim();
+  if (!draft) return state.comments;
+  return [
+    ...state.comments,
+    { id: DRAFT_COMMENT_ID, text: draft, audiences: state.draft!.audiences },
+  ];
+}
+
+/** Marks the comment that came out of the box rather than the list. Stable, so
+ * promoting a draft twice cannot produce two of it. */
+export const DRAFT_COMMENT_ID = "comment-unsent";
+
 /** The counts a step carries, as the report and feedback both phrase them. */
 function stepCounts(state: RunStepState): CaptureCounts {
   return {
@@ -764,10 +791,11 @@ export function renderRunReport(
     const state = byId.get(step.id);
     const status = state?.status ?? "pending";
     lines.push(`### ${STATUS_ICON[status] ?? ""} ${index + 1}. ${step.title} (${status})`);
-    if (state?.comments.length) {
+    const comments = state ? stepComments(state) : [];
+    if (comments.length) {
       lines.push("");
       lines.push("Comments:");
-      for (const comment of state.comments) {
+      for (const comment of comments) {
         lines.push(`- ${audiencePrefix(comment)}${comment.text}`);
       }
     }
@@ -799,7 +827,7 @@ function hasStepSignal(state: RunStepState): boolean {
   return (
     state.status === "failed" ||
     state.status === "warning" ||
-    state.comments.some((c) => c.text.trim().length > 0) ||
+    stepComments(state).some((c) => c.text.trim().length > 0) ||
     !!state.automatedResult?.error ||
     // A console error during a step the tester marked passed is signal in its
     // own right, on the same argument as the run comment below: a green run
@@ -843,7 +871,7 @@ export function renderRunFeedback(
 
   const failedCount = run.steps.filter((s) => s.status === "failed").length;
   const warningCount = run.steps.filter((s) => s.status === "warning").length;
-  const noteCount = run.steps.reduce((n, s) => n + s.comments.length, 0);
+  const noteCount = run.steps.reduce((n, s) => n + stepComments(s).length, 0);
 
   const captured: CaptureCounts = {
     consoleErrors: run.steps.reduce((n, s) => n + s.consoleErrors, 0),
@@ -859,8 +887,9 @@ export function renderRunFeedback(
 
   for (const { step, index, state } of signalSteps) {
     const stepNum = index + 1;
-    const toDeveloper = state.comments.some((c) => c.audiences.includes("developer"));
-    for (const comment of state.comments) {
+    const comments = stepComments(state);
+    const toDeveloper = comments.some((c) => c.audiences.includes("developer"));
+    for (const comment of comments) {
       for (const audience of comment.audiences) {
         addressed
           .get(audience)!
@@ -871,7 +900,7 @@ export function renderRunFeedback(
     // developer — silence about a red step is not a decision to ignore it.
     if (state.status === "failed" && !toDeveloper) {
       const detail = [
-        state.comments
+        comments
           .map((c) => c.text.trim())
           .filter(Boolean)
           .join("; "),
@@ -977,9 +1006,10 @@ export function renderRunFeedback(
     lines.push("");
     lines.push(`### ${STATUS_ICON[state.status] ?? ""} ${index + 1}. ${step.title} (${state.status})`);
     if (step.expected) lines.push(`Expected: ${step.expected}`);
-    if (state.comments.length > 0) {
+    const detailComments = stepComments(state);
+    if (detailComments.length > 0) {
       lines.push("Comments:");
-      for (const comment of state.comments) {
+      for (const comment of detailComments) {
         lines.push(`- ${audiencePrefix(comment)}${comment.text}`);
       }
     }

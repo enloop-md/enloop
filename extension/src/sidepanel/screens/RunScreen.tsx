@@ -6,6 +6,8 @@ import {
   describeCounts,
   hasCaptureSignal,
   newCommentId,
+  stepComments,
+  type RunCommentDraft,
   type CapturedEntry,
   type CommentAudience,
   type Run,
@@ -108,6 +110,14 @@ export function RunScreen({
   const [consoleChoice, setConsoleChoice] = useState<boolean | null>(null);
   const consoleInReport = consoleChoice ?? capture.counts.consoleErrors > 0;
 
+  // What each step's comment box holds right now, updated on every keystroke.
+  // The box persists itself on a timer; this exists for the one gap that
+  // leaves — typing a sentence and pressing Finish inside the same second,
+  // which is the most natural thing in the world to do on the last step.
+  // Flushed before the run is finished, so nothing depends on a timer having
+  // fired.
+  const pendingDrafts = useRef(new Map<string, RunCommentDraft | null>());
+
   // Follow the run: open the current step, close the one we opened for the
   // step before it. Driven by which step is current rather than by the
   // mark/run handlers, so an automated chain that carries several steps at
@@ -200,6 +210,10 @@ export function RunScreen({
       // an abandoned run is where the console most often explains what
       // happened, and it needs no extra asking to keep it.
       await capture.flush();
+      for (const [stepId, draft] of pendingDrafts.current) {
+        await store.updateStep(run.testCaseId, run.id, stepId, { draft });
+      }
+      pendingDrafts.current.clear();
       await store.updateRun(run.testCaseId, run.id, {
         comment: commentDraft,
         consoleInReport,
@@ -237,7 +251,7 @@ export function RunScreen({
       (s) =>
         s.status === "failed" ||
         s.status === "warning" ||
-        s.comments.some((c) => c.text.trim().length > 0) ||
+        stepComments(s).some((c) => c.text.trim().length > 0) ||
         !!s.automatedResult?.error ||
         s.consoleErrors > 0,
     );
@@ -318,6 +332,7 @@ export function RunScreen({
             onMark={(status) => handleMark(step, status)}
             onRunAutomated={() => handleRunAutomated(step)}
             onUpdateFields={(patch) => updateStepFields(step, patch)}
+            onDraftChange={(draft) => pendingDrafts.current.set(step.stepId, draft)}
           />
         ))}
       </div>
@@ -522,10 +537,14 @@ const COLLAPSED_COMMENT_LIMIT = 2;
  */
 function CollapsedFindings({ step, hidden }: { step: RunStep; hidden: boolean }) {
   const needsAttention = step.status === "failed" || step.status === "warning";
-  if (hidden || !needsAttention || step.comments.length === 0) return null;
+  // Through `stepComments` like every other reader: a comment still in the
+  // box is the one most likely to be forgotten, so it is the last thing that
+  // should vanish when the step collapses.
+  const comments = stepComments(step);
+  if (hidden || !needsAttention || comments.length === 0) return null;
 
-  const shown = step.comments.slice(0, COLLAPSED_COMMENT_LIMIT);
-  const overflow = step.comments.length - shown.length;
+  const shown = comments.slice(0, COLLAPSED_COMMENT_LIMIT);
+  const overflow = comments.length - shown.length;
 
   return (
     <div className="space-y-0.5 pb-2 pl-8 pr-3 text-[11px] leading-snug">
@@ -572,13 +591,31 @@ function StepComments({
   step,
   readOnly,
   onUpdateFields,
+  onDraftChange,
 }: {
   step: RunStep;
   readOnly: boolean;
   onUpdateFields: (patch: Partial<RunStep>) => void;
+  /** Reported on every keystroke so the run can be finished without waiting
+   * for this box's write to fire. */
+  onDraftChange: (draft: RunCommentDraft | null) => void;
 }) {
-  const [draft, setDraft] = useState("");
-  const [audiences, setAudiences] = useState<CommentAudience[]>([]);
+  const [draft, setDraft] = useState(step.draft?.text ?? "");
+  const [audiences, setAudiences] = useState<CommentAudience[]>(step.draft?.audiences ?? []);
+
+  // Written through while typing, not on blur and not on Add. A side panel is
+  // destroyed the moment the tester clicks into the page they are testing, so
+  // anything living only in this component is gone before they come back —
+  // and what they had typed was, by then, a finished thought. 700ms matches
+  // the run comment above.
+  useEffect(() => {
+    if (readOnly) return;
+    const next = draft.trim() ? { text: draft, audiences } : null;
+    onDraftChange(next);
+    if (JSON.stringify(next) === JSON.stringify(step.draft)) return;
+    const timer = setTimeout(() => onUpdateFields({ draft: next }), 700);
+    return () => clearTimeout(timer);
+  }, [draft, audiences, readOnly, step.draft]);
 
   function add() {
     if (!draft.trim()) return;
@@ -587,6 +624,7 @@ function StepComments({
         ...step.comments,
         { id: newCommentId(), text: draft.trim(), audiences: [...audiences] },
       ],
+      draft: null,
     });
     // The box empties, the ticks do not: a tester writing three things for the
     // developer should not have to re-tick Developer three times.
@@ -678,6 +716,14 @@ function StepComments({
           >
             Add comment
           </button>
+          {/* Said out loud because the opposite used to be true, and because
+              a tester who believes an unsent box is lost writes less in it. */}
+          {draft.trim() && (
+            <p className="text-[10px] text-slate-400">
+              Saved as you type. This goes into the run whether or not you press Add — the
+              button is for starting a second comment.
+            </p>
+          )}
         </>
       )}
     </div>
@@ -696,6 +742,7 @@ function StepRow({
   onMark,
   onRunAutomated,
   onUpdateFields,
+  onDraftChange,
 }: {
   index: number;
   step: RunStep;
@@ -708,6 +755,7 @@ function StepRow({
   onMark: (status: "success" | "failed" | "warning" | "skipped") => void;
   onRunAutomated: () => void;
   onUpdateFields: (patch: Partial<RunStep>) => void;
+  onDraftChange: (draft: RunCommentDraft | null) => void;
 }) {
   const [highlightState, setHighlightState] = useState<"idle" | "highlighting" | "not-found">(
     "idle",
@@ -949,7 +997,12 @@ function StepRow({
               </div>
             )}
 
-            <StepComments step={step} readOnly={readOnly} onUpdateFields={onUpdateFields} />
+            <StepComments
+              step={step}
+              readOnly={readOnly}
+              onUpdateFields={onUpdateFields}
+              onDraftChange={onDraftChange}
+            />
 
             {/* The verdict goes last, after everything it is a verdict on:
                 the tester reads the step, does it, writes down what they
