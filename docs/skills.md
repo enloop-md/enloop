@@ -166,6 +166,9 @@ What it does, in order:
 7. Writes `<id>/meta.json` and `<id>/versions/v1.md` into `test-cases/` in
    your data folder, then verifies the file landed where the extension reads
    from and reports the absolute path.
+8. Reports the validator's `cold run` line — how much of the case a
+   first-time runner can click, and what it asks for before starting — and
+   defends every value the case will ask for. Zero questions is the norm.
 
 Then open the extension, find the case in the Library, and run it.
 
@@ -188,6 +191,13 @@ $check                 # Codex
 With no argument it takes the most recent finished run and tells you which
 one it picked. Pass a run id, case id, or case title to pick a different
 one.
+
+`/enloop:check case <id-or-title>` needs no run at all: it sweeps a stored
+case against current source and the current contract — stale selectors,
+bare-route addresses, a `BASE_URL` with no default, an unstated account —
+and writes the fixes as `v<n+1>`, reporting the `cold run` line before and
+after. It is the cheap upgrade path for cases written before the
+cold-runner bar existed.
 
 It reads the run, then makes one judgement per finding — the judgement the
 tester can't make and the report can't contain:

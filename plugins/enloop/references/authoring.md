@@ -367,6 +367,11 @@ Tell the user:
 - The scope it covers, the screens it touches, how many steps, and how many
   are marked `Kind: quick` — so they know a quick run is available and what
   it covers.
+- **The `cold run` line from the validator, verbatim** — how much of the
+  case a first-time runner can click, and what it asks for before starting.
+- **Questions the case will ask before a run: N (names).** For each value
+  in that list, say why it cannot have a `Default:` or a `Generator:` —
+  zero is the norm, and every exception is a decision to defend.
 - Anything you could not derive from source — elements with no stable
   selector, values the tester must supply, steps you could not make binary.
   Be specific; this is the list that decides whether the case is trustworthy.
