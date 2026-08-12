@@ -450,6 +450,42 @@ the plan itself on a cheaper model, which these files' exactness is for.
 
 ---
 
+## 8. The guard hook — added from the field, **implemented 2026-08-12**
+
+Not in the original plan. The first real failure after items 1–6 shipped
+was a Haiku session that invoked `/enloop:full` correctly and then skipped
+the skill's entire procedure — never read the grammar, never ran the
+validator, and wrote free-form Markdown assembled from the SKILL.md's own
+vocabulary into the data folder. The extension refused the file, and
+nothing in the loop objected before it did.
+
+The lesson is one this repo already teaches itself: prose guardrails bind
+only the models that read them, and "§9 Validate — never skip this" is
+prose. So the plugin now ships the same guardrail as code — a
+`PostToolUse` hook on `Write|Edit` that runs `lintCase` over any
+`versions/v<n>.md` written, and on **errors** exits 2, feeding them
+straight back to the writing model, whichever model that is. Warnings do
+not block: they are the contract's judgement calls, and the skills own
+answering them. The path gate is `versions/v<n>.md` anywhere, not only
+under `test-cases/` — the incident's first write landed in a `cases/`
+folder inside the plugin cache, and content is corrected cheapest at the
+moment it is written. A Bash `mv` still escapes the hook; the content it
+moves no longer does.
+
+What this touches: `plugins/enloop/hooks/hooks.json`,
+`plugins/enloop/hooks/validate-case.mjs`, plugin version 0.12.0,
+`docs/claude-code.md`. Codex has no hook mechanism; there the skills' own
+validation step remains the only guard.
+
+### Check
+
+Pipe a PostToolUse payload naming a structureless `versions/v1.md` at the
+hook: exit 2, stderr names the errors and the validate command. The
+canonical fixture at the same kind of path: exit 0, silent. A non-case
+path: exit 0, silent.
+
+---
+
 ## Executing this plan
 
 Read first, in this order: `plugins/enloop/references/step-contract.md`,

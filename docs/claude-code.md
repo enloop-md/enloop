@@ -56,6 +56,20 @@ All four carry `disable-model-invocation: true`: they edit repos and write
 case files, so they run when you ask rather than when Claude infers you might
 have wanted them.
 
+## The guard hook
+
+The plugin installs one hook: after every `Write` or `Edit` of a
+`versions/v<n>.md` file, the real parser checks the result, and any errors
+are fed straight back to the model that wrote it. The authoring skills
+already end by validating; the hook is for the session that skips the
+procedure — a weaker model, a plain "write me a test" that never invoked
+the skill — which otherwise leaves a file the extension cannot load.
+Warnings don't block (those are the contract's judgement calls); errors do,
+because they are certainties — a case with no steps is not an opinion.
+
+It costs one `node` start per write and stays silent for every file that
+is not a case version.
+
 ## Configure
 
 Installing the plugin is the whole installation: the case grammar and the
