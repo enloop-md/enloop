@@ -33,6 +33,12 @@ export const testCaseVariableSchema = z.object({
   generator: variableGeneratorSchema.optional(),
   /** Generator-specific argument, e.g. length for random-string, "min-max" for random-number. */
   generatorArg: z.string().optional(),
+  /** Glob a page-derived value must satisfy (`Match: *.example.test`),
+   * checked against the page's host — so opening the panel on an unrelated
+   * site yields nothing rather than that site's address. `*` matches any
+   * run of characters; a pattern containing `/` is checked against the
+   * whole value. Meaningless without a page-* generator. */
+  match: z.string().optional(),
 });
 
 /** A step as parsed from a case document's `## Steps` section (one `### `). */

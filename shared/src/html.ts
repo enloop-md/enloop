@@ -457,6 +457,11 @@ export function renderCaseBody(doc: TestCaseVersion, opts: CasePageOptions = {})
       if (variable.description.trim()) {
         parts.push(`<p class="hint">${renderInline(variable.description.trim())}</p>`);
       }
+      if (variable.match?.trim()) {
+        parts.push(
+          `<p class="hint">Must match <code>${escapeHtml(variable.match.trim())}</code>.</p>`,
+        );
+      }
       parts.push("</div>");
     }
     parts.push("</div></section>");

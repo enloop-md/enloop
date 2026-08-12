@@ -23,7 +23,7 @@ for you.
 
 ```markdown
 # CMS: Sync a contact from the CRM to the mailer
-@version 0.0.3
+@version 0.0.6
 @author Your Name
 @project CMS
 Tags: sync-console, integrations, manual

@@ -29,7 +29,7 @@ import type {
  * v1.md/v2.md version history, which tracks edits to a case's *content*
  * under this same grammar.
  */
-export const CURRENT_FORMAT_VERSION = "0.0.5";
+export const CURRENT_FORMAT_VERSION = "0.0.6";
 
 /**
  * Grammar. There is no separate spec by design: this comment is it, sitting
@@ -95,6 +95,23 @@ export const CURRENT_FORMAT_VERSION = "0.0.5";
  *   *about* the domain — a tenant name, an email suffix — rather than an
  *   address; using it as a `BASE_URL` produces `example.com/admin`, which
  *   gets no Go control and drops the port.
+ *
+ *   `Match:` says which pages a page generator may read:
+ *
+ *     ## BASE_URL
+ *     The org under test — whichever one you have open.
+ *     Generator: page-origin
+ *     Match: *.example.test
+ *     Default: https://staging.example.test
+ *
+ *   A tab whose host does not fit the glob (`*` matches any run of
+ *   characters, case-insensitively; a pattern containing `/` is checked
+ *   against the whole value instead of the host) yields nothing, so
+ *   opening the panel on an unrelated site cannot leak that site's
+ *   address into a run — resolution falls through to the default
+ *   instead. The run screen says which pattern refused the page and
+ *   offers the refused value as a one-click override; a typed value
+ *   always overrides everything.
  *
  *   Starting a run
  *   resolves every declared variable — the value typed before the run
@@ -367,16 +384,19 @@ function parseVariables(sectionBody: string): TestCaseVariable[] {
 
 const VARIABLE_DEFAULT_RE = /^Default:\s*(.*)$/i;
 const VARIABLE_GENERATOR_RE = /^Generator:\s*(\S+)(?:\s+(.*))?$/i;
+const VARIABLE_MATCH_RE = /^Match:\s*(.*)$/i;
 
 function parseOneVariable(name: string, body: string): TestCaseVariable {
   const descriptionLines: string[] = [];
   let defaultValue: string | undefined;
   let generator: VariableGenerator | undefined;
   let generatorArg: string | undefined;
+  let match: string | undefined;
 
   for (const line of body.split("\n")) {
     const defaultMatch = VARIABLE_DEFAULT_RE.exec(line);
     const generatorMatch = VARIABLE_GENERATOR_RE.exec(line);
+    const matchMatch = VARIABLE_MATCH_RE.exec(line);
     if (defaultMatch) {
       defaultValue = defaultMatch[1].trim() || undefined;
       continue;
@@ -389,6 +409,10 @@ function parseOneVariable(name: string, body: string): TestCaseVariable {
       }
       continue;
     }
+    if (matchMatch) {
+      match = matchMatch[1].trim() || undefined;
+      continue;
+    }
     descriptionLines.push(line);
   }
 
@@ -398,6 +422,7 @@ function parseOneVariable(name: string, body: string): TestCaseVariable {
     defaultValue,
     generator,
     generatorArg,
+    match,
   };
 }
 
