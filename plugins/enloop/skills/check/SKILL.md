@@ -1,6 +1,6 @@
 ---
 name: check
-description: Triage a finished Enloop test run from inside the app repo being tested. Reads the run's feedback.md/report.md, then decides for each failure, warning and tester comment whether it is an app bug (with the file and line), a defect in the test case itself, or an environment/data problem — fixes what it owns, and promotes standing feedback into this project's authoring rules. Use after a run has been executed in the extension and the user asks to check/review/triage the run, the results, or the feedback — e.g. "check the last run", "what did the run find", "triage run failures". Not for authoring a case; those are the enloop:quick and enloop:full skills.
+description: Triage a finished Enloop test run from inside the app repo being tested. Reads the run's feedback.md/report.md, then decides for each failure, warning and tester comment whether it is an app bug (with the file and line), a defect in the test case itself, or an environment/data problem — fixes what it owns, and promotes standing feedback into this project's authoring rules. Use after a run has been executed in the extension and the user asks to check/review/triage the run, the results, or the feedback — e.g. "check the last run", "what did the run find", "triage run failures". Also sweeps a stored case against current source and the current contract with no run at all — `check case <id-or-title>` — writing the fixes as a new version. Not for authoring a case; those are the enloop:quick and enloop:full skills.
 disable-model-invocation: true
 allowed-tools: Read Grep Glob Write Edit Bash(git diff *) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(rg *) Bash(ls *) Bash(cat *) Bash(node *)
 ---
@@ -17,7 +17,9 @@ just restates what the tester wrote is worthless — they already know what
 they saw.
 
 $ARGUMENTS optionally names the run: a run id, a case title or id, or
-nothing at all (meaning the most recent finished run).
+nothing at all (meaning the most recent finished run). Beginning it
+`case ` — `case <id-or-title>` — asks for no run at all but the run-less
+sweep of step 6.
 
 ## 1. Resolve where things live
 
@@ -224,7 +226,47 @@ matching this repo, and the title prefixed with it. A case that predates
 those conventions gets them in the new version you are about to write —
 that is what makes it findable in a Library holding several products.
 
-## 6. Act on what you own
+Then run the validator over the case's **latest stored version** — not the
+frozen `case.md`, which records the past:
+
+```bash
+node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" validate "$DATA_DIR/test-cases/<id>/versions/v<n>.md" --findings-only
+```
+
+The contract's mechanical half has grown since many cases were written —
+bare-route `Where:` lines, a `BASE_URL` with no default, nothing saying
+who the tester is, data left to find mid-run — and its findings on an old
+case are case defects like any stale selector. Read the `cold run` line it
+prints: a case a first-time runner cannot click through is exactly what
+these sweeps exist to catch.
+
+## 6. Sweep a case without a run
+
+`case <id-or-title>` in $ARGUMENTS skips the run entirely: no run folder,
+no feedback to triage. It is the cheap way to bring an existing case up to
+the current contract — the upgrade path for a Library written before the
+bar moved — and costs a few hundred lines of reading, not an authoring
+session.
+
+1. Resolve the case in `$DATA_DIR/test-cases/` by id or title match, and
+   say which one you picked.
+2. Read its latest `versions/v<n>.md` and run step 5's sweep over it —
+   staleness against this repo's source, then the validator. Treat the
+   address, account and data warnings, and a degraded `cold run` line, as
+   case defects.
+3. Fix what you own exactly as step 7 does: a new `versions/v<n+1>.md`
+   with a `Change note:` naming the sweep, validated before writing, the
+   previous version untouched. Take the `BASE_URL` default and the account
+   facts from the rules file, and every route, label and selector from
+   source read now — a sweep invents nothing.
+4. Report per step 8, plus the `cold run` line **before and after** — that
+   pair is the whole point of the sweep.
+
+Do not extend coverage here: no new steps beyond what the fixes need.
+Coverage is the **full** skill's job; this mode exists so a case reaches
+the current bar without paying for an authoring session.
+
+## 7. Act on what you own
 
 **Case defects — fix them.** The case is yours to correct. Write a new
 version alongside the existing ones, never editing a previous version in
@@ -296,7 +338,7 @@ judgement in front of the person who can settle it.
 The **quick** and **full** skills read this file before authoring and must
 obey it, so a rule you write here is enforced from the next case onward.
 
-## 7. Report
+## 8. Report
 
 Lead with the verdict on the run as a whole in one line: what it proves
 about the feature, and whether the failures are the app's or the case's.

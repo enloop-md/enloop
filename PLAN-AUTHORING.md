@@ -1,6 +1,6 @@
 # Enloop authoring — the cold-runner bar
 
-Status: **items 1–5 built (2026-08-12); 6 outstanding. Written 2026-08-12.** Builds on the uncommitted
+Status: **all items built (2026-08-12); 7 is the standing decision record. Written 2026-08-12.** Builds on the uncommitted
 format-0.0.5 work (the `page-origin` generator and the request-capture pass):
 land that first, then execute this plan on top of it.
 
@@ -382,7 +382,7 @@ when `BASE_URL` is filled in.
 
 ---
 
-## 6. Skills carry the bar; check learns to sweep without a run
+## 6. Skills carry the bar; check learns to sweep without a run — **implemented 2026-08-12**
 
 ### The changes
 
