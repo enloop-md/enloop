@@ -1,6 +1,6 @@
 # Enloop authoring — the cold-runner bar
 
-Status: **nothing built. Written 2026-08-12.** Builds on the uncommitted
+Status: **item 1 built (2026-08-12); 2–6 outstanding. Written 2026-08-12.** Builds on the uncommitted
 format-0.0.5 work (the `page-origin` generator and the request-capture pass):
 land that first, then execute this plan on top of it.
 
@@ -79,7 +79,7 @@ Every one of these was verified against the working tree on 2026-08-12.
 
 ---
 
-## 1. A generator that yields nothing falls back to the default
+## 1. A generator that yields nothing falls back to the default — **implemented 2026-08-12**
 
 ### The problem
 

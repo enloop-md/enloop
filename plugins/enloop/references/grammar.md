@@ -71,8 +71,10 @@ that first H1 already "used up" the top level:
   gets no Go control and drops the port.
 
   Starting a run
-  resolves every declared variable — generator, else declared default,
-  else whatever the tester typed before starting — and replaces every
+  resolves every declared variable — the value typed before the run
+  starts, else its generator when the generator yields something (a
+  `page-*` generator with no page behind it yields nothing), else the
+  declared default, else empty — and replaces every
   `%NAME%` placeholder anywhere in the rest of the document (title,
   description, step instructions, selectors, scripts) with the resolved
   value. A variable that resolves to nothing is not substituted at all:
