@@ -22,6 +22,7 @@ import { Markdown } from "../../components/Markdown.js";
 import { useReadyStore } from "../store/DataStoreProvider.js";
 import { useCaptureSettings } from "../useCapture.js";
 import { getActivePageUrl } from "../../lib/automation.js";
+import { useActivePageUrl } from "../../lib/use-active-page.js";
 import { downloadTextFile, fileSlug } from "../../lib/download.js";
 
 export function CaseDetailScreen({
@@ -59,6 +60,7 @@ export function CaseDetailScreen({
   /** Page values a variable's `Match:` refused, by name — shown so the
    * tester knows why a field is not following the open tab. */
   const [pageRefused, setPageRefused] = useState<Record<string, string>>({});
+  const pageUrl = useActivePageUrl();
   const [valuesOpen, setValuesOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -95,16 +97,13 @@ export function CaseDetailScreen({
     };
   }, [store, testCaseId, selectedVersion]);
 
-  // Resolve what the run would use, for display. A separate effect from the
-  // metadata load because it depends on the current version being known.
+  // Parse what the run would execute. A separate effect from the metadata
+  // load because it depends on the current version being known.
   useEffect(() => {
     if (!meta) return;
     let cancelled = false;
     (async () => {
-      const [runSource, pageUrl] = await Promise.all([
-        store.getRunSource(testCaseId, meta.currentVersion),
-        getActivePageUrl().catch(() => undefined),
-      ]);
+      const runSource = await store.getRunSource(testCaseId, meta.currentVersion);
       if (cancelled) return;
       const doc = parseCaseDocument(runSource, {
         version: meta.currentVersion,
@@ -112,26 +111,42 @@ export function CaseDetailScreen({
       });
       setVariables(doc.variables);
       setRunStepCounts({ total: doc.steps.length, quick: doc.steps.filter((s) => s.quick).length });
-      // The shared resolver, not a per-variable generate: a page generator
-      // that yields nothing — blank tab, or a page its `Match:` refuses —
-      // must fall through to the declared default here exactly as it does
-      // everywhere else.
-      setPreviews(resolveVariableValues(doc.variables, {}, { pageUrl }));
-      // What the page *would* have yielded where `Match:` refused it, so
-      // the values form can say why a field is not following the open tab
-      // and offer the refusal as an explicit override.
-      const refused: Record<string, string> = {};
-      for (const v of doc.variables) {
-        if (!v.match || !v.generator?.startsWith("page-")) continue;
-        const raw = generateVariableValue({ ...v, match: undefined }, { pageUrl });
-        if (raw && !matchesPagePattern(v.match, raw)) refused[v.name] = raw;
-      }
-      setPageRefused(refused);
     })().catch((e) => !cancelled && setError(e));
     return () => {
       cancelled = true;
     };
   }, [store, testCaseId, meta?.currentVersion]);
+
+  // What the run would use, for display — recomputed every time the active
+  // tab changes, because a page value snapshotted when this screen opened
+  // describes a tab the tester may have long since left. The run itself
+  // re-reads the tab at the moment Start is pressed; this keeps what they
+  // are looking at equal to what that read will find. Through the shared
+  // resolver, so a page a variable's `Match:` refuses — or no page at all —
+  // falls through to the declared default exactly as it does everywhere
+  // else. Page-derived entries follow the tab; other generators keep their
+  // first preview rather than rerolling on every tab switch.
+  useEffect(() => {
+    setPreviews((prev) => {
+      const next = resolveVariableValues(variables, {}, { pageUrl });
+      for (const v of variables) {
+        if (!v.generator?.startsWith("page-") && prev[v.name] !== undefined) {
+          next[v.name] = prev[v.name];
+        }
+      }
+      return next;
+    });
+    // What the page *would* have yielded where `Match:` refused it, so the
+    // values form can say why a field is not following the open tab and
+    // offer the refusal as an explicit override.
+    const refused: Record<string, string> = {};
+    for (const v of variables) {
+      if (!v.match || !v.generator?.startsWith("page-")) continue;
+      const raw = generateVariableValue({ ...v, match: undefined }, { pageUrl });
+      if (raw && !matchesPagePattern(v.match, raw)) refused[v.name] = raw;
+    }
+    setPageRefused(refused);
+  }, [variables, pageUrl]);
 
   async function startRun(tier: RunTier) {
     if (!meta) return;
