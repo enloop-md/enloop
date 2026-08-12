@@ -8,7 +8,7 @@ import {
 } from "@tcm/shared";
 import { ErrorNotice } from "../../components/ErrorNotice.js";
 import { Header } from "../../components/Header.js";
-import { useReadyStore, useWorkspace } from "../store/DataStoreProvider.js";
+import { useDataStore, useReadyStore, useWorkspace } from "../store/DataStoreProvider.js";
 import { splitId } from "@tcm/shared";
 import { relativeTime } from "../../lib/time.js";
 
@@ -265,6 +265,8 @@ export function LibraryScreen({
 }) {
   const store = useReadyStore();
   const { storages, degraded, reconnect } = useWorkspace();
+  const { refresh } = useDataStore();
+  const [refreshing, setRefreshing] = useState(false);
   // "Switching" storage is filtering, not disconnecting: everything stays
   // mounted, so a run in one folder survives reading a case in another.
   const [storageFilter, setStorageFilter] = useState<string>("all");
@@ -275,6 +277,19 @@ export function LibraryScreen({
   const [showArchived, setShowArchived] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+
+  // The File System Access API has no change events, so a case an agent just
+  // wrote into the folder appears only when the folders are re-read. This
+  // re-mounts the stores; the `[store]` effects below then re-list everything
+  // from disk, replacing rows in place rather than blanking the list first.
+  async function refreshLibrary() {
+    setRefreshing(true);
+    try {
+      await refresh();
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   async function startFreeRun() {
     setBusy(true);
@@ -426,12 +441,25 @@ export function LibraryScreen({
         title="Test Cases"
         onSettings={onSettings}
         actions={
-          <button
-            onClick={onHistory}
-            className="rounded px-2 py-1 text-xs text-slate-500 hover:bg-slate-100"
-          >
-            Runs
-          </button>
+          <>
+            <button
+              onClick={onHistory}
+              className="rounded px-2 py-1 text-xs text-slate-500 hover:bg-slate-100"
+            >
+              Runs
+            </button>
+            <button
+              onClick={refreshLibrary}
+              disabled={refreshing}
+              className="rounded p-1 text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+              aria-label="Refresh cases"
+              title="Re-read the connected folders"
+            >
+              <span className={`inline-block ${refreshing ? "motion-safe:animate-spin" : ""}`}>
+                ⟳
+              </span>
+            </button>
+          </>
         }
       />
       <div className="space-y-2 border-b border-slate-200 p-3">
