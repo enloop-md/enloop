@@ -4515,7 +4515,24 @@ var BARE_ROUTE_IN_PROSE = /(^|\s)\/[A-Za-z][\w-]*(\/|\s|$)/;
 var OPENS_SOMEWHERE = /\b(open|go to|navigate|browse|start at)\b/i;
 /** Prose that restates the navigation a `Where:` line already provides. */
 var RESTATES_NAVIGATION = /^(navigate|go)\b[^.]*\b(to|there)\b[^.]*\.?$|^open (the|this) (page|screen)\b[^.]*\.?$/i;
-var UNMEASURABLE = /\b(quickly|properly|correctly|appropriately|as expected|successfully)\b/i;
+var UNMEASURABLE = /\b(quickly|properly|correctly|appropriately|as expected|successfully|normally|as usual|as before)\b/i;
+/** A prerequisite, variable or step that says who the tester is in the
+* app. Deliberately loose: this guards the case that never mentions an
+* account at all, not the shape of the mention. */
+var LOGIN_HINT = /\b(log(ged)?[ -]?in|sign(ed)?[ -]?in|account|credentials?|password)\b/i;
+/** A named place in prose — `Reports page`, `Sync Console screen`. The
+* capitalised word is what keeps "the page reloads" from firing. */
+var PLACE_NAME = /\b[A-Z][\w-]*\s+(page|screen|tab|dialog|modal|console|dashboard)\b/;
+var PROSE_LINK = /\[[^\]\n]+\]\([^)\s]+\)/;
+var PLACEHOLDER = /%[A-Za-z_][A-Za-z0-9_]*%/;
+/** Data the tester is left to find mid-run — the phrases that stand where
+* an exact record or a variable should be. */
+var UNPREPARED = /\b(an existing|any|some|a valid|of your choice|your own|appropriate)\b/i;
+/** An address that opens with no page behind it — what a first-time runner
+* starting from a blank tab can actually click. The substituted document is
+* the cold run (defaults applied, page generators empty), so this runs on
+* it as-is. */
+var COLD_OPENABLE = /^(https?:\/\/|localhost[:/]|127\.0\.0\.1[:/]|\[::1\])/i;
 function stripCode(text) {
 	return text.replace(/`[^`]*`/g, " ");
 }
@@ -4527,7 +4544,8 @@ function lintCase(raw, options = {}) {
 		version: 1,
 		createdAt
 	});
-	const substituted = substituteVariables(raw, resolveVariableValues(declared.variables, {}));
+	const values = resolveVariableValues(declared.variables, {});
+	const substituted = substituteVariables(raw, values);
 	const doc = parseCaseDocument(substituted, {
 		version: 1,
 		createdAt
@@ -4594,6 +4612,22 @@ function lintCase(raw, options = {}) {
 			message: `\`Generator: page-domain\` is the bare host, but %${variable.name}% is used as an address prefix — that resolves to \`example.com/path\`, with no scheme and no port. Use \`Generator: page-origin\`.`
 		});
 	}
+	if ((declared.steps.some((s) => ADDRESS.test(s.where?.trim() ?? "")) || declared.prerequisites.some((p) => OPENS_SOMEWHERE.test(p))) && !declaredNames.has("BASE_URL")) warnings.push({
+		rule: "2b",
+		at: "Variables",
+		message: "The case names addresses but declares no `BASE_URL`. Declare it (`Generator: page-origin` plus a `Default:`) and build app addresses as `%BASE_URL%/…` — a literal absolute URL is right only for another system's pages."
+	});
+	const baseUrl = declared.variables.find((v) => v.name === "BASE_URL");
+	if (baseUrl && !baseUrl.defaultValue?.trim()) warnings.push({
+		rule: "2b",
+		at: "BASE_URL",
+		message: "`BASE_URL` has no `Default:`, so a run from a blank tab and the shared viewer have no address to fall back to. Default it to the environment this project normally tests against."
+	});
+	if (!(doc.prerequisites.some((p) => LOGIN_HINT.test(p)) || declared.variables.some((v) => LOGIN_HINT.test(`${v.name} ${v.description}`)) || doc.steps.some((s) => LOGIN_HINT.test(`${s.title} ${s.instructions ?? ""}`))) && doc.steps.some((s) => s.type === "manual")) warnings.push({
+		rule: "2d",
+		at: "Prerequisites",
+		message: "Nothing says who the tester is in the app — no prerequisite or variable mentions an account or a login. Name the account and where its credential lives, or answer that the app needs no login."
+	});
 	if (!doc.prerequisites.find((p) => OPENS_SOMEWHERE.test(p))) warnings.push({
 		rule: "2a",
 		at: "Prerequisites",
@@ -4611,7 +4645,7 @@ function lintCase(raw, options = {}) {
 		message: "Step 1 looks like it only opens the app. Move it to `# Prerequisites` unless arriving is what is under test."
 	});
 	let quickMarked = 0;
-	for (const step of doc.steps) {
+	for (const [index, step] of doc.steps.entries()) {
 		const where = step.where?.trim() ?? "";
 		if (step.quick) quickMarked++;
 		if (!where) errors.push({
@@ -4623,6 +4657,11 @@ function lintCase(raw, options = {}) {
 			rule: "2b",
 			at: step.title,
 			message: `\`Where: ${where}\` is prose, so the step gets no Go control. Correct only if the place genuinely has no address.`
+		});
+		else if (where.startsWith("/")) warnings.push({
+			rule: "2b",
+			at: step.title,
+			message: `\`Where: ${where}\` is a bare route — one click only when the run's tab is already on the app. \`%BASE_URL%${where}\` works from anywhere.`
 		});
 		const instructions = step.instructions?.trim() ?? "";
 		if (RESTATES_NAVIGATION.test(instructions)) warnings.push({
@@ -4669,6 +4708,29 @@ function lintCase(raw, options = {}) {
 				message: `\`### Expected\` says "${adjective[0]}" with no observable behind it.`
 			});
 		}
+		if (step.type === "manual") {
+			const declaredInstructions = declared.steps[index]?.instructions ?? "";
+			const place = PLACE_NAME.exec(stripCode(instructions));
+			if (place && !PROSE_LINK.test(declaredInstructions) && !PLACEHOLDER.test(declaredInstructions)) warnings.push({
+				rule: "2c",
+				at: step.title,
+				message: `"${place[0]}" is a named place with no address beside it — link it, or answer that it has none.`
+			});
+			const vague = UNPREPARED.exec(stripCode(instructions));
+			if (vague) warnings.push({
+				rule: "6",
+				at: step.title,
+				message: `"${vague[0]}" leaves the tester to find test data mid-run. Name the exact record, or declare a variable that says how to obtain the value.`
+			});
+			for (const [label, text] of [["the instructions", instructions], ["`### Expected`", expected]]) {
+				const bare = BARE_ROUTE_IN_PROSE.exec(stripCode(text));
+				if (bare) warnings.push({
+					rule: "2c",
+					at: step.title,
+					message: `Bare route in ${label} ("${bare[0].trim()}") — a bare route is not a link anywhere the case renders. Make it \`%BASE_URL%\`-absolute.`
+				});
+			}
+		}
 	}
 	let quickParses = true;
 	if (quickMarked > 0) try {
@@ -4696,6 +4758,13 @@ function lintCase(raw, options = {}) {
 		rule: "3b",
 		message: "Every step is marked `Kind: quick`, so a quick run costs what a full one does. Correct for a quick-tier case, wrong for a full one."
 	});
+	const uiSteps = doc.steps.filter((s) => s.type === "manual");
+	const navigableSteps = uiSteps.filter((s) => {
+		const w = s.where?.trim() ?? "";
+		return COLD_OPENABLE.test(w) && !/\s/.test(w);
+	}).length;
+	const asks = declared.variables.filter((v) => !v.defaultValue?.trim() && !v.generator).map((v) => v.name);
+	const unresolved = declared.variables.filter((v) => v.generator && !(values[v.name] ?? "").trim()).map((v) => v.name);
 	return {
 		ok: errors.length === 0,
 		errors,
@@ -4705,6 +4774,12 @@ function lintCase(raw, options = {}) {
 			marked: quickMarked,
 			total: doc.steps.length,
 			parses: quickParses
+		},
+		cold: {
+			navigableSteps,
+			uiSteps: uiSteps.length,
+			unresolved,
+			asks
 		}
 	};
 }

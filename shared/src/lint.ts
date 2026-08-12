@@ -51,6 +51,21 @@ export interface LintResult {
    * the source they just wrote. */
   doc: TestCaseVersion;
   quick: { marked: number; total: number; parses: boolean };
+  /** The case as a first-time runner meets it — resolved with no page
+   * behind the run, defaults applied. Informational, never findings: the
+   * measure of the cold-runner bar, not its police. */
+  cold: {
+    /** Manual steps whose substituted `Where:` opens with no page behind
+     * it: absolute, or a local address. */
+    navigableSteps: number;
+    uiSteps: number;
+    /** Variables that end a cold resolution empty — a `page-*` generator
+     * with no page and no `Default:` to fall back to. */
+    unresolved: string[];
+    /** Variables the tester must type before starting (no default, no
+     * generator) — the questions the case will ask. */
+    asks: string[];
+  };
 }
 
 /** An address a Go control can use, or a placeholder that becomes one before
@@ -69,7 +84,30 @@ const OPENS_SOMEWHERE = /\b(open|go to|navigate|browse|start at)\b/i;
 const RESTATES_NAVIGATION =
   /^(navigate|go)\b[^.]*\b(to|there)\b[^.]*\.?$|^open (the|this) (page|screen)\b[^.]*\.?$/i;
 
-const UNMEASURABLE = /\b(quickly|properly|correctly|appropriately|as expected|successfully)\b/i;
+const UNMEASURABLE =
+  /\b(quickly|properly|correctly|appropriately|as expected|successfully|normally|as usual|as before)\b/i;
+
+/** A prerequisite, variable or step that says who the tester is in the
+ * app. Deliberately loose: this guards the case that never mentions an
+ * account at all, not the shape of the mention. */
+const LOGIN_HINT = /\b(log(ged)?[ -]?in|sign(ed)?[ -]?in|account|credentials?|password)\b/i;
+
+/** A named place in prose — `Reports page`, `Sync Console screen`. The
+ * capitalised word is what keeps "the page reloads" from firing. */
+const PLACE_NAME = /\b[A-Z][\w-]*\s+(page|screen|tab|dialog|modal|console|dashboard)\b/;
+
+const PROSE_LINK = /\[[^\]\n]+\]\([^)\s]+\)/;
+const PLACEHOLDER = /%[A-Za-z_][A-Za-z0-9_]*%/;
+
+/** Data the tester is left to find mid-run — the phrases that stand where
+ * an exact record or a variable should be. */
+const UNPREPARED = /\b(an existing|any|some|a valid|of your choice|your own|appropriate)\b/i;
+
+/** An address that opens with no page behind it — what a first-time runner
+ * starting from a blank tab can actually click. The substituted document is
+ * the cold run (defaults applied, page generators empty), so this runs on
+ * it as-is. */
+const COLD_OPENABLE = /^(https?:\/\/|localhost[:/]|127\.0\.0\.1[:/]|\[::1\])/i;
 
 function stripCode(text: string): string {
   return text.replace(/`[^`]*`/g, " ");
@@ -176,6 +214,44 @@ export function lintCase(raw: string, options: { expectProject?: string } = {}):
     }
   }
 
+  // --- the cold start ------------------------------------------------------
+
+  // Whether someone who has never opened the app can click their way in: an
+  // environment to resolve addresses against, a default for when no page is
+  // behind the run, and an account to be.
+  const namesAddresses =
+    declared.steps.some((s) => ADDRESS.test(s.where?.trim() ?? "")) ||
+    declared.prerequisites.some((p) => OPENS_SOMEWHERE.test(p));
+  if (namesAddresses && !declaredNames.has("BASE_URL")) {
+    warnings.push({
+      rule: "2b",
+      at: "Variables",
+      message:
+        "The case names addresses but declares no `BASE_URL`. Declare it (`Generator: page-origin` plus a `Default:`) and build app addresses as `%BASE_URL%/…` — a literal absolute URL is right only for another system's pages.",
+    });
+  }
+  const baseUrl = declared.variables.find((v) => v.name === "BASE_URL");
+  if (baseUrl && !baseUrl.defaultValue?.trim()) {
+    warnings.push({
+      rule: "2b",
+      at: "BASE_URL",
+      message:
+        "`BASE_URL` has no `Default:`, so a run from a blank tab and the shared viewer have no address to fall back to. Default it to the environment this project normally tests against.",
+    });
+  }
+  const saysWho =
+    doc.prerequisites.some((p) => LOGIN_HINT.test(p)) ||
+    declared.variables.some((v) => LOGIN_HINT.test(`${v.name} ${v.description}`)) ||
+    doc.steps.some((s) => LOGIN_HINT.test(`${s.title} ${s.instructions ?? ""}`));
+  if (!saysWho && doc.steps.some((s) => s.type === "manual")) {
+    warnings.push({
+      rule: "2d",
+      at: "Prerequisites",
+      message:
+        "Nothing says who the tester is in the app — no prerequisite or variable mentions an account or a login. Name the account and where its credential lives, or answer that the app needs no login.",
+    });
+  }
+
   // --- where the run begins ------------------------------------------------
 
   const entryPoint = doc.prerequisites.find((p) => OPENS_SOMEWHERE.test(p));
@@ -208,7 +284,7 @@ export function lintCase(raw: string, options: { expectProject?: string } = {}):
   // --- per step ------------------------------------------------------------
 
   let quickMarked = 0;
-  for (const step of doc.steps) {
+  for (const [index, step] of doc.steps.entries()) {
     const where = step.where?.trim() ?? "";
     if (step.quick) quickMarked++;
 
@@ -219,6 +295,12 @@ export function lintCase(raw: string, options: { expectProject?: string } = {}):
         rule: "2b",
         at: step.title,
         message: `\`Where: ${where}\` is prose, so the step gets no Go control. Correct only if the place genuinely has no address.`,
+      });
+    } else if (where.startsWith("/")) {
+      warnings.push({
+        rule: "2b",
+        at: step.title,
+        message: `\`Where: ${where}\` is a bare route — one click only when the run's tab is already on the app. \`%BASE_URL%${where}\` works from anywhere.`,
       });
     }
 
@@ -273,6 +355,41 @@ export function lintCase(raw: string, options: { expectProject?: string } = {}):
         });
       }
     }
+
+    if (step.type === "manual") {
+      // The pre-substitution step, for what disappears when values resolve:
+      // a placeholder in prose is an address-in-waiting, not a missing one.
+      const declaredInstructions = declared.steps[index]?.instructions ?? "";
+      const place = PLACE_NAME.exec(stripCode(instructions));
+      if (place && !PROSE_LINK.test(declaredInstructions) && !PLACEHOLDER.test(declaredInstructions)) {
+        warnings.push({
+          rule: "2c",
+          at: step.title,
+          message: `"${place[0]}" is a named place with no address beside it — link it, or answer that it has none.`,
+        });
+      }
+      const vague = UNPREPARED.exec(stripCode(instructions));
+      if (vague) {
+        warnings.push({
+          rule: "6",
+          at: step.title,
+          message: `"${vague[0]}" leaves the tester to find test data mid-run. Name the exact record, or declare a variable that says how to obtain the value.`,
+        });
+      }
+      for (const [label, text] of [
+        ["the instructions", instructions],
+        ["`### Expected`", expected],
+      ] as const) {
+        const bare = BARE_ROUTE_IN_PROSE.exec(stripCode(text));
+        if (bare) {
+          warnings.push({
+            rule: "2c",
+            at: step.title,
+            message: `Bare route in ${label} ("${bare[0].trim()}") — a bare route is not a link anywhere the case renders. Make it \`%BASE_URL%\`-absolute.`,
+          });
+        }
+      }
+    }
   }
 
   // --- the quick subset is a document of its own ---------------------------
@@ -305,11 +422,28 @@ export function lintCase(raw: string, options: { expectProject?: string } = {}):
     });
   }
 
+  // --- the cold-run readout ------------------------------------------------
+
+  // `doc` is already the cold run — resolved with no page behind it, defaults
+  // applied, page generators empty — so measuring it is free.
+  const uiSteps = doc.steps.filter((s) => s.type === "manual");
+  const navigableSteps = uiSteps.filter((s) => {
+    const w = s.where?.trim() ?? "";
+    return COLD_OPENABLE.test(w) && !/\s/.test(w);
+  }).length;
+  const asks = declared.variables
+    .filter((v) => !v.defaultValue?.trim() && !v.generator)
+    .map((v) => v.name);
+  const unresolved = declared.variables
+    .filter((v) => v.generator && !(values[v.name] ?? "").trim())
+    .map((v) => v.name);
+
   return {
     ok: errors.length === 0,
     errors,
     warnings,
     doc,
     quick: { marked: quickMarked, total: doc.steps.length, parses: quickParses },
+    cold: { navigableSteps, uiSteps: uiSteps.length, unresolved, asks },
   };
 }
