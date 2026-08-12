@@ -159,6 +159,28 @@ When prose names a *second* place, link it:
 fragment href is not a page link: `[the Sync button](#sync-btn)` is a
 Highlight control, per rule 3.
 
+### 2d. The case says who the tester is
+
+The entry URL without the account is an invitation to a login screen — the
+first unanswerable question a first-time runner hits. When the app needs a
+login, a prerequisite names the account, its role in the app's own words,
+and where the credential lives:
+
+    # Prerequisites
+    - Logged in at %BASE_URL%/login as %QA_EMAIL% (role `Administrator`) —
+      password: vault item `staging QA bot`
+
+**The credential's location is a place, not a person.** A vault item, a
+seed command, a fixtures file — never "ask Alex". A real production
+credential never goes in a case file; a throwaway test-environment one in
+a variable's `Default:` is the team's call, made once in the rules file's
+*Accounts and data* section — which is also where the account facts come
+from at authoring time, so an author copies instead of guessing.
+
+When login *is* what is under test, it is steps, as today. When the app
+has no login, the case says nothing and the author answers the linter's
+question once.
+
 ## 3. Every UI step carries a `Selector:`
 
 The extension scrolls the selector into view and flashes it. This is the
@@ -371,7 +393,8 @@ by hand:
 > `BASE_URL` declared, or `BASE_URL` without a default · missing
 > `Selector:` · structural selectors ·
 > "then" in instructions · instructions restating the navigation · a step 1
-> spent on arriving · no entry point in `# Prerequisites` · a bare route in a
+> spent on arriving · no entry point in `# Prerequisites` · nothing says
+> who the tester is in the app · a bare route in a
 > prerequisite · `### Expected` missing, prose rather than bullets, carrying
 > rationale, or using an unmeasurable adjective · a variable with no way to
 > get its value · an undeclared `%NAME%` · a missing `@project` or title
@@ -398,6 +421,8 @@ a judgement about the case. Check every step against them:
       error state or permission variant is marked
 - [ ] A service the tester must start is missing from `# Prerequisites`,
       or is listed without the command that starts it
+- [ ] A prerequisite names an account whose credential lives with a person
+      to ask, not in a place to look
 - [ ] A step lists fallback `Selector:` lines that are near-duplicates of
       each other, or puts the loosest one first
 - [ ] The run leaves state behind with no cleanup step and no `### Note`

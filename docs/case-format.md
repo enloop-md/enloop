@@ -29,7 +29,7 @@ Default: qa.bot@example.com
 
 # Prerequisites
 - Open %BASE_URL%/admin/sync-console
-- Logged in to the admin as a super-admin
+- Logged in as a super-admin — password: vault item `staging admin`
 
 # Steps
 
@@ -116,9 +116,11 @@ run history — a quick pass and a full pass are not the same evidence.
 
 ## Prerequisites, project and variables
 
-`# Prerequisites` is where the run begins and where services the tester must
-start themselves belong — the address for the first, the command for each of
-the rest. The entry point lives here rather than in a step, because a tester is
+`# Prerequisites` is where the run begins, who the tester is in the app, and
+which services they must start themselves — the address for the first; the
+account, its role, and where the credential lives (a vault item or a seed
+fixture, never a person to ask) for the second; the command for each of the
+rest. The entry point lives here rather than in a step, because a tester is
 usually already in the app and a step spent on arriving is a Pass/Fail on
 something that was already true. An address here is absolute or
 `%BASE_URL%`-built: unlike a step's `Where:`, this block has no open page to

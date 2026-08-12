@@ -1,6 +1,6 @@
 # Enloop authoring — the cold-runner bar
 
-Status: **items 1–2 built (2026-08-12); 3–6 outstanding. Written 2026-08-12.** Builds on the uncommitted
+Status: **items 1–3 built (2026-08-12); 4–6 outstanding. Written 2026-08-12.** Builds on the uncommitted
 format-0.0.5 work (the `page-origin` generator and the request-capture pass):
 land that first, then execute this plan on top of it.
 
@@ -210,7 +210,7 @@ clean (they are what people copy).
 
 ---
 
-## 3. The case says who you are
+## 3. The case says who you are — **implemented 2026-08-12**
 
 ### The problem
 
