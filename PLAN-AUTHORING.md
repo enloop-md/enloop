@@ -1,6 +1,6 @@
 # Enloop authoring — the cold-runner bar
 
-Status: **item 1 built (2026-08-12); 2–6 outstanding. Written 2026-08-12.** Builds on the uncommitted
+Status: **items 1–2 built (2026-08-12); 3–6 outstanding. Written 2026-08-12.** Builds on the uncommitted
 format-0.0.5 work (the `page-origin` generator and the request-capture pass):
 land that first, then execute this plan on top of it.
 
@@ -133,7 +133,7 @@ printed document shows the substituted absolute URL, not `%BASE_URL%`.
 
 ---
 
-## 2. One address form: `%BASE_URL%/route`, everywhere
+## 2. One address form: `%BASE_URL%/route`, everywhere — **implemented 2026-08-12**
 
 ### The problem
 
