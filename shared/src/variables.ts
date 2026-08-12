@@ -91,8 +91,12 @@ export function generateVariableValue(
 
 /** Resolves every declared variable to a final value for a run: an
  * explicitly provided value wins (including an intentionally blank one),
- * otherwise a generator runs, otherwise the declared default, otherwise
- * empty string. */
+ * otherwise a generator that yields a value, otherwise the declared
+ * default, otherwise empty string. A `page-*` generator with no page
+ * behind it — a run started from a blank tab, a pageless substitution —
+ * yields nothing, and that empty answer must not shadow a `Default:`:
+ * a `BASE_URL` declaring both is "whichever deployment is open, else the
+ * usual one", and the fallback is the half that serves a cold start. */
 export function resolveVariableValues(
   variables: TestCaseVariable[],
   provided: Record<string, string>,
@@ -102,9 +106,9 @@ export function resolveVariableValues(
   for (const variable of variables) {
     resolved[variable.name] =
       provided[variable.name] ??
-      (variable.generator
-        ? generateVariableValue(variable, context)
-        : (variable.defaultValue ?? ""));
+      ((variable.generator ? generateVariableValue(variable, context) : "") ||
+        variable.defaultValue ||
+        "");
   }
   return resolved;
 }
