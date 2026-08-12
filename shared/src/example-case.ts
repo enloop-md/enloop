@@ -126,7 +126,7 @@ Kind: quick
 Click the \`Login\` button.
 
 ### Expected
-- The page moves to /secure.
+- The page moves to %BASE_URL%/secure.
 - A green flash message reports a successful login.
 
 ## Check the flash message

@@ -126,6 +126,17 @@ switch (command) {
         `${doc.variables.length} variables, ${doc.dependencies.length} dependencies, ` +
         `${doc.prerequisites.length} prerequisites`,
     );
+    // The measure of the cold-runner bar: what someone starting from a blank
+    // tab can click, and what the case will ask them for first. Printed even
+    // with --findings-only — a fix that costs a one-click step should show up
+    // in the line, not slip past it.
+    const { cold } = result;
+    console.log(
+      `cold run    ${cold.navigableSteps}/${cold.uiSteps} steps one-click · ` +
+        `asks ${cold.asks.length} value${cold.asks.length === 1 ? "" : "s"} before start` +
+        `${cold.asks.length ? ` (${cold.asks.join(", ")})` : ""} · ` +
+        `unresolved: ${cold.unresolved.length ? cold.unresolved.join(", ") : "none"}`,
+    );
 
     if (!findingsOnly) {
       if (doc.prerequisites.length > 0) {
