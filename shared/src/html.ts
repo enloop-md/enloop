@@ -120,6 +120,13 @@ const BOLD = /\*\*([^*\n]+)\*\*/;
  */
 const EMPHASIS = /(^|[^\w*])[*_]([^*_\n]+)[*_](?![\w*])/;
 const AUTOLINK = /https?:\/\/[^\s<>()]+/;
+/** A variable-built address in plain prose — `%BASE_URL%/admin/reports`.
+ * When it resolves absolute it renders as a link, exactly as if the author
+ * had written the Markdown-link form; a case written before this existed
+ * gains the links on its next render, with no new markup to learn. A bare
+ * `%NAME%` also matches (empty suffix) and falls through to the ordinary
+ * value-span rendering. */
+const VAR_ADDRESS = /%[A-Za-z_][A-Za-z0-9_]*%[^\s<>()]*/;
 
 /** Alternation order is the precedence: a quoted bold run is a value rather
  * than bold-inside-quotes, and code wins over everything so a selector
@@ -128,6 +135,7 @@ const INLINE_SOURCE = [
   `(?<value>${QUOTED_VALUE.source})`,
   `(?<code>${INLINE_CODE.source})`,
   `(?<link>${MD_LINK.source})`,
+  `(?<varaddr>${VAR_ADDRESS.source})`,
   `(?<bold>${BOLD.source})`,
   `(?<em>${EMPHASIS.source})`,
   `(?<url>${AUTOLINK.source})`,
@@ -186,6 +194,19 @@ export function renderInline(text: string, values: Record<string, string> = {}):
     } else if (groups.link !== undefined) {
       const link = MD_LINK.exec(match[0])!;
       out += renderLink(link[1], link[2], values);
+    } else if (groups.varaddr !== undefined) {
+      // The sentence's closing punctuation is not part of the address.
+      const token = match[0].replace(/[.,;:!?]+$/, "");
+      const trailing = match[0].slice(token.length);
+      const resolved = resolveText(token, values);
+      if (ABSOLUTE_URL.test(resolved) && !HAS_VARIABLE.test(resolved)) {
+        out +=
+          `<a href="${escapeAttr(resolved)}" data-href="${escapeAttr(token)}" target="_blank" ` +
+          `rel="noopener noreferrer">${withVariableSpans(escapeHtml(token), values)}</a>` +
+          withVariableSpans(escapeHtml(trailing), values);
+      } else {
+        out += withVariableSpans(escapeHtml(match[0]), values);
+      }
     } else if (groups.bold !== undefined) {
       out += `<strong>${renderInline(BOLD.exec(match[0])![1], values)}</strong>`;
     } else if (groups.em !== undefined) {
@@ -278,10 +299,20 @@ function initialValues(variables: TestCaseVariable[]): Record<string, string> {
 const ABSOLUTE_URL = /^https?:\/\//i;
 
 function renderWhere(where: string, values: Record<string, string>): string {
-  const resolved = resolveText(where, values);
+  // A bare route is only half an address; the case's own BASE_URL is the
+  // other half. Joining them as a *template* — `%BASE_URL%/admin/x` in
+  // data-href — is what turns a legacy case's Where into a link, and keeps
+  // it live when the reader edits the value: `applyValues` re-resolves
+  // data-href, and a template it cannot see BASE_URL in is one it cannot
+  // keep current.
+  const template =
+    where.trim().startsWith("/") && (values.BASE_URL ?? "").trim()
+      ? `%BASE_URL%${where.trim()}`
+      : where;
+  const resolved = resolveText(template, values);
   const openable = ABSOLUTE_URL.test(resolved) && !/\s/.test(resolved);
   const target = openable
-    ? `<a href="${escapeAttr(resolved)}" data-href="${escapeAttr(where)}" target="_blank" rel="noopener noreferrer">${withVariableSpans(escapeHtml(where), values)}</a>`
+    ? `<a href="${escapeAttr(resolved)}" data-href="${escapeAttr(template)}" target="_blank" rel="noopener noreferrer">${withVariableSpans(escapeHtml(where), values)}</a>`
     : withVariableSpans(escapeHtml(where), values);
   return `<p class="where"><span class="where-label">Where</span>${target}</p>`;
 }
