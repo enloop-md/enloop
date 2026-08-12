@@ -200,6 +200,14 @@ export function lintCase(raw: string, options: { expectProject?: string } = {}):
         message: "No `Default:` and no `Generator:` — the description must say exactly where to get the value, before the run starts.",
       });
     }
+    if (variable.match && !variable.generator?.startsWith("page-")) {
+      warnings.push({
+        rule: "6",
+        at: variable.name,
+        message:
+          "`Match:` gates what a page generator may read, and this variable has no page-* generator — the pattern never applies.",
+      });
+    }
     // A bare host used as an address prefix is the one generator mistake that
     // cannot be seen by reading the case: `page-domain` yields
     // `example.com/admin`, which has no scheme for a browser to open, no port

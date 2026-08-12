@@ -27,6 +27,40 @@ function randomNumber(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+function escapeForRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Whether a page-derived value satisfies a variable's `Match:` glob.
+ * `*` matches any run of characters, case-insensitively, and the pattern
+ * must cover the whole subject. A pattern with no `/` is checked against
+ * the page's **host** — `*.example.test` — since that is what an author
+ * constrains; one containing `/` is checked against the whole value. An
+ * empty pattern, or an empty value, constrains nothing. */
+export function matchesPagePattern(pattern: string, value: string): boolean {
+  const glob = pattern.trim();
+  if (!glob || !value) return true;
+  let subject = value;
+  if (!glob.includes("/")) {
+    try {
+      subject = new URL(value.includes("://") ? value : `https://${value}`).hostname;
+    } catch {
+      // Not URL-shaped — a bare host already, or prose. Match it as-is.
+    }
+  }
+  const re = new RegExp(`^${glob.split("*").map(escapeForRegex).join(".*")}$`, "i");
+  return re.test(subject);
+}
+
+/** A page-derived value, gated by the variable's `Match:`. A page the
+ * pattern refuses yields nothing — `resolveVariableValues`' fallthrough
+ * then reaches the `Default:` — rather than a wrong address that reads
+ * fine right up until someone runs the case against it. */
+function pageValue(variable: TestCaseVariable, value: string): string {
+  if (!value) return "";
+  return !variable.match || matchesPagePattern(variable.match, value) ? value : "";
+}
+
 function parseRange(arg: string | undefined, fallback: [number, number]): [number, number] {
   const match = arg ? /^(-?\d+)\s*-\s*(-?\d+)$/.exec(arg.trim()) : null;
   if (!match) return fallback;
@@ -47,7 +81,7 @@ export function generateVariableValue(
         ? new Date().toISOString()
         : String(Date.now());
     case "page-url":
-      return context.pageUrl ?? "";
+      return pageValue(variable, context.pageUrl ?? "");
     /**
      * Scheme, host and port of whatever tab the tester is on when the run
      * starts — `https://instance1.example.com`, `http://localhost:3000`.
@@ -65,7 +99,7 @@ export function generateVariableValue(
      */
     case "page-origin":
       try {
-        return context.pageUrl ? new URL(context.pageUrl).origin : "";
+        return pageValue(variable, context.pageUrl ? new URL(context.pageUrl).origin : "");
       } catch {
         return "";
       }
@@ -74,7 +108,7 @@ export function generateVariableValue(
      * than an address to open. See `page-origin` for the address. */
     case "page-domain":
       try {
-        return context.pageUrl ? new URL(context.pageUrl).hostname : "";
+        return pageValue(variable, context.pageUrl ? new URL(context.pageUrl).hostname : "");
       } catch {
         return "";
       }

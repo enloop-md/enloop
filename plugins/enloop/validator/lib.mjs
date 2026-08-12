@@ -3635,7 +3635,13 @@ var testCaseVariableSchema = z.object({
 	defaultValue: z.string().optional(),
 	generator: variableGeneratorSchema.optional(),
 	/** Generator-specific argument, e.g. length for random-string, "min-max" for random-number. */
-	generatorArg: z.string().optional()
+	generatorArg: z.string().optional(),
+	/** Glob a page-derived value must satisfy (`Match: *.example.test`),
+	* checked against the page's host — so opening the panel on an unrelated
+	* site yields nothing rather than that site's address. `*` matches any
+	* run of characters; a pattern containing `/` is checked against the
+	* whole value. Meaningless without a page-* generator. */
+	match: z.string().optional()
 });
 /** A step as parsed from a case document's `## Steps` section (one `### `). */
 var stepSchema = z.object({
@@ -3946,7 +3952,7 @@ function stripViewerComment(markdown) {
 * v1.md/v2.md version history, which tracks edits to a case's *content*
 * under this same grammar.
 */
-var CURRENT_FORMAT_VERSION = "0.0.5";
+var CURRENT_FORMAT_VERSION = "0.0.6";
 /**
 * Grammar. There is no separate spec by design: this comment is it, sitting
 * against the parser that implements it, and `scripts/build-plugin.mjs`
@@ -4011,6 +4017,23 @@ var CURRENT_FORMAT_VERSION = "0.0.5";
 *   *about* the domain — a tenant name, an email suffix — rather than an
 *   address; using it as a `BASE_URL` produces `example.com/admin`, which
 *   gets no Go control and drops the port.
+*
+*   `Match:` says which pages a page generator may read:
+*
+*     ## BASE_URL
+*     The org under test — whichever one you have open.
+*     Generator: page-origin
+*     Match: *.example.test
+*     Default: https://staging.example.test
+*
+*   A tab whose host does not fit the glob (`*` matches any run of
+*   characters, case-insensitively; a pattern containing `/` is checked
+*   against the whole value instead of the host) yields nothing, so
+*   opening the panel on an unrelated site cannot leak that site's
+*   address into a run — resolution falls through to the default
+*   instead. The run screen says which pattern refused the page and
+*   offers the refused value as a one-click override; a typed value
+*   always overrides everything.
 *
 *   Starting a run
 *   resolves every declared variable — the value typed before the run
@@ -4252,14 +4275,17 @@ function parseVariables(sectionBody) {
 }
 var VARIABLE_DEFAULT_RE = /^Default:\s*(.*)$/i;
 var VARIABLE_GENERATOR_RE = /^Generator:\s*(\S+)(?:\s+(.*))?$/i;
+var VARIABLE_MATCH_RE = /^Match:\s*(.*)$/i;
 function parseOneVariable(name, body) {
 	const descriptionLines = [];
 	let defaultValue;
 	let generator;
 	let generatorArg;
+	let match;
 	for (const line of body.split("\n")) {
 		const defaultMatch = VARIABLE_DEFAULT_RE.exec(line);
 		const generatorMatch = VARIABLE_GENERATOR_RE.exec(line);
+		const matchMatch = VARIABLE_MATCH_RE.exec(line);
 		if (defaultMatch) {
 			defaultValue = defaultMatch[1].trim() || void 0;
 			continue;
@@ -4272,6 +4298,10 @@ function parseOneVariable(name, body) {
 			}
 			continue;
 		}
+		if (matchMatch) {
+			match = matchMatch[1].trim() || void 0;
+			continue;
+		}
 		descriptionLines.push(line);
 	}
 	return {
@@ -4279,7 +4309,8 @@ function parseOneVariable(name, body) {
 		description: descriptionLines.join("\n").trim(),
 		defaultValue,
 		generator,
-		generatorArg
+		generatorArg,
+		match
 	};
 }
 var PLACEHOLDER_RE = /%([A-Za-z_][A-Za-z0-9_]*)%/g;
@@ -4440,6 +4471,32 @@ function randomString(length) {
 function randomNumber(min, max) {
 	return Math.floor(Math.random() * (max - min + 1)) + min;
 }
+function escapeForRegex(text) {
+	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+/** Whether a page-derived value satisfies a variable's `Match:` glob.
+* `*` matches any run of characters, case-insensitively, and the pattern
+* must cover the whole subject. A pattern with no `/` is checked against
+* the page's **host** — `*.example.test` — since that is what an author
+* constrains; one containing `/` is checked against the whole value. An
+* empty pattern, or an empty value, constrains nothing. */
+function matchesPagePattern(pattern, value) {
+	const glob = pattern.trim();
+	if (!glob || !value) return true;
+	let subject = value;
+	if (!glob.includes("/")) try {
+		subject = new URL(value.includes("://") ? value : `https://${value}`).hostname;
+	} catch {}
+	return new RegExp(`^${glob.split("*").map(escapeForRegex).join(".*")}$`, "i").test(subject);
+}
+/** A page-derived value, gated by the variable's `Match:`. A page the
+* pattern refuses yields nothing — `resolveVariableValues`' fallthrough
+* then reaches the `Default:` — rather than a wrong address that reads
+* fine right up until someone runs the case against it. */
+function pageValue(variable, value) {
+	if (!value) return "";
+	return !variable.match || matchesPagePattern(variable.match, value) ? value : "";
+}
 function parseRange(arg, fallback) {
 	const match = arg ? /^(-?\d+)\s*-\s*(-?\d+)$/.exec(arg.trim()) : null;
 	if (!match) return fallback;
@@ -4452,7 +4509,7 @@ function parseRange(arg, fallback) {
 function generateVariableValue(variable, context = {}) {
 	switch (variable.generator) {
 		case "timestamp": return variable.generatorArg?.trim().toLowerCase() === "iso" ? (/* @__PURE__ */ new Date()).toISOString() : String(Date.now());
-		case "page-url": return context.pageUrl ?? "";
+		case "page-url": return pageValue(variable, context.pageUrl ?? "");
 		/**
 		* Scheme, host and port of whatever tab the tester is on when the run
 		* starts — `https://instance1.example.com`, `http://localhost:3000`.
@@ -4469,7 +4526,7 @@ function generateVariableValue(variable, context = {}) {
 		* which is exactly the half that matters on a dev server.
 		*/
 		case "page-origin": try {
-			return context.pageUrl ? new URL(context.pageUrl).origin : "";
+			return pageValue(variable, context.pageUrl ? new URL(context.pageUrl).origin : "");
 		} catch {
 			return "";
 		}
@@ -4477,7 +4534,7 @@ function generateVariableValue(variable, context = {}) {
 		* domain (a tenant subdomain typed into a field, an email suffix) rather
 		* than an address to open. See `page-origin` for the address. */
 		case "page-domain": try {
-			return context.pageUrl ? new URL(context.pageUrl).hostname : "";
+			return pageValue(variable, context.pageUrl ? new URL(context.pageUrl).hostname : "");
 		} catch {
 			return "";
 		}
@@ -4590,7 +4647,7 @@ function lintCase(raw, options = {}) {
 		rule: "6",
 		message: `%${name}% is used but never declared under \`# Variables\`, so it stays literal in the run — a typo, or a missing declaration.`
 	});
-	if (doc.formatVersion && doc.formatVersion !== "0.0.5") warnings.push({
+	if (doc.formatVersion && doc.formatVersion !== "0.0.6") warnings.push({
 		rule: "7",
 		message: `@version is ${doc.formatVersion}; this parser implements ${CURRENT_FORMAT_VERSION}. Re-read the grammar before trusting anything below.`
 	});
@@ -4605,6 +4662,11 @@ function lintCase(raw, options = {}) {
 			rule: "6",
 			at: variable.name,
 			message: "No `Default:` and no `Generator:` — the description must say exactly where to get the value, before the run starts."
+		});
+		if (variable.match && !variable.generator?.startsWith("page-")) warnings.push({
+			rule: "6",
+			at: variable.name,
+			message: "`Match:` gates what a page generator may read, and this variable has no page-* generator — the pattern never applies."
 		});
 		if (variable.generator === "page-domain" && everyField.includes(`%${variable.name}%/`)) warnings.push({
 			rule: "2b",

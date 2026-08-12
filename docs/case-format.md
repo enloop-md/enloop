@@ -9,7 +9,7 @@ and it is the thing to read when writing cases by hand.
 
 ```markdown
 # Careerminds: Sync a contact from the CRM to the mailer
-@version 0.0.5
+@version 0.0.6
 @author Your Name
 @project Careerminds
 Tags: sync-console, integrations, manual
@@ -162,6 +162,23 @@ started from a blank tab, the online viewer, a downloaded page — the value
 falls back to it, so every address in the case keeps working for someone who
 has never opened the app. The authoring skills read it from the project's
 rules file (its `Base URL:` line), which the **setup** skill records once.
+
+`Match:` pins a page generator to the pages it may read:
+
+```markdown
+## BASE_URL
+The org under test — whichever one you have open.
+Generator: page-origin
+Match: *.example.test
+Default: https://staging.example.test
+```
+
+Open the panel on an unrelated site and the generator yields nothing —
+resolution falls through to the default instead of leaking that site's
+address into the run. The run screen says which pattern refused the page and
+offers the refused value as a one-click override; a typed value always wins.
+`*` matches any run of characters; a pattern containing `/` is checked
+against the whole value rather than the page's host.
 
 The other page generators are `page-url` (the whole address, query string
 included) and `page-domain` (the bare host, no scheme and no port). `page-domain`

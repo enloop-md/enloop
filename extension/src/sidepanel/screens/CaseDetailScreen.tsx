@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
   generateVariableValue,
+  matchesPagePattern,
+  resolveVariableValues,
   parseCaseDocument,
   renderCasePage,
   renderReadableCase,
@@ -54,6 +56,9 @@ export function CaseDetailScreen({
   // the moment the run began rather than the moment this screen opened.
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [edited, setEdited] = useState<Record<string, string>>({});
+  /** Page values a variable's `Match:` refused, by name — shown so the
+   * tester knows why a field is not following the open tab. */
+  const [pageRefused, setPageRefused] = useState<Record<string, string>>({});
   const [valuesOpen, setValuesOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -107,9 +112,21 @@ export function CaseDetailScreen({
       });
       setVariables(doc.variables);
       setRunStepCounts({ total: doc.steps.length, quick: doc.steps.filter((s) => s.quick).length });
-      const seeded: Record<string, string> = {};
-      for (const v of doc.variables) seeded[v.name] = generateVariableValue(v, { pageUrl });
-      setPreviews(seeded);
+      // The shared resolver, not a per-variable generate: a page generator
+      // that yields nothing — blank tab, or a page its `Match:` refuses —
+      // must fall through to the declared default here exactly as it does
+      // everywhere else.
+      setPreviews(resolveVariableValues(doc.variables, {}, { pageUrl }));
+      // What the page *would* have yielded where `Match:` refused it, so
+      // the values form can say why a field is not following the open tab
+      // and offer the refusal as an explicit override.
+      const refused: Record<string, string> = {};
+      for (const v of doc.variables) {
+        if (!v.match || !v.generator?.startsWith("page-")) continue;
+        const raw = generateVariableValue({ ...v, match: undefined }, { pageUrl });
+        if (raw && !matchesPagePattern(v.match, raw)) refused[v.name] = raw;
+      }
+      setPageRefused(refused);
     })().catch((e) => !cancelled && setError(e));
     return () => {
       cancelled = true;
@@ -121,14 +138,14 @@ export function CaseDetailScreen({
     setBusy(true);
     setError(null);
     try {
-      // Generators run now, not when the screen opened, and page-url ones
-      // read the tab as it is at this moment — the store resolves variables
-      // without any page context, so anything needing it is resolved here.
+      // Generators run now, not when the screen opened, and page-* ones read
+      // the tab as it is at this moment — the store resolves variables
+      // without any page context, so everything needing it is resolved here,
+      // through the shared resolver so a refused or absent page still falls
+      // through to the default. A value the tester typed wins outright,
+      // which is also how a `Match:` refusal is overridden.
       const pageUrl = await getActivePageUrl().catch(() => undefined);
-      const values: Record<string, string> = {};
-      for (const v of variables) {
-        values[v.name] = edited[v.name] ?? generateVariableValue(v, { pageUrl });
-      }
+      const values = resolveVariableValues(variables, edited, { pageUrl });
       const run = await store.createRun(testCaseId, meta.currentVersion, values, tier);
       onRunStarted(run.id);
     } catch (e) {
@@ -378,6 +395,7 @@ export function CaseDetailScreen({
             variables={variables}
             previews={previews}
             edited={edited}
+            refused={pageRefused}
             open={valuesOpen}
             onToggle={() => setValuesOpen((o) => !o)}
             onChange={(name, value) => setEdited((prev) => ({ ...prev, [name]: value }))}
@@ -582,6 +600,7 @@ function RunValues({
   variables,
   previews,
   edited,
+  refused,
   open,
   onToggle,
   onChange,
@@ -590,6 +609,7 @@ function RunValues({
   variables: TestCaseVariable[];
   previews: Record<string, string>;
   edited: Record<string, string>;
+  refused: Record<string, string>;
   open: boolean;
   onToggle: () => void;
   onChange: (name: string, value: string) => void;
@@ -655,6 +675,18 @@ function RunValues({
                     onChange={(e) => onChange(v.name, e.target.value)}
                     className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm"
                   />
+                  {refused[v.name] && !isEdited && (
+                    <p className="text-[10px] text-amber-600">
+                      The open page (<code>{refused[v.name]}</code>) doesn't match{" "}
+                      <code>{v.match}</code>, so it wasn't used.{" "}
+                      <button
+                        onClick={() => onChange(v.name, refused[v.name])}
+                        className="text-sky-600 hover:underline"
+                      >
+                        Use it anyway
+                      </button>
+                    </p>
+                  )}
                   {!value.trim() && (
                     <p className="text-[10px] text-amber-600">
                       No value — steps keep the literal %{v.name}% rather than a blank.
