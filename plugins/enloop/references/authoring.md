@@ -239,11 +239,16 @@ not say, and this skill does:
   (step 2). When there is none, ask the user once, use the answer, and
   offer the **setup** skill so the next case does not ask again. One
   variable then moves the whole case between environments.
-- **`# Prerequisites`** — the entry point first (contract rule 2a), then data
-  that must exist, then **every service the tester has to start themselves**,
-  each with the command and the directory to run it in:
+- **`# Prerequisites`** — the entry point first (contract rule 2a), then
+  **who the tester is in the app** (contract rule 2d) — account, role, and
+  where the credential lives, copied from the rules file's *Accounts and
+  data* section rather than assumed — then data that must exist, then
+  **every service the tester has to start themselves**, each with the
+  command and the directory to run it in:
 
       - Open %BASE_URL%/admin/integrations
+      - Logged in as %QA_EMAIL% (role `Administrator`) — password: vault
+        item `staging QA bot`
       - API running locally: `npm run dev` in the app repo
       - Worker running: `php bin/console messenger:consume async`
 
