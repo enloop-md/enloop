@@ -32,26 +32,32 @@ Verifies the single-contact sync path added in PROJ-1234.
 
 # Variables
 
+## BASE_URL
+The deployment under test — whichever one you have open.
+Generator: page-origin
+Default: https://staging.example.test
+
 ## TEST_CONTACT_EMAIL
 Email of a contact present in both the CRM and the mailer.
 Default: qa.bot@example.com
 
 # Prerequisites
+- Open %BASE_URL%/admin/sync-console
 - Logged in to the admin as a super-admin
 
 # Steps
 
-## Open the sync console
-Where: /admin/sync-console
+## Check the account picker
+Where: %BASE_URL%/admin/sync-console
 Selector: #account-tabs
-Navigate to the page.
+Read the tabs across the top of the console.
 
 ### Expected
 - The account picker renders as tabs.
 - Each tab shows the account name with its sync purpose beneath it.
 
 ## Sync the contact
-Where: /admin/sync-console
+Where: %BASE_URL%/admin/sync-console
 Selector: [data-testid="sync-crm-mailer"]
 Selector: #sync-crm-mailer-btn
 Click `Sync CRM → Mailer`.

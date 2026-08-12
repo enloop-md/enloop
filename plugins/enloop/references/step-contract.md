@@ -8,9 +8,9 @@
      is not worth its weight in every session's context. -->
 
 The rule every step in an authored test case must satisfy. The goal is a
-case a tester can execute without thinking — no inference, no hunting, no
-deciding. If a tester has to stop and work something out, the case is
-wrong, not the tester.
+case a tester who has never seen the system can execute without thinking —
+no inference, no hunting, no deciding, no one to ask. If a tester has to
+stop and work something out, the case is wrong, not the tester.
 
 Read this before writing any step, and check every finished step against
 the by-eye list at the bottom.
@@ -33,7 +33,7 @@ Good — the arrival is a prerequisite, and each action gets its own verdict:
 > - Open %BASE_URL%/admin/integrations
 >
 > ## Open the new-connection form
-> Where: /admin/integrations
+> Where: %BASE_URL%/admin/integrations
 > Selector: button[data-testid="add-connection"]
 > Click `Add connection`.
 >
@@ -42,7 +42,7 @@ Good — the arrival is a prerequisite, and each action gets its own verdict:
 >   `Client Secret` and `Endpoint URL` fields.
 >
 > ## Save the new connection
-> Where: /admin/integrations
+> Where: %BASE_URL%/admin/integrations
 > Selector: button[data-testid="save-connection"]
 > Click `Save`.
 >
@@ -59,10 +59,29 @@ numbered list of more than about three keystroke-level actions, split it.
 ## 2. Every place is an address
 
 A tester should never have to know where something lives. *Navigate to the
-Reports page* makes them recall a menu path or hunt for it; `/admin/reports`
+Reports page* makes them recall a menu path or hunt for it; an address
 makes them click. **Every place a case names carries its address** — in a
-`Where:` line, in a prerequisite, or as a link. Prose alone is for places
-that genuinely have no address.
+`Where:` line, in a prerequisite, or as a link — and for the app under
+test, the address is always written in one form:
+
+    %BASE_URL%/admin/reports
+
+with `BASE_URL` declared in every case:
+
+    ## BASE_URL
+    The deployment under test — whichever one you have open.
+    Generator: page-origin
+    Default: https://staging.example.test
+
+One form, three readers. A tester already in the app gets their own tab's
+origin — the generator. A blank tab, the shared viewer page and a
+downloaded file get the project's usual environment — the default. And the
+steps themselves name no environment, so the case moves between
+deployments without being edited. Another system's page keeps its own
+literal absolute URL or a per-run variable (`%CONTACT_URL%`). A bare
+route — `Where: /admin/reports` — is the legacy form: it resolves only
+against a tab already on the app, and the linter says so. Prose alone is
+for places that genuinely have no address.
 
 ### 2a. The entry point is a prerequisite, not a step
 
@@ -78,11 +97,12 @@ Step 1 is then the first thing the case actually verifies, and its `Where:`
 still names the route — so a tester who wasn't there after all gets the Go
 control anyway, one line down.
 
-**An address in a prerequisite must be absolute.** That block is rendered
-Markdown with no page behind it, so a bare `/admin/reports` has no origin to
-resolve against: it points at the side panel itself, and at the repo host
-when the file is read on GitHub. Write the absolute URL, or declare a
-`BASE_URL` variable and write `%BASE_URL%/admin/reports`.
+**An address in a prerequisite must resolve absolute.** That block is
+rendered Markdown with no page behind it, so a bare `/admin/reports` has no
+origin to resolve against: it points at the side panel itself, and at the
+repo host when the file is read on GitHub. The standard
+`%BASE_URL%/admin/reports` substitutes to an absolute URL before anything
+renders; a literal absolute URL is for another system's page.
 
 Keep navigation as a step only when arriving at the page *is* what is under
 test — a redirect, a deep link, a permission gate on first load. Then it has
@@ -95,19 +115,20 @@ them infer location from prose, and never let a step begin somewhere the
 previous step didn't leave them.
 
     ## Sync the customer's events
-    Where: /admin/sync-console
+    Where: %BASE_URL%/admin/sync-console
     Selector: #sync-events-btn
 
-**Write it as a route whenever it is one.** A `Where:` of `/admin/sync`, an
-absolute URL, or a local address like `localhost:3000/admin` gets a Go
-control in the run screen that navigates the tab the run is using — one
-click instead of retyping a path. Prose gets nothing.
+**Write it as an address whenever the place has one.** A `Where:` that
+substitutes to an absolute URL, or a local address like
+`localhost:3000/admin`, gets a Go control in the run screen that navigates
+the tab the run is using — one click instead of retyping a path. Prose
+gets nothing.
 
-A bare route resolves against whatever page the tester has open. That is
-right when they are already in the app, and refuses rather than guesses
-when they are not. If a case must be certain — it starts from a blank tab,
-or spans two hosts — declare a `BASE_URL` variable and write
-`Where: %BASE_URL%/admin/sync`.
+For the app under test that address is `Where: %BASE_URL%/admin/sync` —
+rule 2's one form, substituted before the run starts, so Go works from a
+blank tab and the viewer has a real URL to link. A bare `/admin/sync`
+resolves only against whatever page the tester already has open, and
+refuses when there is none; it survives in older cases, not in new ones.
 
 Prose is the last resort, not the default for everything outside the app. A
 third-party console has URLs too, and the record inside it has a URL that
@@ -134,8 +155,9 @@ When prose names a *second* place, link it:
     Open [the contact record](%CONTACT_URL%) in a second tab.
     Confirm the job cleared in [the worker dashboard](https://jobs.example.com/queues).
 
-Absolute only, for the same reason as 2a. And a fragment href is not a page
-link: `[the Sync button](#sync-btn)` is a Highlight control, per rule 3.
+`%BASE_URL%`-built or literal absolute, for the same reason as 2a. And a
+fragment href is not a page link: `[the Sync button](#sync-btn)` is a
+Highlight control, per rule 3.
 
 ## 3. Every UI step carries a `Selector:`
 
@@ -203,7 +225,7 @@ anyone writing a second case.
 Mark a step when a failure there means the feature does not work at all:
 
     ## Sync the contact
-    Where: /admin/sync-console
+    Where: %BASE_URL%/admin/sync-console
     Kind: quick
     Selector: #sync-crm-mailer-btn
     Click `Sync CRM → Mailer`.
@@ -345,7 +367,9 @@ Two lists, and the split is what makes this cheap. **The validator checks the
 mechanical half** — run it, read what it says, and do not re-walk those items
 by hand:
 
-> missing or prose `Where:` · missing `Selector:` · structural selectors ·
+> missing or prose `Where:` · a bare-route `Where:` · addresses with no
+> `BASE_URL` declared, or `BASE_URL` without a default · missing
+> `Selector:` · structural selectors ·
 > "then" in instructions · instructions restating the navigation · a step 1
 > spent on arriving · no entry point in `# Prerequisites` · a bare route in a
 > prerequisite · `### Expected` missing, prose rather than bullets, carrying

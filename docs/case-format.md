@@ -18,18 +18,23 @@ Verifies the single-contact sync path added in PROJ-1234.
 
 # Variables
 
+## BASE_URL
+The deployment under test — whichever one you have open.
+Generator: page-origin
+Default: https://staging.example.test
+
 ## TEST_CONTACT_EMAIL
 Email of a contact present in both the CRM and the mailer.
 Default: qa.bot@example.com
 
 # Prerequisites
-- Open https://admin.example.com/admin/sync-console
+- Open %BASE_URL%/admin/sync-console
 - Logged in to the admin as a super-admin
 
 # Steps
 
 ## Sync the contact
-Where: /admin/sync-console
+Where: %BASE_URL%/admin/sync-console
 Selector: [data-testid="sync-crm-mailer"]
 Selector: #sync-crm-mailer-btn
 Click `Sync CRM → Mailer`.
@@ -70,12 +75,15 @@ the one written first.
 
 ## `Where:` and the Go control
 
-A `Where:` that names a route, an absolute URL, or a local address gets a **Go**
-control in the run screen that navigates the tab the run is using — the same tab
-Highlight and automated steps act on, so opening the page leaves you where the
-next step expects. A bare route resolves against whatever page is open and
-refuses rather than guesses when there is nothing to resolve against; write
-`Where: %BASE_URL%/admin/sync` when a case has to be certain.
+A `Where:` that names an address — `%BASE_URL%/admin/sync`, an absolute URL,
+or a local address — gets a **Go** control in the run screen that navigates
+the tab the run is using — the same tab Highlight and automated steps act on,
+so opening the page leaves you where the next step expects. The
+`%BASE_URL%/…` form is the standard one: substituted before the run starts,
+it works from a blank tab and links in the viewer. A bare route
+(`/admin/sync`) resolves against whatever page is open and refuses when
+there is nothing to resolve against — the legacy form, kept working for
+older cases.
 
 The contract's wider rule is that **every place a case names carries its
 address** — never "navigate to the Reports page" with the path left to memory.
@@ -138,6 +146,7 @@ rather than a blank where a value should have been.
 ## BASE_URL
 The deployment under test — whichever one you have open.
 Generator: page-origin
+Default: https://staging.example.test
 ```
 
 `page-origin` resolves to the scheme, host and port of the tab you are on when
@@ -145,6 +154,12 @@ the run starts. On `https://instance1.example.com` every `%BASE_URL%/admin/repor
 in the case points at that instance; on `http://localhost:3000` it points at
 yours. The case names no environment, so it moves between them without being
 edited, and you start a run from wherever you already were.
+
+The `Default:` is the other half: with no page behind the generator — a run
+started from a blank tab, the online viewer, a downloaded page — the value
+falls back to it, so every address in the case keeps working for someone who
+has never opened the app. The authoring skills read it from the project's
+rules file (its `Base URL:` line), which the **setup** skill records once.
 
 The other page generators are `page-url` (the whole address, query string
 included) and `page-domain` (the bare host, no scheme and no port). `page-domain`
@@ -169,9 +184,10 @@ The rules, in brief:
 
 1. One step is one action with one observable result. If it contains "then",
    split it.
-2. Every place is an address. The entry point is a `# Prerequisites` bullet,
-   not a first step; every step states where it starts via `Where:`, as a
-   route wherever the app has one; a place named in prose carries a link.
+2. Every place is an address, written `%BASE_URL%/route` for the app under
+   test. The entry point is a `# Prerequisites` bullet, not a first step;
+   every step states where it starts via `Where:`; a place named in prose
+   carries a link.
 3. Every UI step carries a `Selector:`, taken from source — never invented,
    never a structural path. Repeat the line for ordered fallbacks when the
    element can genuinely move (a modal, a portal, a handle not yet deployed),

@@ -95,6 +95,11 @@ selectors have to be written, which fixtures cannot be trusted. They are how
 Enloop gets better at *this* project rather than in general, and they are the
 one input here that came from someone who has actually run these cases.
 
+The top of the file may carry **structured lines**, and one matters here:
+`Base URL: <origin>` — the environment this project's cases normally run
+against. It becomes the `Default:` of the case's `BASE_URL` variable in
+step 8. The prose sections bind as rules; the structured line is data.
+
 **They are binding.** A rule outranks a habit and outranks anything below in
 this file that is not the grammar. If you believe one is wrong, say so in your
 report and follow it anyway; changing it is the user's call, and a rule
@@ -179,9 +184,9 @@ Practically, for each step you intend to write:
 - Route → the router config or route attribute. A route is the address of a
   place, and contract rule 2 wants one for every place the case names: the
   entry point in `# Prerequisites`, every step's `Where:`, and any screen or
-  record mentioned in prose. Bare in `Where:`; absolute — a literal URL or
-  `%BASE_URL%/…` — in a prerequisite or a link, which have no open page to
-  resolve against.
+  record mentioned in prose. For the app under test, write every one of
+  them `%BASE_URL%/<route>` — `Where:` included — so the address works
+  from a cold start; a literal absolute URL is for another system's pages.
 - Visible label → the JSX/template/i18n entry. Quote it exactly, including
   capitalisation, in backticks.
 - Value the tester types → as `"**value**"`, quoted *and* bolded, exactly
@@ -220,11 +225,20 @@ not say, and this skill does:
   `Tags:` takes the ticket id, the feature area, and `manual`.
 - **Description** — what this verifies and why it exists now (which branch
   or ticket). Two or three sentences.
-- **`# Variables`** — declare `BASE_URL` as soon as the case needs one
-  absolute address (the entry point, a link, a `Where:` that must not depend
-  on whatever tab is open), with the environment these cases are normally run
-  against as its `Default:`. One variable then moves the whole case between
-  environments.
+- **`# Variables`** — declare `BASE_URL` in every case, generator and
+  default together:
+
+      ## BASE_URL
+      The deployment under test — whichever one you have open.
+      Generator: page-origin
+      Default: https://staging.example.test
+
+  The generator follows whatever deployment the tester has open; the
+  default is what a blank tab, the shared viewer and a downloaded page
+  resolve. Take the `Default:` from the rules file's `Base URL:` line
+  (step 2). When there is none, ask the user once, use the answer, and
+  offer the **setup** skill so the next case does not ask again. One
+  variable then moves the whole case between environments.
 - **`# Prerequisites`** — the entry point first (contract rule 2a), then data
   that must exist, then **every service the tester has to start themselves**,
   each with the command and the directory to run it in:

@@ -3995,6 +3995,7 @@ var CURRENT_FORMAT_VERSION = "0.0.5";
 *     ## BASE_URL
 *     The deployment under test — whichever one you have open.
 *     Generator: page-origin
+*     Default: https://staging.example.test
 *
 *   With the tester on `https://instance1.example.com`, every
 *   `%BASE_URL%/admin/reports` in the case resolves against that instance;
@@ -4002,7 +4003,11 @@ var CURRENT_FORMAT_VERSION = "0.0.5";
 *   environment, so it moves between them without being edited, and a run
 *   starts wherever the tester already was. It yields scheme + host + port,
 *   because the value is used as a prefix and a bare host is not something a
-*   browser can open. `page-domain` is the bare host, for a value that is
+*   browser can open. The `Default:` is the environment the project
+*   usually tests against: with no page behind the generator — a run
+*   started from a blank tab, the shared viewer page — the value falls
+*   back to it, and the case's addresses keep working cold.
+*   `page-domain` is the bare host, for a value that is
 *   *about* the domain — a tenant name, an email suffix — rather than an
 *   address; using it as a `BASE_URL` produces `example.com/admin`, which
 *   gets no Go control and drops the port.

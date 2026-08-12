@@ -1,23 +1,26 @@
 ---
 name: setup
-description: Prepare the app repo you are currently in for Enloop — record the project name, and install the test-selector convention into the repo's agent instructions (AGENTS.md or CLAUDE.md) so every element and action a test needs to find (buttons, links, inputs, containers) arrives already labelled instead of being backfilled later. Use when the user asks to set up / configure / onboard Enloop for a project, wants new UI to be written with test handles by default, or is writing their first case from a repo. Run once per repo. Not for adding attributes to existing code — that is enloop:instrument, which this skill hands off to.
+description: Prepare the app repo you are currently in for Enloop — record the project name and the base URL its cases default to, and install the test-selector convention into the repo's agent instructions (AGENTS.md or CLAUDE.md) so every element and action a test needs to find (buttons, links, inputs, containers) arrives already labelled instead of being backfilled later. Use when the user asks to set up / configure / onboard Enloop for a project, wants new UI to be written with test handles by default, or is writing their first case from a repo. Run once per repo. Not for adding attributes to existing code — that is enloop:instrument, which this skill hands off to.
 disable-model-invocation: true
-allowed-tools: Read Grep Glob Edit Write Bash(git diff *) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(git remote *) Bash(rg *) Bash(ls *) Bash(cat *) Bash(basename *)
+allowed-tools: Read Grep Glob Edit Write Bash(git diff *) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(git remote *) Bash(rg *) Bash(ls *) Bash(cat *) Bash(basename *) Bash(node *)
 ---
 
 # Set up a repo for Enloop
 
 One-time preparation of the app repo, so that everything afterwards —
-writing cases, running them, triaging them — has what it needs. Two
+writing cases, running them, triaging them — has what it needs. Three
 deliverables:
 
 1. **The project name is recorded**, so every case written from this repo
    is findable in a Library holding several products' cases.
-2. **The selector convention is written into the repo's agent instructions**
-   (`AGENTS.md` or `CLAUDE.md`, see step 5), so new UI is authored with test
+2. **The base URL is recorded in the project's rules file**, so every
+   case's `BASE_URL` variable gets its `Default:` without anyone asking
+   again — the address a cold run and the shared viewer fall back to.
+3. **The selector convention is written into the repo's agent instructions**
+   (`AGENTS.md` or `CLAUDE.md`, see step 6), so new UI is authored with test
    handles already on it.
 
-The second is the durable one. The **instrument** skill backfills handles onto
+The last is the durable one. The **instrument** skill backfills handles onto
 code that already exists; that work decays the moment someone ships a new
 screen without them. A convention in the repo's agent instructions is read
 into every session in this repo, which is the only mechanism that keeps new
@@ -59,7 +62,54 @@ cheap to fix today and expensive later: it is baked into the titles of
 every case written from here, and changing it means new versions of all of
 them.
 
-## 3. Detect the selector convention
+## 3. Record the base URL in the project's rules file
+
+The environment this project's cases normally test against — staging, a
+demo instance, `http://localhost:3000`. Every case declares a `BASE_URL`
+variable, and this value is its `Default:`: what a run started from a
+blank tab, the online viewer, and a downloaded page resolve when no app
+tab is behind the run. Recording it once is what stops every future case
+from asking.
+
+Offer what you can detect — a staging link in the README, a
+`.env.example`, a deploy config — and confirm with the user.
+
+Then write it into the rules file in the data folder. Resolve the plugin
+and the folder the way every skill does:
+
+```bash
+ENLOOP_PLUGIN="<the installed plugin root, two levels above this skill>"
+node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" data-folder
+node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" rules "$DATA_DIR" "<project name>"
+```
+
+`data-folder` prints the folder — `AMBIGUOUS`/`NONE` mean ask rather than
+guess; `references/data-folder.md` at the plugin root says how. `rules`
+prints the rules file's path and current content. If the file does not
+exist, create it with the base URL up top and the prose sections stubbed
+for the **check** skill to fill later:
+
+```markdown
+# Enloop rules — <project name>
+
+Base URL: https://staging.example.test
+
+# Navigation
+
+# Accounts and data
+
+# Known traps
+
+# Vocabulary
+```
+
+`Base URL:` is a **structured line** — the authoring skills copy it
+verbatim into every case's `BASE_URL` default — so keep exactly that
+shape. If the file already exists, add or correct the `Base URL:` line
+and leave every rule in it alone: the rules belong to the **check** skill
+and the user.
+
+## 4. Detect the selector convention
 
 Never introduce a second convention into a repo that already has one.
 Count what is there:
@@ -76,7 +126,7 @@ scheme being objectively better.
 
 Only if the repo has **none** do you pick, and then pick `data-testid`.
 
-## 4. Check the attribute survives the production build
+## 5. Check the attribute survives the production build
 
 If testers hit a production build and that build strips test attributes,
 the convention you are about to install produces selectors that resolve in
@@ -94,7 +144,7 @@ environment under test, or the convention becomes "use `id`". Installing a
 convention whose output is stripped is worse than installing none, because
 it looks done.
 
-## 5. Write the convention into the repo's agent instructions
+## 6. Write the convention into the repo's agent instructions
 
 The convention has to be read into every session in this repo, by whichever
 agent the user runs. That file is `AGENTS.md` for Codex and `CLAUDE.md` for
@@ -116,7 +166,7 @@ Resolve the target like this, and say which branch you took:
 has no `## Enloop` section, append one; if it has one, update it in place —
 running this skill twice must not produce two sections, in either file.
 
-Adjust the block to the convention detected in step 3 — attribute name,
+Adjust the block to the convention detected in step 4 — attribute name,
 naming shape, and any framework specifics. The text below is the shape, not
 a script to paste blindly:
 
@@ -169,7 +219,7 @@ If the repo has neither instructions file, create the one branch 3 above
 names, containing just this section, and say plainly which agent reads which
 file — the user is about to rely on it being read automatically.
 
-## 6. Wire the environment (offer, don't assume)
+## 7. Wire the environment (offer, don't assume)
 
 The skills resolve three values from the environment. Where they are written
 depends on the agent, so ask which one the user runs rather than assuming —
@@ -238,7 +288,7 @@ Enloop itself lives; there is no such setting any more.
 leave only `ENLOOP_PROJECT` in the shared file. Under Codex the shell
 handles that separation already. Say which you did and why.
 
-## 7. Offer the first backfill
+## 8. Offer the first backfill
 
 The convention now covers new code; existing screens are still bare. End by
 offering the **instrument** skill scoped to whatever the user plans to write a
@@ -248,9 +298,10 @@ reviews.
 Do not run it yourself as part of setup. It edits application source, and
 that deserves its own turn with its own review.
 
-## 8. Report
+## 9. Report
 
 - The project name recorded, and where it was written.
+- The base URL recorded, and the rules file it lives in.
 - The selector convention detected (with the usage count that established
   it) or chosen, and which instructions file it now lives in.
 - Whether the production build strips test attributes, and what you
