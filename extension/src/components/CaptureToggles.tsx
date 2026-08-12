@@ -23,15 +23,24 @@ import { captureIsOn, type CaptureSettings, type WrapperState } from "../lib/cap
  * has not thereby agreed to keep traffic.
  */
 
-const TOGGLES: Array<{
-  field: keyof CaptureSettings;
+interface Toggle {
   /** In front of a run, where the label is competing with a Start button. */
   short: string;
   label: string;
   hint: ReactNode;
-}> = [
+  checked: (s: CaptureSettings) => boolean;
+  set: (s: CaptureSettings, on: boolean) => CaptureSettings;
+  /** Rendered indented, and only while the toggle above it is on — it
+   * modifies that one rather than standing beside it. */
+  sub?: boolean;
+  /** Hidden entirely when this is false. */
+  shown?: (s: CaptureSettings) => boolean;
+}
+
+const TOGGLES: Toggle[] = [
   {
-    field: "console",
+    checked: (s) => s.console,
+    set: (s, on) => ({ ...s, console: on }),
     short: "Console output",
     label: "Capture console output",
     hint: (
@@ -43,7 +52,10 @@ const TOGGLES: Array<{
     ),
   },
   {
-    field: "network",
+    checked: (s) => s.network !== "off",
+    // Turning requests off drops the every-request choice with it; there is no
+    // such thing as tracing everything while capturing nothing.
+    set: (s, on) => ({ ...s, network: on ? "failed" : "off" }),
     short: "Failed requests",
     label: "Capture failed requests",
     hint: (
@@ -51,6 +63,22 @@ const TOGGLES: Array<{
         Method, URL, status and duration for requests that failed or came back 4xx/5xx. Never
         headers, never bodies, and query strings are redacted. A button that did nothing because a
         request 500'd shows up here and often nowhere else.
+      </>
+    ),
+  },
+  {
+    checked: (s) => s.network === "all",
+    set: (s, on) => ({ ...s, network: on ? "all" : "failed" }),
+    sub: true,
+    shown: (s) => s.network !== "off",
+    short: "…and the ones that worked",
+    label: "…and the ones that worked",
+    hint: (
+      <>
+        The whole trace: every request the page made, in order, with its status. Answers "what did
+        this actually call when I clicked that" — the question DevTools normally gets opened for.
+        Much noisier, so it reaches the log's ceiling sooner on a busy app, and it is worth turning
+        back off once you have what you came for.
       </>
     ),
   },
@@ -81,15 +109,17 @@ export function CaptureToggles({
         </p>
       )}
       <div className={compact ? "flex flex-wrap gap-x-4 gap-y-1" : "space-y-2"}>
-        {TOGGLES.map((toggle) => (
+        {TOGGLES.filter((toggle) => toggle.shown?.(settings) ?? true).map((toggle) => (
           <label
-            key={toggle.field}
-            className={compact ? "flex items-center gap-1.5" : "flex items-start gap-2"}
+            key={toggle.label}
+            className={`${compact ? "flex items-center gap-1.5" : "flex items-start gap-2"} ${
+              toggle.sub ? (compact ? "basis-full pl-5" : "pl-5") : ""
+            }`}
           >
             <input
               type="checkbox"
-              checked={settings[toggle.field]}
-              onChange={(e) => onChange({ ...settings, [toggle.field]: e.target.checked })}
+              checked={toggle.checked(settings)}
+              onChange={(e) => onChange(toggle.set(settings, e.target.checked))}
               className={compact ? "" : "mt-0.5"}
             />
             {compact ? (

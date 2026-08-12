@@ -29,6 +29,7 @@ import {
 import {
   CAPTURE_OFF,
   CAPTURE_SETTINGS_KEY,
+  normalizeCaptureSettings,
   captureIsOn,
   clearCaptureTarget,
   drainCapture,
@@ -79,7 +80,7 @@ function useStoredCaptureSettings(): [CaptureSettings, (next: CaptureSettings) =
     const onChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
       if (area !== "local" || !changes[CAPTURE_SETTINGS_KEY]) return;
       const value = changes[CAPTURE_SETTINGS_KEY].newValue as Partial<CaptureSettings> | undefined;
-      setSettings({ console: !!value?.console, network: !!value?.network });
+      setSettings(normalizeCaptureSettings(value));
     };
     chrome.storage.onChanged.addListener(onChanged);
     return () => {
@@ -241,6 +242,7 @@ export function useCaptureRecorder(opts: {
       consoleErrors: previous.consoleErrors + batchCounts.consoleErrors,
       consoleWarnings: previous.consoleWarnings + batchCounts.consoleWarnings,
       networkFailures: previous.networkFailures + batchCounts.networkFailures,
+      requests: previous.requests + batchCounts.requests,
     }));
     await appendRef.current(batch);
   }, [key]);

@@ -10,7 +10,8 @@ export interface VariableGeneratorContext {
 export const VARIABLE_GENERATOR_LABELS: Record<VariableGenerator, string> = {
   timestamp: "Current timestamp",
   "page-url": "Current page URL",
-  "page-domain": "Current page domain",
+  "page-origin": "Current page origin",
+  "page-domain": "Current page domain (host only)",
   "random-number": "Random number",
   "random-string": "Random string",
 };
@@ -34,7 +35,7 @@ function parseRange(arg: string | undefined, fallback: [number, number]): [numbe
 
 /** Produces a fresh value for a variable's declared generator. Pure aside
  * from `Math.random`/`Date.now` — no browser APIs — so callers needing
- * page context (page-url/page-domain) supply it explicitly. Variables with
+ * page context (the `page-*` generators) supply it explicitly. Variables with
  * no generator fall back to their declared default. */
 export function generateVariableValue(
   variable: TestCaseVariable,
@@ -47,6 +48,30 @@ export function generateVariableValue(
         : String(Date.now());
     case "page-url":
       return context.pageUrl ?? "";
+    /**
+     * Scheme, host and port of whatever tab the tester is on when the run
+     * starts — `https://instance1.example.com`, `http://localhost:3000`.
+     *
+     * This is what a `BASE_URL` wants. A case written against one deployment
+     * runs against whichever one the tester happens to have open: their own
+     * branch, a review app, a customer's instance, a local dev server. Nothing
+     * in the case names an environment, so nothing in it has to be edited to
+     * move between them.
+     *
+     * The origin rather than the hostname because the result is used as a
+     * prefix — `%BASE_URL%/admin/reports` — and a bare host is not an address
+     * anything can open: no scheme to fetch it with, and the port dropped,
+     * which is exactly the half that matters on a dev server.
+     */
+    case "page-origin":
+      try {
+        return context.pageUrl ? new URL(context.pageUrl).origin : "";
+      } catch {
+        return "";
+      }
+    /** Host only, no scheme and no port — for a value that is *about* the
+     * domain (a tenant subdomain typed into a field, an email suffix) rather
+     * than an address to open. See `page-origin` for the address. */
     case "page-domain":
       try {
         return context.pageUrl ? new URL(context.pageUrl).hostname : "";

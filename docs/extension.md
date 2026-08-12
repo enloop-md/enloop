@@ -163,7 +163,7 @@ restart, when that memory is deliberately dropped, the Library carries a
 panel: every mark, note and comment is written to the run's folder as it
 happens.
 
-## Capturing the console and failed requests
+## Capturing the console and the network
 
 A run records what the tester can see. The console is where the cheapest
 evidence of a bug lives and where it is invisible by default — an uncaught
@@ -174,12 +174,18 @@ default:
 - **Console output** — `log`/`info`/`warn`/`error`/`debug`, plus uncaught
   errors and unhandled rejections.
 - **Failed requests** — method, URL, status and duration for requests that
-  failed or came back 4xx/5xx. Never headers, never bodies; query strings are
-  redacted to `?…`. It is a separate box because it is a separate question:
-  agreeing to keep logs is not agreeing to keep traffic.
+  failed or came back 4xx/5xx. It is a separate box because it is a separate
+  question: agreeing to keep logs is not agreeing to keep traffic.
+  - **…and the ones that worked** — appears under it once requests are on, and
+    turns the capture into the whole trace: every request the page made, in
+    order, with its status. That answers a different question — *what does this
+    actually call when I click that* — which is what the network tab normally
+    gets opened for. Noisier, so it reaches the log's ceiling sooner, and worth
+    switching back off once you have what you came for.
 
-Both are off by default because console output can contain tokens and customer
-data, and runs are written to a folder people commit.
+Never headers, never bodies, at any setting; query strings are redacted to
+`?…`. All of it is off by default because console output can contain tokens and
+customer data, and runs are written to a folder people commit.
 
 They sit **directly above Start run** on a case screen, at the top of a free
 run, and in **Settings → Capture during runs**, which is the same setting in
@@ -207,15 +213,18 @@ What lands in the run's folder:
 - **`console.md`** — the same thing rendered for a person when the run
   finishes, grouped by the step that was running at the time.
 - **`run.json`** — per-step counts (`consoleErrors`, `consoleWarnings`,
-  `networkFailures`), so the report can point at a step without anyone opening
-  the log.
+  `networkFailures`, `requests`), so the report can point at a step without
+  anyone opening the log.
 
 Whether any of it is handed to an agent is a second, separate decision, made in
 the finish bar: **Include console output in the report**, ticked by default when
 the run captured at least one error and unticked otherwise. What gets attached
 is a deduplicated digest — errors, warnings and failed requests, with an
 occurrence count and the step each first appeared in — not the raw log, because
-fifty identical framework warnings read as fifty problems. `console.md` is kept
+fifty identical framework warnings read as fifty problems. Requests that
+*succeeded* are kept apart from that list, under **What the page called**,
+because they are context rather than findings: ranked among the errors they
+would win on count every time, since the thing an app does most is succeed. `console.md` is kept
 either way; the checkbox governs what leaves the folder, and the **check** skill
 is told to respect it rather than read the file anyway.
 

@@ -16,6 +16,7 @@ export const stepTypeSchema = z.enum(["manual", "automated"]);
 export const VARIABLE_GENERATORS = [
   "timestamp",
   "page-url",
+  "page-origin",
   "page-domain",
   "random-number",
   "random-string",
@@ -238,6 +239,9 @@ export const runStepStateSchema = z
     consoleErrors: z.number().int().nonnegative().default(0),
     consoleWarnings: z.number().int().nonnegative().default(0),
     networkFailures: z.number().int().nonnegative().default(0),
+    /** Every request seen during this step, failures included — nonzero only
+     * when the tester asked for the whole trace rather than the failures. */
+    requests: z.number().int().nonnegative().default(0),
   })
   .transform(({ comment, notes, tasks, comments, ...rest }) => {
     const migrated = [
@@ -308,6 +312,7 @@ export const runStepSchema = stepSchema.omit({ id: true }).extend({
   consoleErrors: z.number().int().nonnegative(),
   consoleWarnings: z.number().int().nonnegative(),
   networkFailures: z.number().int().nonnegative(),
+  requests: z.number().int().nonnegative(),
 });
 
 /** Composed, in-memory view of a run — case.md + run.json merged. This is

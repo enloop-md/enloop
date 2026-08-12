@@ -200,6 +200,7 @@ function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
       consoleErrors: state.consoleErrors,
       consoleWarnings: state.consoleWarnings,
       networkFailures: state.networkFailures,
+      requests: state.requests,
     };
   });
   return {

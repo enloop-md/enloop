@@ -49,6 +49,8 @@
   const MAX_KEYS = 10;
 
   let state = null; // null until the relay reports; then { console, network }
+  // `network` is "off" | "failed" | "all" — it was a boolean until every-request
+  // capture existed, and the relay still normalizes an old stored `true`.
   let pending = [];
   let forwarded = 0;
   let capped = false;
@@ -99,9 +101,14 @@
   }
 
   function wants(level) {
-    if (level === "notice") return !!(state && (state.console || state.network));
-    if (level === "network") return !!(state && state.network);
+    if (level === "notice") return !!(state && (state.console || state.network !== "off"));
+    if (level === "network") return !!(state && state.network !== "off");
     return !!(state && state.console);
+  }
+
+  /** True while the tester asked for the whole trace, not only the failures. */
+  function wantsEveryRequest() {
+    return !!(state && state.network === "all");
   }
 
   // ---- formatting ----
@@ -253,11 +260,19 @@
 
   // ---- network ----
   //
-  // Only failures: a request that 4xx'd, 5xx'd, or never completed. Requests
-  // carry auth headers, cookies and bodies by design, so this captures method,
-  // redacted URL, status and duration — and nothing that could be a credential
-  // — and it captures them only when something went wrong. A button that did
-  // nothing because a request 500'd shows up here and often nowhere else.
+  // Requests carry auth headers, cookies and bodies by design, so this captures
+  // method, redacted URL, status and duration, and nothing that could be a
+  // credential — at every setting.
+  //
+  // `failed` keeps only what went wrong: a request that 4xx'd, 5xx'd, or never
+  // completed. A button that did nothing because a request 500'd shows up there
+  // and often nowhere else. `all` keeps the successful ones too, which is a
+  // different question — what this app actually calls when you click that — and
+  // the reason anyone opens the network tab when nothing is broken.
+  //
+  // The decision is made per request at the moment it settles, not once at
+  // wrap time, so switching the setting mid-run takes effect on the next
+  // request rather than needing the reload that starting capture needs.
 
   function reportRequest(method, url, status, startedAt, failure) {
     const durationMs = Math.round(performance.now() - startedAt);
@@ -287,9 +302,12 @@
           try {
             // An opaque (`no-cors`) response always reports status 0 and
             // `ok: false`. Calling those failures would flag every analytics
-            // beacon and font fetch on the page.
-            if (!response.ok && response.type !== "opaque") {
-              reportRequest(method, url, response.status, startedAt);
+            // beacon and font fetch on the page — but with the whole trace
+            // asked for they are still part of it, reported with the status
+            // the page was actually given.
+            const failed = !response.ok && response.type !== "opaque";
+            if (failed || wantsEveryRequest()) {
+              reportRequest(method, url, response.type === "opaque" ? 0 : response.status, startedAt);
             }
           } catch {
             /* never break the page's request */
@@ -334,7 +352,7 @@
           this.addEventListener("loadend", () => {
             try {
               // 0 means it never completed — blocked, aborted, offline.
-              if (this.status === 0 || this.status >= 400) {
+              if (this.status === 0 || this.status >= 400 || wantsEveryRequest()) {
                 reportRequest(
                   meta.method,
                   meta.url,
@@ -365,7 +383,10 @@
       return;
     }
     const first = state === null;
-    state = { console: !!next.console, network: !!next.network };
+    state = {
+      console: !!next.console,
+      network: next.network === "all" || next.network === "failed" ? next.network : "off",
+    };
     if (!first) {
       pending = [];
       return;

@@ -9,7 +9,7 @@ and it is the thing to read when writing cases by hand.
 
 ```markdown
 # Careerminds: Sync a contact from the CRM to the mailer
-@version 0.0.3
+@version 0.0.5
 @author Your Name
 @project Careerminds
 Tags: sync-console, integrations, manual
@@ -131,6 +131,27 @@ included. The case screen shows the resolved values under **Start run** and
 lets you override any of them first, but it never stops the run to ask. A
 variable that ends up with no value is left alone, so the step reads `%NAME%`
 rather than a blank where a value should have been.
+
+### Running against whichever deployment you have open
+
+```markdown
+## BASE_URL
+The deployment under test — whichever one you have open.
+Generator: page-origin
+```
+
+`page-origin` resolves to the scheme, host and port of the tab you are on when
+the run starts. On `https://instance1.example.com` every `%BASE_URL%/admin/reports`
+in the case points at that instance; on `http://localhost:3000` it points at
+yours. The case names no environment, so it moves between them without being
+edited, and you start a run from wherever you already were.
+
+The other page generators are `page-url` (the whole address, query string
+included) and `page-domain` (the bare host, no scheme and no port). `page-domain`
+is for a value that is *about* the domain — a tenant name, an email suffix — not
+for a `BASE_URL`: `example.com/admin` has nothing to open it with and loses the
+port, which is the half that matters on a dev server. The linter says so if a
+case does it.
 
 ## Suites
 

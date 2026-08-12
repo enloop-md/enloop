@@ -3621,6 +3621,7 @@ var stepTypeSchema = z.enum(["manual", "automated"]);
 var VARIABLE_GENERATORS = [
 	"timestamp",
 	"page-url",
+	"page-origin",
 	"page-domain",
 	"random-number",
 	"random-string"
@@ -3807,7 +3808,10 @@ var runStepStateSchema = z.object({
 	* still parses. */
 	consoleErrors: z.number().int().nonnegative().default(0),
 	consoleWarnings: z.number().int().nonnegative().default(0),
-	networkFailures: z.number().int().nonnegative().default(0)
+	networkFailures: z.number().int().nonnegative().default(0),
+	/** Every request seen during this step, failures included — nonzero only
+	* when the tester asked for the whole trace rather than the failures. */
+	requests: z.number().int().nonnegative().default(0)
 }).transform(({ comment, notes, tasks, comments, ...rest }) => {
 	const migrated = [
 		...comment?.trim() ? [{
@@ -3876,7 +3880,8 @@ var runStepSchema = stepSchema.omit({ id: true }).extend({
 	finishedAt: z.string().nullable(),
 	consoleErrors: z.number().int().nonnegative(),
 	consoleWarnings: z.number().int().nonnegative(),
-	networkFailures: z.number().int().nonnegative()
+	networkFailures: z.number().int().nonnegative(),
+	requests: z.number().int().nonnegative()
 });
 z.object({
 	id: z.string(),
@@ -3941,7 +3946,7 @@ function stripViewerComment(markdown) {
 * v1.md/v2.md version history, which tracks edits to a case's *content*
 * under this same grammar.
 */
-var CURRENT_FORMAT_VERSION = "0.0.4";
+var CURRENT_FORMAT_VERSION = "0.0.5";
 /**
 * Grammar. There is no separate spec by design: this comment is it, sitting
 * against the parser that implements it, and `scripts/build-plugin.mjs`
@@ -3980,9 +3985,29 @@ var CURRENT_FORMAT_VERSION = "0.0.4";
 *   Default: sku-12345                          (optional literal default)
 *
 *   Generators, given as `Generator: <name> [arg]`: `timestamp` (epoch ms,
-*   or ISO text with arg `iso`), `page-url`, `page-domain` (both read the
-*   active tab when a run starts), `random-number` (arg `min-max`, default
-*   `0-999999`), `random-string` (arg = length, default 8). Starting a run
+*   or ISO text with arg `iso`), `page-url`, `page-origin`, `page-domain`
+*   (all three read the active tab when the run starts), `random-number`
+*   (arg `min-max`, default `0-999999`), `random-string` (arg = length,
+*   default 8).
+*
+*   `page-origin` is the one a `BASE_URL` wants:
+*
+*     ## BASE_URL
+*     The deployment under test — whichever one you have open.
+*     Generator: page-origin
+*
+*   With the tester on `https://instance1.example.com`, every
+*   `%BASE_URL%/admin/reports` in the case resolves against that instance;
+*   on `http://localhost:3000` it resolves against theirs. The case names no
+*   environment, so it moves between them without being edited, and a run
+*   starts wherever the tester already was. It yields scheme + host + port,
+*   because the value is used as a prefix and a bare host is not something a
+*   browser can open. `page-domain` is the bare host, for a value that is
+*   *about* the domain — a tenant name, an email suffix — rather than an
+*   address; using it as a `BASE_URL` produces `example.com/admin`, which
+*   gets no Go control and drops the port.
+*
+*   Starting a run
 *   resolves every declared variable — generator, else declared default,
 *   else whatever the tester typed before starting — and replaces every
 *   `%NAME%` placeholder anywhere in the rest of the document (title,
@@ -4415,12 +4440,35 @@ function parseRange(arg, fallback) {
 }
 /** Produces a fresh value for a variable's declared generator. Pure aside
 * from `Math.random`/`Date.now` — no browser APIs — so callers needing
-* page context (page-url/page-domain) supply it explicitly. Variables with
+* page context (the `page-*` generators) supply it explicitly. Variables with
 * no generator fall back to their declared default. */
 function generateVariableValue(variable, context = {}) {
 	switch (variable.generator) {
 		case "timestamp": return variable.generatorArg?.trim().toLowerCase() === "iso" ? (/* @__PURE__ */ new Date()).toISOString() : String(Date.now());
 		case "page-url": return context.pageUrl ?? "";
+		/**
+		* Scheme, host and port of whatever tab the tester is on when the run
+		* starts — `https://instance1.example.com`, `http://localhost:3000`.
+		*
+		* This is what a `BASE_URL` wants. A case written against one deployment
+		* runs against whichever one the tester happens to have open: their own
+		* branch, a review app, a customer's instance, a local dev server. Nothing
+		* in the case names an environment, so nothing in it has to be edited to
+		* move between them.
+		*
+		* The origin rather than the hostname because the result is used as a
+		* prefix — `%BASE_URL%/admin/reports` — and a bare host is not an address
+		* anything can open: no scheme to fetch it with, and the port dropped,
+		* which is exactly the half that matters on a dev server.
+		*/
+		case "page-origin": try {
+			return context.pageUrl ? new URL(context.pageUrl).origin : "";
+		} catch {
+			return "";
+		}
+		/** Host only, no scheme and no port — for a value that is *about* the
+		* domain (a tenant subdomain typed into a field, an email suffix) rather
+		* than an address to open. See `page-origin` for the address. */
 		case "page-domain": try {
 			return context.pageUrl ? new URL(context.pageUrl).hostname : "";
 		} catch {
@@ -4513,7 +4561,7 @@ function lintCase(raw, options = {}) {
 		rule: "6",
 		message: `%${name}% is used but never declared under \`# Variables\`, so it stays literal in the run — a typo, or a missing declaration.`
 	});
-	if (doc.formatVersion && doc.formatVersion !== "0.0.4") warnings.push({
+	if (doc.formatVersion && doc.formatVersion !== "0.0.5") warnings.push({
 		rule: "7",
 		message: `@version is ${doc.formatVersion}; this parser implements ${CURRENT_FORMAT_VERSION}. Re-read the grammar before trusting anything below.`
 	});
@@ -4528,6 +4576,11 @@ function lintCase(raw, options = {}) {
 			rule: "6",
 			at: variable.name,
 			message: "No `Default:` and no `Generator:` — the description must say exactly where to get the value, before the run starts."
+		});
+		if (variable.generator === "page-domain" && everyField.includes(`%${variable.name}%/`)) warnings.push({
+			rule: "2b",
+			at: variable.name,
+			message: `\`Generator: page-domain\` is the bare host, but %${variable.name}% is used as an address prefix — that resolves to \`example.com/path\`, with no scheme and no port. Use \`Generator: page-origin\`.`
 		});
 	}
 	if (!doc.prerequisites.find((p) => OPENS_SOMEWHERE.test(p))) warnings.push({

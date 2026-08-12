@@ -20,27 +20,58 @@ import type { CapturedEntry } from "@tcm/shared";
  * in `public/console-relay.js`; change both. */
 export const CAPTURE_SETTINGS_KEY = "enloop:capture";
 
+/**
+ * How much of the page's traffic to keep.
+ *
+ * Three states rather than a boolean because "every request" and "only the
+ * ones that broke" are different jobs, not different intensities of the same
+ * one. Failures are evidence about a defect; the whole trace answers *what did
+ * this app actually call when I clicked that*, which is the question nobody
+ * can answer from the outside and the reason DevTools gets opened at all.
+ *
+ * It stays one setting with three values rather than two booleans, because two
+ * booleans can express "capture every request, but not the failed ones", which
+ * is not a thing anyone means.
+ */
+export type NetworkCapture = "off" | "failed" | "all";
+
 export interface CaptureSettings {
   /** `console.log`/`info`/`warn`/`error`/`debug`, plus uncaught errors and
    * unhandled rejections. */
   console: boolean;
-  /** Failed and 4xx/5xx requests only, and never their headers or bodies. Its
-   * own toggle rather than riding on the console one: a tester who agreed to
+  /** Never headers and never bodies at any setting, and query strings are
+   * redacted — those are the parts that carry credentials by design. Its own
+   * setting rather than riding on the console one: a tester who agreed to
    * capture logs has not agreed to capture traffic. */
-  network: boolean;
+  network: NetworkCapture;
 }
 
-export const CAPTURE_OFF: CaptureSettings = { console: false, network: false };
+export const CAPTURE_OFF: CaptureSettings = { console: false, network: "off" };
 
 export function captureIsOn(settings: CaptureSettings): boolean {
-  return settings.console || settings.network;
+  return settings.console || settings.network !== "off";
+}
+
+/** Reads the stored value, accepting the boolean this used to be: `true` meant
+ * failures only, which is what it still means. */
+function toNetworkCapture(value: unknown): NetworkCapture {
+  if (value === "all" || value === "failed") return value;
+  if (value === true || value === "true") return "failed";
+  return "off";
+}
+
+/** The stored value as a settings object, however it was written — used by
+ * the reader below and by the live `storage.onChanged` listener, which sees the
+ * same raw shape. */
+export function normalizeCaptureSettings(value: unknown): CaptureSettings {
+  const raw = value as Partial<CaptureSettings> | undefined;
+  return { console: !!raw?.console, network: toNetworkCapture(raw?.network) };
 }
 
 export async function readCaptureSettings(): Promise<CaptureSettings> {
   try {
     const stored = await chrome.storage.local.get(CAPTURE_SETTINGS_KEY);
-    const value = stored[CAPTURE_SETTINGS_KEY] as Partial<CaptureSettings> | undefined;
-    return { console: !!value?.console, network: !!value?.network };
+    return normalizeCaptureSettings(stored[CAPTURE_SETTINGS_KEY]);
   } catch {
     return { ...CAPTURE_OFF };
   }
