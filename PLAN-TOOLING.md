@@ -5,7 +5,9 @@ outstanding; 6 parked.** Written 2026-08-04.
 
 Scope split: [`PLAN-BACKEND.md`](PLAN-BACKEND.md) owns the hosted backend —
 accounts, projects, the HTTP API, environments. This document owns the skills
-and the extension workflow. Items here that need a schema column say so
+and the extension workflow. [`PLAN-AUTHORING.md`](PLAN-AUTHORING.md) owns what
+a finished case must contain — the cold-runner bar — and builds on items 4
+and 8 here. Items here that need a schema column say so
 explicitly, so the backend plan can pick them up rather than discovering them.
 
 Eight items. **3 and 4 are built** (2026-08-04) and **5 is built** (2026-08-08,
