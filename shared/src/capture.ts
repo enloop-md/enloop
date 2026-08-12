@@ -83,25 +83,47 @@ export interface CaptureCounts {
   consoleErrors: number;
   consoleWarnings: number;
   networkFailures: number;
+  /** Every request seen, failures included. Zero unless the tester asked for
+   * every request rather than only the ones that went wrong. */
+  requests: number;
 }
 
 export const ZERO_CAPTURE_COUNTS: CaptureCounts = {
   consoleErrors: 0,
   consoleWarnings: 0,
   networkFailures: 0,
+  requests: 0,
 };
+
+/**
+ * Did this request go wrong?
+ *
+ * `null` means it never completed at all — blocked, aborted, offline — which
+ * is the worst outcome and the one with no status to show for it. Everything
+ * from 400 up is the server saying no. A 3xx is not a failure: the page
+ * followed it and got on with its life.
+ */
+export function isFailedRequest(entry: CapturedEntry): boolean {
+  if (entry.level !== "network") return false;
+  const status = entry.request?.status ?? null;
+  return status === null || status >= 400;
+}
 
 /** `error` and `uncaught` both count as errors: to a reader of the report the
  * distinction is a detail of how the page reported it, not of how bad it is. */
-function bump(counts: CaptureCounts, level: CaptureLevel): void {
+function bump(counts: CaptureCounts, entry: CapturedEntry): void {
+  const level = entry.level;
   if (level === "error" || level === "uncaught") counts.consoleErrors += 1;
   else if (level === "warn") counts.consoleWarnings += 1;
-  else if (level === "network") counts.networkFailures += 1;
+  else if (level === "network") {
+    counts.requests += 1;
+    if (isFailedRequest(entry)) counts.networkFailures += 1;
+  }
 }
 
 export function totalCounts(entries: CapturedEntry[]): CaptureCounts {
   const counts = { ...ZERO_CAPTURE_COUNTS };
-  for (const entry of entries) bump(counts, entry.level);
+  for (const entry of entries) bump(counts, entry);
   return counts;
 }
 
@@ -115,12 +137,21 @@ export function countsByStep(entries: CapturedEntry[]): Map<string, CaptureCount
       counts = { ...ZERO_CAPTURE_COUNTS };
       byStep.set(key, counts);
     }
-    bump(counts, entry.level);
+    bump(counts, entry);
   }
   return byStep;
 }
 
-/** True when a set of counts is worth mentioning at all. */
+/**
+ * True when a set of counts is worth flagging.
+ *
+ * Requests that succeeded are deliberately not signal. With every-request
+ * capture on, a step that worked perfectly still has forty of them, and a
+ * report that marked every such step as having "findings" would be pointing at
+ * all of them, which is the same as pointing at none. They are context, and
+ * they are printed wherever the counts are printed — they just do not raise a
+ * hand.
+ */
 export function hasCaptureSignal(counts: CaptureCounts): boolean {
   return counts.consoleErrors > 0 || counts.consoleWarnings > 0 || counts.networkFailures > 0;
 }
@@ -132,6 +163,12 @@ export function describeCounts(counts: CaptureCounts): string {
   if (counts.consoleErrors) parts.push(plural(counts.consoleErrors, "error"));
   if (counts.consoleWarnings) parts.push(plural(counts.consoleWarnings, "warning"));
   if (counts.networkFailures) parts.push(plural(counts.networkFailures, "failed request"));
+  // The ones that worked, counted apart from the ones that did not, so
+  // "1 failed request, 40 others" cannot be misread as 41 problems.
+  const succeeded = counts.requests - counts.networkFailures;
+  if (succeeded > 0) {
+    parts.push(counts.networkFailures ? `${succeeded} other requests` : plural(succeeded, "request"));
+  }
   return parts.join(", ");
 }
 
@@ -294,7 +331,15 @@ export interface CaptureDigestItem {
 
 export interface CaptureDigest {
   counts: CaptureCounts;
+  /** Things that went wrong: errors, warnings, uncaught exceptions, failed
+   * requests. */
   items: CaptureDigestItem[];
+  /** Requests that succeeded, deduplicated the same way — the trace of what
+   * the page actually called, kept apart from the problems so it cannot
+   * outrank them. Empty unless every-request capture was on. */
+  requests: CaptureDigestItem[];
+  /** Distinct successful requests left out by their own cap. */
+  omittedRequests: number;
   /** Distinct messages left out by the item cap. */
   omittedMessages: number;
   /** `log`/`info`/`debug` lines the digest deliberately does not carry. */
@@ -305,6 +350,11 @@ export interface CaptureDigest {
 
 /** Distinct messages a digest will carry before it stops and counts. */
 const DIGEST_MAX_ITEMS = 25;
+/** Distinct successful requests it will carry. Its own budget, so a chatty
+ * page cannot spend the whole digest on requests that worked — and a larger
+ * one, because the value of a request trace is in its shape and twenty-five
+ * endpoints is not a shape. */
+const DIGEST_MAX_REQUESTS = 40;
 /** Stack frames kept per item, after vendor frames are collapsed. */
 const DIGEST_MAX_FRAMES = 5;
 
@@ -320,6 +370,7 @@ const DIGEST_MAX_FRAMES = 5;
  */
 export function buildCaptureDigest(entries: CapturedEntry[]): CaptureDigest {
   const byKey = new Map<string, CaptureDigestItem>();
+  const requestsByKey = new Map<string, CaptureDigestItem>();
   const notices: string[] = [];
   let chatterLines = 0;
 
@@ -332,8 +383,14 @@ export function buildCaptureDigest(entries: CapturedEntry[]): CaptureDigest {
       chatterLines += 1;
       continue;
     }
+    // A request that worked is a fact about what the page did, not a finding.
+    // It goes in its own bucket: ranked among the errors it would win on
+    // count every time, because the thing an app does most is succeed.
+    const succeeded = entry.level === "network" && !isFailedRequest(entry);
+    const bucket = succeeded ? requestsByKey : byKey;
+
     const key = dedupeKey(entry);
-    const existing = byKey.get(key);
+    const existing = bucket.get(key);
     if (existing) {
       existing.count += 1;
       // The duration belonged to one occurrence. Keeping it on a line that now
@@ -347,7 +404,7 @@ export function buildCaptureDigest(entries: CapturedEntry[]): CaptureDigest {
       if (!existing.stack && entry.stack) existing.stack = collapseStack(entry.stack, entry.url);
       continue;
     }
-    byKey.set(key, {
+    bucket.set(key, {
       level: entry.level,
       text: entry.text,
       stack: entry.stack ? collapseStack(entry.stack, entry.url) : undefined,
@@ -361,10 +418,16 @@ export function buildCaptureDigest(entries: CapturedEntry[]): CaptureDigest {
   const ranked = [...byKey.values()].sort(
     (a, b) => b.count - a.count || severity(b.level) - severity(a.level),
   );
+  // Requests read as a trace, so they keep the order the page made them in —
+  // sorting by count would scramble the sequence, which is the one thing a
+  // trace is for.
+  const requests = [...requestsByKey.values()];
 
   return {
     counts: totalCounts(entries),
     items: ranked.slice(0, DIGEST_MAX_ITEMS),
+    requests: requests.slice(0, DIGEST_MAX_REQUESTS),
+    omittedRequests: Math.max(0, requests.length - DIGEST_MAX_REQUESTS),
     omittedMessages: Math.max(0, ranked.length - DIGEST_MAX_ITEMS),
     chatterLines,
     notices,
@@ -469,6 +532,30 @@ export function renderCaptureDigest(
       lines.push("");
       lines.push(indent(item.stack, "  "));
       lines.push("");
+    }
+  }
+  // The trace, under its own heading and after the problems: an agent reading
+  // top-down should reach "what broke" before "what the page called".
+  if (digest.requests.length > 0) {
+    lines.push("");
+    lines.push("### Requests the page made");
+    lines.push("");
+    lines.push(
+      "Every request, in the order they first happened, deduplicated. Query strings are " +
+        "redacted and no headers or bodies were captured.",
+    );
+    lines.push("");
+    for (const item of digest.requests) {
+      const where = stepLabel(item.firstStepId);
+      lines.push(`- ${item.text}${item.count > 1 ? ` ×${item.count}` : ""}${where ? ` (${where})` : ""}`);
+    }
+    if (digest.omittedRequests > 0) {
+      lines.push("");
+      lines.push(
+        `${digest.omittedRequests} further distinct ${
+          digest.omittedRequests === 1 ? "request" : "requests"
+        } not listed; \`console.md\` has them all.`,
+      );
     }
   }
   if (digest.omittedMessages > 0) {

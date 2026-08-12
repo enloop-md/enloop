@@ -122,16 +122,24 @@ omission to skip over.
 ### What the page itself said
 
 A run may also carry what the page printed while it was being driven — console
-lines, uncaught errors, and requests that failed or came back 4xx/5xx. Capture
-is off unless the tester turned it on, so most runs have none of this.
+lines, uncaught errors, and its requests: either only the ones that failed or
+came back 4xx/5xx, or every request it made, depending on what the tester asked
+for. Capture is off unless they turned it on, so most runs have none of this.
 
 - **`run.json` per step: `consoleErrors`, `consoleWarnings`,
-  `networkFailures`.** Always present, always readable. A console error during
-  a step the tester marked **passed** is a finding in its own right: a green
-  run with a stack trace in it is exactly what nobody notices.
+  `networkFailures`, `requests`.** Always present, always readable. A console
+  error during a step the tester marked **passed** is a finding in its own
+  right: a green run with a stack trace in it is exactly what nobody notices.
+  `requests` is every request the step made and is nonzero only when the tester
+  asked for the whole trace; it is context, not a finding — a step that worked
+  still made forty of them.
 - **The `## Console and network` section of `report.md`** — a deduplicated
   digest, present only when the tester ticked *Include console output in the
-  report* at finish. `×N` is an occurrence count, not N separate problems.
+  report* at finish. `×N` is an occurrence count, not N separate problems. Its
+  **Requests the page made** subsection, and the matching *What the page
+  called* section in `feedback.md`, are the trace of what the app actually
+  called during the run — the fastest way to find the endpoint behind a button
+  that did nothing, and worth reading before grepping for one.
 - **`console.md` in the run folder — do not read it.** It is the full log, and
   the tester deciding not to attach it is a decision about data that may
   include a customer's. If `feedback.md` says output was captured and not

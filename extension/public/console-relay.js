@@ -66,12 +66,19 @@
     if (document.visibilityState === "hidden") flush();
   });
 
+  // "off" | "failed" | "all". Stored as a boolean before every-request capture
+  // existed, where true meant failures only — which is still what it means.
+  function networkMode(value) {
+    if (value === "all" || value === "failed") return value;
+    return value === true ? "failed" : "off";
+  }
+
   function announce(settings) {
     document.dispatchEvent(
       new CustomEvent(STATE_EVENT, {
         detail: JSON.stringify({
           console: !!(settings && settings.console),
-          network: !!(settings && settings.network),
+          network: networkMode(settings && settings.network),
         }),
       }),
     );

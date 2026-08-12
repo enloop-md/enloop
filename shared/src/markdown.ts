@@ -29,7 +29,7 @@ import type {
  * v1.md/v2.md version history, which tracks edits to a case's *content*
  * under this same grammar.
  */
-export const CURRENT_FORMAT_VERSION = "0.0.4";
+export const CURRENT_FORMAT_VERSION = "0.0.5";
 
 /**
  * Grammar. There is no separate spec by design: this comment is it, sitting
@@ -69,9 +69,29 @@ export const CURRENT_FORMAT_VERSION = "0.0.4";
  *   Default: sku-12345                          (optional literal default)
  *
  *   Generators, given as `Generator: <name> [arg]`: `timestamp` (epoch ms,
- *   or ISO text with arg `iso`), `page-url`, `page-domain` (both read the
- *   active tab when a run starts), `random-number` (arg `min-max`, default
- *   `0-999999`), `random-string` (arg = length, default 8). Starting a run
+ *   or ISO text with arg `iso`), `page-url`, `page-origin`, `page-domain`
+ *   (all three read the active tab when the run starts), `random-number`
+ *   (arg `min-max`, default `0-999999`), `random-string` (arg = length,
+ *   default 8).
+ *
+ *   `page-origin` is the one a `BASE_URL` wants:
+ *
+ *     ## BASE_URL
+ *     The deployment under test — whichever one you have open.
+ *     Generator: page-origin
+ *
+ *   With the tester on `https://instance1.example.com`, every
+ *   `%BASE_URL%/admin/reports` in the case resolves against that instance;
+ *   on `http://localhost:3000` it resolves against theirs. The case names no
+ *   environment, so it moves between them without being edited, and a run
+ *   starts wherever the tester already was. It yields scheme + host + port,
+ *   because the value is used as a prefix and a bare host is not something a
+ *   browser can open. `page-domain` is the bare host, for a value that is
+ *   *about* the domain — a tenant name, an email suffix — rather than an
+ *   address; using it as a `BASE_URL` produces `example.com/admin`, which
+ *   gets no Go control and drops the port.
+ *
+ *   Starting a run
  *   resolves every declared variable — generator, else declared default,
  *   else whatever the tester typed before starting — and replaces every
  *   `%NAME%` placeholder anywhere in the rest of the document (title,
@@ -725,6 +745,7 @@ function stepCounts(state: RunStepState): CaptureCounts {
     consoleErrors: state.consoleErrors,
     consoleWarnings: state.consoleWarnings,
     networkFailures: state.networkFailures,
+    requests: state.requests,
   };
 }
 
@@ -860,6 +881,7 @@ export function renderRunFeedback(
   digest?: CaptureDigest | null,
 ): string | null {
   const byId = new Map(run.steps.map((s) => [s.stepId, s]));
+  const labelStep = stepLabeller(doc);
   const signalSteps = doc.steps
     .map((step, index) => ({ step, index, state: byId.get(step.id) }))
     .filter(
@@ -877,6 +899,7 @@ export function renderRunFeedback(
     consoleErrors: run.steps.reduce((n, s) => n + s.consoleErrors, 0),
     consoleWarnings: run.steps.reduce((n, s) => n + s.consoleWarnings, 0),
     networkFailures: run.steps.reduce((n, s) => n + s.networkFailures, 0),
+    requests: run.steps.reduce((n, s) => n + s.requests, 0),
   };
 
   // One bucket per audience, in the order the checkboxes appear, so a reader
@@ -912,10 +935,12 @@ export function renderRunFeedback(
     }
     // The page throwing and the step failing are different statements, and
     // when they disagree the console one is the more precise: it names what
-    // broke rather than what the tester could see of it.
+    // broke rather than what the tester could see of it. A request that came
+    // back 500 is the same kind of statement — often the only one that names
+    // the endpoint behind a button that "did nothing".
     for (const item of digest?.items ?? []) {
       if (item.firstStepId !== step.id) continue;
-      if (item.level !== "error" && item.level !== "uncaught") continue;
+      if (item.level !== "error" && item.level !== "uncaught" && item.level !== "network") continue;
       consoleItems.push(
         `- **${step.title}** (step ${stepNum}, tester marked it ${state.status}): ` +
           summarizeDigestItem(item),
@@ -977,7 +1002,7 @@ export function renderRunFeedback(
           : undefined,
     })),
     { heading: "Failed steps the tester left uncommented", items: failedItems },
-    { heading: "Errors the page threw", items: consoleItems },
+    { heading: "Errors and failed requests from the page", items: consoleItems },
   ];
   // A comment-only handoff has nothing to list, and an empty "Action items"
   // heading reads as a bug in this renderer rather than as an all-clear.
@@ -994,6 +1019,35 @@ export function renderRunFeedback(
         lines.push("");
       }
       lines.push(...items);
+    }
+  }
+
+  // The trace, when the tester asked for every request rather than only the
+  // broken ones. Context rather than an action item: nothing here is wrong by
+  // definition, and the value is in answering "what does this actually call"
+  // without anyone having to reproduce the run with DevTools open.
+  if (digest && digest.requests.length > 0) {
+    lines.push("");
+    lines.push("## What the page called");
+    lines.push("");
+    lines.push(
+      "Every request made during the run, in the order they first happened, identical ones " +
+        "collapsed. Query strings are redacted; no headers or bodies were captured.",
+    );
+    lines.push("");
+    for (const item of digest.requests) {
+      const where = labelStep(item.firstStepId);
+      lines.push(
+        `- ${item.text}${item.count > 1 ? ` ×${item.count}` : ""}${where ? ` (${where})` : ""}`,
+      );
+    }
+    if (digest.omittedRequests > 0) {
+      lines.push("");
+      lines.push(
+        `${digest.omittedRequests} further distinct ${
+          digest.omittedRequests === 1 ? "request" : "requests"
+        } not listed; \`console.md\` in this run's folder has them all.`,
+      );
     }
   }
 
