@@ -1,6 +1,9 @@
 # Enloop on any model — the model-proofing plan
 
-Status: **items 1–3 built (2026-08-13); 4 outstanding. Written 2026-08-13.**
+Status: **all items built (2026-08-13). Written 2026-08-13.** The matrix's
+first real run waits on a pushed 0.14.0: headless sessions load the plugin
+from the marketplace cache, and a cache can only be as new as what is
+published — running it earlier measures last week's skills.
 
 Scope split: [`PLAN-AUTHORING.md`](PLAN-AUTHORING.md) owns what a finished
 case must contain. This document owns making the **write → run → check loop
@@ -148,7 +151,7 @@ By eye; there is nothing to run.
 
 ---
 
-## 4. The eval matrix — measure instead of hope
+## 4. The eval matrix — measure instead of hope — **implemented 2026-08-13** (runner smoke-verified with a stubbed session both ways: a good case rows green, a wrong one is refused by `write` before it can even land)
 
 ### The problem
 
