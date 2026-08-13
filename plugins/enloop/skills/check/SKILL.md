@@ -254,8 +254,8 @@ session.
    staleness against this repo's source, then the validator. Treat the
    address, account and data warnings, and a degraded `cold run` line, as
    case defects.
-3. Fix what you own exactly as step 7 does: a new `versions/v<n+1>.md`
-   with a `Change note:` naming the sweep, validated before writing, the
+3. Fix what you own exactly as step 7 does — landed with `write --case`,
+   which validates first, with a `Change note:` naming the sweep and the
    previous version untouched. Take the `BASE_URL` default and the account
    facts from the rules file, and every route, label and selector from
    source read now — a sweep invents nothing.
@@ -268,26 +268,20 @@ the current bar without paying for an authoring session.
 
 ## 7. Act on what you own
 
-**Case defects — fix them.** The case is yours to correct. Write a new
-version alongside the existing ones, never editing a previous version in
-place:
-
-```
-$DATA_DIR/test-cases/<testCaseId>/versions/v<n+1>.md
-```
-
-Read the current highest `v<n>.md`, apply the fix, and add a
-`Change note:` line under the title saying what changed and which run
-prompted it. Before writing, put the edited case through the validator that
-ships with the plugin — a fix that reintroduces a contract violation is not a
-fix:
+**Case defects — fix them.** The case is yours to correct. Read the current
+highest `v<n>.md`, apply the fix to a scratch copy, add a `Change note:`
+line under the title saying what changed and which run prompted it, and
+land it:
 
 ```bash
-node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" validate <the edited file> --findings-only
+node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" write <the edited file> --data-dir "$DATA_DIR" --case <testCaseId>
 ```
 
-`--findings-only` because you are checking an edit, not reading a document
-for the first time. For the half it cannot see, read
+It validates first and writes nothing on errors — a fix that reintroduces a
+contract violation is not a fix — then adds `versions/v<n+1>.md` beside the
+existing versions; a previous version is never edited in place. While
+iterating, `validate <file> --findings-only` gives the same findings
+without landing anything. For the half no tool can see, read
 `../../references/step-contract.md` (the plugin's references folder) and walk
 its by-eye list over the steps you touched. The `@version` line stays as it
 is unless the grammar itself changed.

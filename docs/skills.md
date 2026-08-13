@@ -163,9 +163,9 @@ What it does, in order:
 6. Validates by parsing the result with the real parser and linter that ship
    with the plugin, then checking what those cannot see — invented labels,
    routes and selectors — against the contract's by-eye list.
-7. Writes `<id>/meta.json` and `<id>/versions/v1.md` into `test-cases/` in
-   your data folder, then verifies the file landed where the extension reads
-   from and reports the absolute path.
+7. Lands it with the validator's `write` command — validate-then-write as
+   one step, so nothing unparseable can reach the folder and the layout is
+   never hand-built — and reports the absolute path it wrote.
 8. Reports the validator's `cold run` line — how much of the case a
    first-time runner can click, and what it asks for before starting — and
    defends every value the case will ask for. Zero questions is the norm.
