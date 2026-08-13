@@ -1,6 +1,6 @@
 # Enloop on any model — the model-proofing plan
 
-Status: **item 1 built (2026-08-13); 2–4 outstanding. Written 2026-08-13.**
+Status: **items 1–2 built (2026-08-13); 3–4 outstanding. Written 2026-08-13.**
 
 Scope split: [`PLAN-AUTHORING.md`](PLAN-AUTHORING.md) owns what a finished
 case must contain. This document owns making the **write → run → check loop
@@ -76,7 +76,7 @@ refused.
 
 ---
 
-## 2. `brief` — push the floor into context
+## 2. `brief` — push the floor into context — **implemented 2026-08-13** (landed at 60 lines, the example being nearly half; the ~50 was the aspiration, the example earning its lines is the point)
 
 ### The problem
 
