@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "enloop",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Set up an app repo for test authoring, write manual test cases from inside it, triage the runs that come back, and add the test selectors that make them fast to execute \u2014 routes, labels and selectors derived from source, never invented.",
   "homepage": "https://enloop.md",
   "author": {

@@ -11,6 +11,7 @@
  *   node enloop-case.mjs validate <case.md> [--project <name>] [--findings-only]
  *   node enloop-case.mjs write <case.md> --data-dir <folder>   validate, then land it
  *                        [--project <name>] [--case <id>] [--suite <suiteId>]
+ *   node enloop-case.mjs brief [--example]             the floor: a clean minimal case + the rules
  *   node enloop-case.mjs data-folder [--want <path>]   where this repo's cases go
  *   node enloop-case.mjs verify <data folder> <caseId> did the case land right
  *   node enloop-case.mjs rules <data folder> <project> this project's authoring rules
@@ -318,6 +319,88 @@ switch (command) {
   }
 
   /**
+   * The floor, pushed into context.
+   *
+   * The skills are pointers by design — the grammar, the contract and the
+   * procedure live in files a session is told to read. A capable model
+   * follows the pointers; a weak one writes from whatever is already in
+   * front of it, which is how a case with no `# Steps` heading happens.
+   * `brief` makes "whatever is in front of it" sufficient: one command
+   * prints a minimal case that parses clean plus the rules that bind every
+   * step. `--example` prints only the case, so a test can pipe it into
+   * `validate` and fail the day it drifts from the grammar.
+   */
+  case "brief": {
+    const example = `# Example: Save a widget
+@version ${CURRENT_FORMAT_VERSION}
+@project Example
+
+Verifies the widget save path — and the shape of a minimal case.
+
+# Variables
+
+## BASE_URL
+The deployment under test — whichever one you have open.
+Generator: page-origin
+Match: *.example.test
+Default: https://staging.example.test
+
+# Prerequisites
+- Open %BASE_URL%/admin/widgets
+- Logged in as qa.bot@example.test — password: vault item \`staging QA\`
+
+# Steps
+
+## Save the widget
+Where: %BASE_URL%/admin/widgets
+Kind: quick
+Selector: [data-testid="save-widget"]
+Put "**Blue widget**" in the \`Name\` field and click \`Save\`.
+
+### Expected
+- A \`Saved\` toast appears.
+- The table lists \`Blue widget\`.`;
+
+    if (rest.includes("--example")) {
+      console.log(example);
+      break;
+    }
+    console.log(`Enloop case brief — format ${CURRENT_FORMAT_VERSION}
+
+A case is one Markdown file. The minimal valid shape, whole:
+
+${example}
+
+The hard rules — the step contract in one breath:
+
+  1   One step = one action = one verdict. No "then" in instructions.
+  2   Every place is an address: %BASE_URL%/route in Where:, prerequisites
+      and links. Declare BASE_URL in every case, generator plus default.
+  2d  Say who the tester is: account, role, and where the credential lives
+      — a place to look, never a person to ask.
+  3   Every UI step carries a Selector: read from this repo's source.
+      Never invented, never a structural path.
+  4   ### Expected is observable, binary bullets. Rationale goes to ### Note.
+  6   Every value is resolved before the run: a Default:, a Generator:, or
+      exact instructions for obtaining it. Values to type as "**value**",
+      labels to find in \`backticks\`.
+  7   No conditionals inside a step — a condition becomes its own step.
+  8   Clean up what the run leaves behind, or say why not in a ### Note.
+
+Every route, label and selector comes from source read in THIS session.
+
+Iterate, then land — nothing reaches the folder any other way:
+
+  node enloop-case.mjs validate <file> --findings-only
+  node enloop-case.mjs write <file> --data-dir <folder> --project "<name>"
+
+The full grammar:  references/grammar.md, beside this validator
+The contract:      references/step-contract.md
+The procedure:     references/authoring.md — binding, brief or no brief`);
+    break;
+  }
+
+  /**
    * Which folder this repo's cases belong in, and which level of it a path
    * named.
    *
@@ -505,6 +588,7 @@ switch (command) {
       "usage:\n" +
         "  enloop-case.mjs validate <case.md> [--project <name>] [--findings-only]\n" +
         "  enloop-case.mjs write <case.md> --data-dir <folder> [--project <name>] [--case <id>] [--suite <suiteId>]\n" +
+        "  enloop-case.mjs brief [--example]\n" +
         "  enloop-case.mjs data-folder [--want <path>]\n" +
         "  enloop-case.mjs verify <data folder> <caseId>\n" +
         '  enloop-case.mjs rules <data folder> "<project>"\n' +

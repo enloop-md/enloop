@@ -29,6 +29,18 @@ Three things, and nothing else:
 Keep variables to what the path cannot run without. A quick case that stops
 to ask for five values is not quick.
 
+## First, print the brief
+
+```bash
+node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" brief
+```
+
+(`$ENLOOP_PLUGIN` is the installed plugin root, two levels above this
+skill's folder.) It prints a minimal case that parses clean and the hard
+rules — the floor under everything below, pushed into context rather than
+waiting to be read. It does not replace the procedure; it is what remains
+standing if everything else gets skipped.
+
 ## Then follow the procedure
 
 Read `../../references/authoring.md` — the plugin's `references/` folder,
