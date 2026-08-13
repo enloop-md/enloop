@@ -1,6 +1,6 @@
 # Enloop on any model — the model-proofing plan
 
-Status: **nothing built. Written 2026-08-13.**
+Status: **item 1 built (2026-08-13); 2–4 outstanding. Written 2026-08-13.**
 
 Scope split: [`PLAN-AUTHORING.md`](PLAN-AUTHORING.md) owns what a finished
 case must contain. This document owns making the **write → run → check loop
@@ -20,7 +20,7 @@ Four items, ordered by enforcement strength. One commit per item.
 
 ---
 
-## 1. `write` — the one road into the folder
+## 1. `write` — the one road into the folder — **implemented 2026-08-13**
 
 ### The problem
 

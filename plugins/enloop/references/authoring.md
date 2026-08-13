@@ -318,43 +318,29 @@ only the items no tool can settle — the mechanical half is what you just
 ran, so do not re-check those by hand. Fix what it catches and re-validate
 with `--findings-only`. Do not rationalise a hit.
 
-## 10. Write the files
+## 10. Land the case
 
-`$DATA_DIR` is what you resolved in step 1. The `test-cases/` segment is
-not optional — it is where `FsaDataStore` looks, and a case written beside
-it instead of inside it will not appear in the Library:
-
-```
-$DATA_DIR/test-cases/<id>/meta.json          {"archived": false}
-$DATA_DIR/test-cases/<id>/versions/v1.md     the validated Markdown
-```
-
-Then confirm it landed where the extension looks. This is the only thing
-standing between a misplaced file and a user staring at an empty Library:
+One command, and it is the only way a case reaches the folder:
 
 ```bash
-node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" verify "$DATA_DIR" "<caseId>"
+node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" write <scratch file> --data-dir "$DATA_DIR" --project "<project name>"
 ```
 
-`<id>` comes from the same code the extension uses — ask for it rather than
-building it by hand:
+It validates again and writes **nothing** on errors. On success it derives
+the id, creates `test-cases/<id>/` with `meta.json` and `versions/v1.md`
+where `FsaDataStore` reads, prints the absolute path it wrote, and repeats
+the `cold run` line for your report. `--suite <suiteId>` lands the case
+inside an existing suite instead.
 
-```bash
-node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" id "<the case title>"
-```
+Revising an existing case: add `--case <id>` and it writes
+`versions/v<n+1>.md` beside the existing versions — put a `Change note:`
+line under the title describing the delta. Previous versions are never
+edited; the history is the audit trail.
 
-(For the record, it is the title lowercased with every non-alphanumeric run
-replaced by `-`, trimmed, cut to 40 characters, then `-` and 8 hex
-characters. A hand-built id that differs in the slug still works; one that
-differs in *shape* is a case the store may not find.)
-
-Placeholders stay literal in the stored file — `%NAME%` is substituted per
-run, not at authoring time.
-
-If you are revising an existing case rather than creating one, write
-`versions/v<n+1>.md` alongside the existing versions and put a
-`Change note:` line under the title describing the delta. Never edit a
-previous version in place; the version history is the audit trail.
+**Never build the layout by hand.** The id shape, the `test-cases/` level
+and `meta.json` are this command's job, and a case assembled manually is
+how files land where no Library looks. Placeholders stay literal in the
+stored file — `%NAME%` is substituted per run, not at authoring time.
 
 ## 11. Report
 

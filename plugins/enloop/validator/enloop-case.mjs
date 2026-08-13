@@ -9,6 +9,8 @@
  * and this is the command the authoring skills run:
  *
  *   node enloop-case.mjs validate <case.md> [--project <name>] [--findings-only]
+ *   node enloop-case.mjs write <case.md> --data-dir <folder>   validate, then land it
+ *                        [--project <name>] [--case <id>] [--suite <suiteId>]
  *   node enloop-case.mjs data-folder [--want <path>]   where this repo's cases go
  *   node enloop-case.mjs verify <data folder> <caseId> did the case land right
  *   node enloop-case.mjs rules <data folder> <project> this project's authoring rules
@@ -25,7 +27,7 @@
  * single authoring session, and gets followed approximately. A command costs
  * its output, once, and does the same thing every time.
  */
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { lintCase, newTestCaseId, CURRENT_FORMAT_VERSION } from "./lib.mjs";
@@ -65,6 +67,38 @@ function show(label, findings) {
     const at = f.at ? ` [${f.at}]` : "";
     console.log(`  (rule ${f.rule})${at} ${f.message}`);
   }
+}
+
+/** The cold-run readout, one line — printed by `validate` and repeated by
+ * `write` so the landing report carries it without a second run. */
+function coldLine(cold) {
+  return (
+    `cold run    ${cold.navigableSteps}/${cold.uiSteps} steps one-click · ` +
+    `asks ${cold.asks.length} value${cold.asks.length === 1 ? "" : "s"} before start` +
+    `${cold.asks.length ? ` (${cold.asks.join(", ")})` : ""} · ` +
+    `unresolved: ${cold.unresolved.length ? cold.unresolved.join(", ") : "none"}`
+  );
+}
+
+/** Which level of the layout `dir` names — shared by `data-folder`, which
+ * reports it, and `write`, which corrects it before touching disk. */
+function levelOf(dir) {
+  const d = path.resolve(dir).replace(/\/+$/, "");
+  if (["test-cases", "runs", "free-runs"].some((sub) => isDir(path.join(d, sub)))) {
+    return { dir: d, state: "data" };
+  }
+  const parent = path.dirname(d);
+  if (isDir(path.join(parent, "runs")) || isDir(path.join(parent, "free-runs"))) {
+    return { dir: parent, state: "deep" };
+  }
+  // A fresh setup with cases written but nothing yet run has no `runs/`
+  // sibling to detect. The giveaway is `<caseId>/versions/` children —
+  // meaning this *is* `test-cases`, not the folder above it.
+  if (entries(d).some((e) => isDir(path.join(d, e, "versions")))) {
+    return { dir: parent, state: "deep" };
+  }
+  if (entries(d).length === 0) return { dir: d, state: "empty" };
+  return { dir: d, state: "unrecognised" };
 }
 
 switch (command) {
@@ -130,13 +164,7 @@ switch (command) {
     // tab can click, and what the case will ask them for first. Printed even
     // with --findings-only — a fix that costs a one-click step should show up
     // in the line, not slip past it.
-    const { cold } = result;
-    console.log(
-      `cold run    ${cold.navigableSteps}/${cold.uiSteps} steps one-click · ` +
-        `asks ${cold.asks.length} value${cold.asks.length === 1 ? "" : "s"} before start` +
-        `${cold.asks.length ? ` (${cold.asks.join(", ")})` : ""} · ` +
-        `unresolved: ${cold.unresolved.length ? cold.unresolved.join(", ") : "none"}`,
-    );
+    console.log(coldLine(result.cold));
 
     if (!findingsOnly) {
       if (doc.prerequisites.length > 0) {
@@ -170,6 +198,126 @@ switch (command) {
   }
 
   /**
+   * Validate, then land — the only road into the folder.
+   *
+   * Landing a case used to be five model-sequenced steps: resolve the
+   * folder level, derive the id, make the directories, write `meta.json`,
+   * write the version file. Every one was a separate chance to skip or
+   * improvise, and the layout was taught in prose precisely so it could be
+   * hand-built wrong. This command owns the whole of it, writes nothing
+   * when validation errors, and holds on any agent — including ones with
+   * no hook to catch a stray Write.
+   */
+  case "write": {
+    let file;
+    const VALUED = new Set(["--data-dir", "--project", "--case", "--suite"]);
+    for (let i = 0; i < rest.length && !file; i++) {
+      if (rest[i].startsWith("--")) {
+        if (VALUED.has(rest[i])) i++;
+        continue;
+      }
+      file = rest[i];
+    }
+    const dataDirArg = flag("data-dir");
+    if (!file || !dataDirArg) {
+      die(
+        "usage: enloop-case.mjs write <case.md> --data-dir <folder> [--project <name>] [--case <id>] [--suite <suiteId>]",
+      );
+    }
+    const intoCase = flag("case");
+    const intoSuite = flag("suite");
+
+    let raw;
+    try {
+      raw = readFileSync(file, "utf8");
+    } catch (e) {
+      die(`Cannot read ${file}: ${e.message}`);
+    }
+
+    let result;
+    try {
+      result = lintCase(raw, { expectProject: flag("project") });
+    } catch (e) {
+      console.error(`Cannot parse ${file}: ${e.message}`);
+      console.error("Nothing was written.");
+      process.exit(1);
+    }
+    show("ERRORS — nothing was written; fix these and re-run", result.errors);
+    show("WARNINGS — you decide; each one is a judgement the contract leaves open", result.warnings);
+    if (!result.ok) process.exit(1);
+
+    if (!isDir(dataDirArg)) {
+      console.error(
+        `REFUSED  ${path.resolve(dataDirArg)} does not exist — resolve it with data-folder first. Nothing was written.`,
+      );
+      process.exit(1);
+    }
+    const resolved = levelOf(dataDirArg);
+    if (resolved.state === "unrecognised") {
+      console.error(
+        `REFUSED  ${resolved.dir} has no Enloop layout in it — probably the wrong path. Nothing was written.`,
+      );
+      process.exit(1);
+    }
+    if (resolved.state === "deep") {
+      console.log(`note     path pointed one level too deep; corrected to ${resolved.dir}`);
+    }
+    const casesRoot = path.join(resolved.dir, "test-cases");
+    mkdirSync(casesRoot, { recursive: true });
+
+    let versionFile;
+    let landed;
+    if (intoCase) {
+      // The case may sit at the top level or inside a suite.
+      const candidates = [
+        path.join(casesRoot, intoCase),
+        ...entries(casesRoot).map((e) => path.join(casesRoot, e, intoCase)),
+      ];
+      const caseDir = candidates.find((c) => isDir(path.join(c, "versions")));
+      if (!caseDir) {
+        console.error(`REFUSED  no case ${intoCase} under ${casesRoot}. Nothing was written.`);
+        process.exit(1);
+      }
+      const numbers = entries(path.join(caseDir, "versions"))
+        .map((f) => /^v(\d+)\.md$/.exec(f)?.[1])
+        .filter(Boolean)
+        .map(Number);
+      const next = (numbers.length ? Math.max(...numbers) : 0) + 1;
+      versionFile = path.join(caseDir, "versions", `v${next}.md`);
+      landed = `v${next} of ${intoCase}`;
+    } else {
+      let parent = casesRoot;
+      if (intoSuite) {
+        parent = path.join(casesRoot, intoSuite);
+        if (!isDir(parent) || entries(parent).every((e) => e !== "suite.md")) {
+          console.error(`REFUSED  ${parent} is not a suite (no suite.md). Nothing was written.`);
+          process.exit(1);
+        }
+      }
+      const id = newTestCaseId(result.doc.title);
+      const caseDir = path.join(parent, id);
+      mkdirSync(path.join(caseDir, "versions"), { recursive: true });
+      const metaFile = path.join(caseDir, "meta.json");
+      if (!entries(caseDir).includes("meta.json")) {
+        writeFileSync(metaFile, `${JSON.stringify({ archived: false }, null, 2)}\n`, "utf8");
+      }
+      versionFile = path.join(caseDir, "versions", "v1.md");
+      landed = id;
+    }
+    if (isDir(versionFile) || entries(path.dirname(versionFile)).includes(path.basename(versionFile))) {
+      console.error(`REFUSED  ${versionFile} already exists. Nothing was written.`);
+      process.exit(1);
+    }
+    writeFileSync(versionFile, raw, "utf8");
+
+    console.log(`WROTE    ${versionFile}`);
+    console.log(`landed   ${landed}`);
+    console.log(coldLine(result.cold));
+    console.log("It appears in the Library on the panel's next refresh (⟳).");
+    process.exit(0);
+  }
+
+  /**
    * Which folder this repo's cases belong in, and which level of it a path
    * named.
    *
@@ -196,26 +344,6 @@ switch (command) {
       // Not a git repo. The cwd is the best guess available.
     }
 
-    /** Which level of the layout does `dir` name? */
-    const level = (dir) => {
-      const d = path.resolve(dir).replace(/\/+$/, "");
-      if (["test-cases", "runs", "free-runs"].some((sub) => isDir(path.join(d, sub)))) {
-        return { dir: d, state: "data" };
-      }
-      const parent = path.dirname(d);
-      if (isDir(path.join(parent, "runs")) || isDir(path.join(parent, "free-runs"))) {
-        return { dir: parent, state: "deep" };
-      }
-      // A fresh setup with cases written but nothing yet run has no `runs/`
-      // sibling to detect. The giveaway is `<caseId>/versions/` children —
-      // meaning this *is* `test-cases`, not the folder above it.
-      if (entries(d).some((e) => isDir(path.join(d, e, "versions")))) {
-        return { dir: parent, state: "deep" };
-      }
-      if (entries(d).length === 0) return { dir: d, state: "empty" };
-      return { dir: d, state: "unrecognised" };
-    };
-
     const cases = (dataDir) =>
       entries(path.join(dataDir, "test-cases")).filter((e) =>
         isDir(path.join(dataDir, "test-cases", e)),
@@ -241,7 +369,7 @@ switch (command) {
         console.log(`NONE — ${path.resolve(want)} does not exist. Confirm the path before creating it.`);
         process.exit(1);
       }
-      const resolved = level(want);
+      const resolved = levelOf(want);
       console.log(`RESOLVED ${resolved.dir}`);
       console.log(describe({ ...resolved, origin: "named in the request" }));
       console.log(`  write   ${path.join(resolved.dir, "test-cases", "<caseId>", "versions", "v1.md")}`);
@@ -254,7 +382,7 @@ switch (command) {
     if (envValue && !isDir(envValue)) {
       console.log(`$${envName} is set to ${envValue}, which is not a directory.`);
     } else if (envValue) {
-      candidates.push({ ...level(envValue), origin: `$${envName}` });
+      candidates.push({ ...levelOf(envValue), origin: `$${envName}` });
     }
 
     // A folder inside the repo is the shape to prefer when it exists: cases
@@ -263,7 +391,7 @@ switch (command) {
     for (const name of ["enloop", "test-cases", ".enloop"]) {
       const dir = path.join(root, name);
       if (!isDir(dir)) continue;
-      const found = level(dir);
+      const found = levelOf(dir);
       if (found.state === "unrecognised" || found.state === "empty") continue;
       if (candidates.some((c) => c.dir === found.dir)) continue;
       candidates.push({ ...found, origin: `in-repo folder (${path.relative(root, dir) || name}/)` });
@@ -376,6 +504,7 @@ switch (command) {
     die(
       "usage:\n" +
         "  enloop-case.mjs validate <case.md> [--project <name>] [--findings-only]\n" +
+        "  enloop-case.mjs write <case.md> --data-dir <folder> [--project <name>] [--case <id>] [--suite <suiteId>]\n" +
         "  enloop-case.mjs data-folder [--want <path>]\n" +
         "  enloop-case.mjs verify <data folder> <caseId>\n" +
         '  enloop-case.mjs rules <data folder> "<project>"\n' +
