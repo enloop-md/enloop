@@ -1,6 +1,6 @@
 # Enloop on any model — the model-proofing plan
 
-Status: **items 1–2 built (2026-08-13); 3–4 outstanding. Written 2026-08-13.**
+Status: **items 1–3 built (2026-08-13); 4 outstanding. Written 2026-08-13.**
 
 Scope split: [`PLAN-AUTHORING.md`](PLAN-AUTHORING.md) owns what a finished
 case must contain. This document owns making the **write → run → check loop
@@ -118,7 +118,7 @@ second copy of the docs.
 
 ---
 
-## 3. Say which models the skills want
+## 3. Say which models the skills want — **implemented 2026-08-13**
 
 ### The problem
 

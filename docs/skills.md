@@ -25,6 +25,20 @@ and produces demo cases exercising the grammar itself. It is intentionally
 its TypeScript build, and the extension build to verify what it produces.
 Copying it into another project gives you a skill whose every path is wrong.
 
+## Which model to run them on
+
+The authoring skills — **quick** and **full** — read a codebase and follow a
+multi-file procedure, and they assume a **Sonnet-class model or better**. On
+a smaller model, expect the deterministic guards to hold the shape (the
+guard hook and the `write` command refuse anything that does not parse, and
+`brief` puts a valid skeleton in front of every session) — but expect
+invented routes and selectors to surface only when a run fails and
+**check** triages them, because no tool can verify that a model actually
+read the source. A config pinned to a small model for cost is exactly the
+setup this warning is for. **check**, **setup** and **instrument** tolerate
+smaller models better; their inputs are narrower and their outputs are
+checked by the same validator.
+
 ## What the skills need to know
 
 Two values, both optional, wherever your agent reads environment from — see
