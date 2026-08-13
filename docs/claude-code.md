@@ -56,6 +56,10 @@ All four carry `disable-model-invocation: true`: they edit repos and write
 case files, so they run when you ask rather than when Claude infers you might
 have wanted them.
 
+The authoring skills want a Sonnet-class model or better — a config pinned
+to a smaller one for cost trades authoring quality for it; see
+[which model to run them on](skills.md#which-model-to-run-them-on).
+
 ## The guard hook
 
 The plugin installs one hook: after every `Write` or `Edit` of a

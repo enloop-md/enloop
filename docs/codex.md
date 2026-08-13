@@ -41,6 +41,11 @@ All four set `allow_implicit_invocation: false` in their `agents/openai.yaml`
 repos and write case files, so they run when you ask and not when Codex
 guesses that you meant them.
 
+The authoring skills want a capable model — and under Codex the `write`
+command is the only shape gate, since there is no hook mechanism to catch a
+stray file write; see
+[which model to run them on](skills.md#which-model-to-run-them-on).
+
 ### The bare-name caveat
 
 Codex does not yet prefix a plugin's skills with the plugin name
