@@ -60,11 +60,15 @@ The authoring skills want a Sonnet-class model or better — a config pinned
 to a smaller one for cost trades authoring quality for it; see
 [which model to run them on](skills.md#which-model-to-run-them-on).
 
-## The guard hook
+## The guard hooks
 
-The plugin installs one hook: after every `Write` or `Edit` of a
+The plugin installs two hooks. After every `Write` or `Edit` of a
 `versions/v<n>.md` file, the real parser checks the result, and any errors
-are fed straight back to the model that wrote it. The authoring skills
+are fed straight back to the model that wrote it. And a bare
+`/enloop:quick` or `/enloop:full` — Enter pressed on an autocomplete, no
+scope — injects a demand to derive the likeliest scope from git and ask a
+one-keystroke closed question before doing anything, so an empty
+invocation costs a confirmation instead of a guessed case. The authoring skills
 already end by validating; the hook is for the session that skips the
 procedure — a weaker model, a plain "write me a test" that never invoked
 the skill — which otherwise leaves a file the extension cannot load.

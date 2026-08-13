@@ -12,8 +12,23 @@ it fails, and whatever has to be put back afterwards. This is the case that
 outlives the branch it was written for.
 
 $ARGUMENTS is the scope: a ticket id, a branch, a feature name, or a
-free-text description. If it is empty, ask what to cover before doing
-anything else.
+free-text description.
+
+**If it is empty, it was probably an autocomplete sent too soon** — Enter
+pressed on `/enloop:full` while thinking of the completion. Do not stop
+at an open question, and never proceed on an empty scope. Derive the
+likeliest scope first:
+
+```bash
+git rev-parse --abbrev-ref HEAD && git log --oneline -3 && git status --porcelain | head -5
+```
+
+On a feature branch, the likeliest scope is that branch's diff against the
+default branch; on the default branch, the uncommitted changes when there
+are any, else the last commit. Ask one closed question naming it — *"Write
+the full case for `feat/coupon-banner` ('Add coupon banner', 3 commits)?
+Yes — or name a ticket, branch or feature instead."* — and wait for the
+answer. A yes costs one keystroke; a guessed scope costs a whole case.
 
 ## Check for a quick case first — this is the important one
 
