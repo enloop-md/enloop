@@ -33,19 +33,56 @@ Enloop is a side panel that runs manual and automated test cases, and a set of
 agent skills — for Claude Code and Codex — that write those cases from your
 app's own source.
 
-- Cases are plain Markdown in a folder you pick. No server, no account,
-  nothing uploaded. They are diffable files you can commit next to the code
-  they test.
-- Run a case step by step: open the screen it names, flash the element it
-  points at, type the values it quotes, and let scripted steps decide their
-  own result.
-- Mark what you find as a bug, a feature request or a docs gap. The run
-  writes a report and a feedback file addressed to whatever built the
-  feature.
-- Share a case as a link, a self-contained HTML page, or Markdown — with or
-  without the machinery a manual tester does not need.
+WHAT THE PANEL DOES
 
-Open source, MIT licensed: https://github.com/enloop-md/enloop
+- A test case is one Markdown file in a folder you pick. No server, no
+  account, nothing uploaded — diffable files you commit next to the code they
+  test.
+- Run a case step by step: Go opens the screen a step names, Highlight
+  scrolls to the element it points at and flashes it, quoted values type
+  themselves into the page, and scripted steps run in the page and decide
+  their own result.
+- One case, two depths: steps marked as the core path make a two-minute
+  Quick run of the same case a Full run covers completely — written once,
+  never duplicated.
+- Values resolve when the run starts, not when the case was written: a
+  BASE_URL follows whichever deployment you have open, can be pinned to a
+  domain pattern so a random tab is refused, and falls back to the
+  environment the case declares.
+- Optionally capture what the page said during the run — console errors and
+  failed requests land in the report beside the step where they happened.
+- Every run freezes the exact case it executed and writes a readable report,
+  plus a feedback file where each comment is addressed to whoever it is
+  for: developer, product, test writer, docs, ops.
+- Share a case as a link (the case travels inside the URL — still nothing
+  uploaded), as a self-contained HTML page anyone can open with no install,
+  or as plain Markdown.
+
+WHAT THE SKILLS DO
+
+The same repo ships agent skills for Claude Code and Codex that close the
+loop around the panel:
+
+- setup prepares an app repo once: the project name, the base URL cases
+  default to, and the test-selector convention, so new UI arrives already
+  instrumented.
+- quick writes the two-minute happy-path case for the branch you are on;
+  full extends it into the complete article — edge cases, error states,
+  cleanup. Every route, label and selector is read from your app's source,
+  and the case is validated with the real parser before it lands.
+- check triages a finished run back in the repo: for every failure it
+  decides — app bug (with file and line), defect in the case itself (fixed
+  on the spot as a new version), or environment — and promotes standing
+  feedback into project rules every future case obeys.
+- instrument adds missing test handles to your code, following the
+  convention your repo already uses.
+
+Cases written by the skills meet a cold-runner bar: someone who has never
+seen the system can click through — every address one click away, every
+value prepared, zero questions before the run starts.
+
+Open source, MIT licensed. The extension, the parser, the online viewer and
+the skills are one repo: https://github.com/enloop-md/enloop
 ```
 
 ## Permission justifications

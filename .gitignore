@@ -1,6 +1,8 @@
 node_modules/
 dist/
 dist-*/
+# Web Store upload artifacts, built from dist/ by `zip` — never source.
+/enloop-extension-*.zip
 .DS_Store
 *.log
 
