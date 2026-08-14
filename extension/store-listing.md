@@ -90,6 +90,15 @@ the skills are one repo: https://github.com/enloop-md/enloop
 Everything the store's review form requires, paste-ready, matching what the
 code actually does.
 
+**Privacy policy URL** (the listing's privacy-policy field):
+
+```
+https://enloop-md.github.io/enloop/privacy.html
+```
+
+The canonical text is `PRIVACY.md` at the repository root; the served page
+is `viewer/public/privacy.html`. Keep the two in step.
+
 ### Single purpose description
 
 ```

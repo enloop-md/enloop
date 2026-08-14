@@ -1,0 +1,81 @@
+<!doctype html>
+<!-- The served copy of /PRIVACY.md at the repository root — that file is
+     the canonical policy; keep the two in step. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Enloop privacy policy</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0 auto; padding: 48px 20px 96px; max-width: 68ch;
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #1b2430; background: #fafbfc;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e3e9ef; background: #10151b; }
+    a { color: #7dd3fc; }
+  }
+  h1 { font-size: 1.7rem; line-height: 1.2; margin: 0 0 8px; }
+  h2 { font-size: 1.15rem; margin: 28px 0 8px; }
+  p, li { margin: 0 0 12px; }
+  ul { padding-left: 1.4em; }
+  a { color: #0369a1; }
+  .meta { color: #5b6673; font-size: 0.85rem; margin-bottom: 24px; }
+  @media (prefers-color-scheme: dark) { .meta { color: #8d99a6; } }
+</style>
+</head>
+<body>
+<h1>Enloop privacy policy</h1>
+<p class="meta">Effective 2026-08-14 · the canonical, history-tracked copy is
+<a href="https://github.com/enloop-md/enloop/blob/master/PRIVACY.md">PRIVACY.md in the repository</a></p>
+
+<h2>The short version</h2>
+<p>Enloop has no server and no accounts. It collects nothing, transmits
+nothing, and stores everything on your machine, in places you choose.</p>
+
+<h2>What the extension stores, and where</h2>
+<ul>
+  <li><strong>Test cases, runs, reports and feedback files</strong> are plain
+  files in a local folder you connect through your browser's File System
+  Access picker. They never leave that folder unless you move them.</li>
+  <li><strong>Panel state</strong> — which screen was open, your capture
+  preferences — lives in the browser's extension storage on your machine.</li>
+  <li><strong>Site access</strong> is granted by you, per origin, at the
+  moment a step first needs it, and can be revoked at any time in Chrome's
+  extension settings.</li>
+</ul>
+
+<h2>What the extension can read</h2>
+<p>On sites you have granted access to, and only while you run a case there,
+the extension acts on the page: it highlights elements, inserts values you
+chose, and executes a case's automated steps. If you switch capture on for a
+run, the page's console output and request log are recorded <strong>into the
+local run files</strong> — those may contain data shown by the page, and they
+stay on your machine under your control.</p>
+
+<h2>What leaves your machine</h2>
+<p>Nothing, to us — Enloop's developers operate no backend and receive no
+data, no telemetry, no analytics, no crash reports. Sharing is always your
+own action: a share link carries the case <em>inside the URL</em> (the online
+viewer renders it in your browser; the case text in the link's fragment is
+not sent to the hosting server), a downloaded HTML page is a local file, and
+anything you commit to a repository goes where you point it.</p>
+
+<h2>The agent skills</h2>
+<p>The Claude Code and Codex skills run inside your own coding agent, under
+your account with that provider, subject to that provider's terms. Enloop
+adds no collection there either: the skills read your repository and write
+case files into your local data folder.</p>
+
+<h2>Changes</h2>
+<p>Changes to this policy are commits to the public repository — diffable,
+dated, and attributable, like everything else there.</p>
+
+<h2>Contact</h2>
+<p>Questions or concerns: open an issue at
+<a href="https://github.com/enloop-md/enloop/issues">github.com/enloop-md/enloop/issues</a>
+or write to <a href="mailto:ryabenko.sergey@gmail.com">ryabenko.sergey@gmail.com</a>.</p>
+</body>
+</html>
