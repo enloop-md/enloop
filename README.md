@@ -13,6 +13,12 @@
   chore into a seamless flow.
 </p>
 
+<p align="center">
+  <a href="https://chromewebstore.google.com/detail/enloopmd-managing-human-a/fnpjeaabeckcihomnmeoapclokikanod"><strong>Install from the Chrome Web Store</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://enloop-md.github.io/enloop/">Open the viewer</a>
+</p>
+
 # Enloop
 
 A Chrome side-panel extension for running manual and automated test cases,
@@ -87,7 +93,8 @@ no database, no account.
 
 - **[The extension](docs/extension.md)** runs cases: step by step, marking
   pass/fail, executing automated steps in the page, capturing notes, and
-  writing a run report.
+  writing a run report. Install it from the
+  [Chrome Web Store](https://chromewebstore.google.com/detail/enloopmd-managing-human-a/fnpjeaabeckcihomnmeoapclokikanod).
 - **[The viewer](docs/extension.md#the-viewer)** shares them:
   <https://enloop-md.github.io/enloop/>. Send anyone a link and they read the
   case in a browser — steps to tick off, values to copy, variables to fill in
@@ -106,6 +113,7 @@ no database, no account.
 
 | I want to… | Go to |
 | --- | --- |
+| Install the extension | [Chrome Web Store](https://chromewebstore.google.com/detail/enloopmd-managing-human-a/fnpjeaabeckcihomnmeoapclokikanod) |
 | Run cases in the browser | [docs/extension.md](docs/extension.md) |
 | Write cases with **Claude Code** | [docs/claude-code.md](docs/claude-code.md) |
 | Write cases with **Codex** | [docs/codex.md](docs/codex.md) |
@@ -113,7 +121,9 @@ no database, no account.
 | Write or read a case by hand | [docs/case-format.md](docs/case-format.md) |
 | Share a case with someone | [the viewer](https://enloop-md.github.io/enloop/) |
 
-The quickest way in: install the extension, connect a folder, and let the
+The quickest way in:
+[install the extension](https://chromewebstore.google.com/detail/enloopmd-managing-human-a/fnpjeaabeckcihomnmeoapclokikanod),
+connect a folder, and let the
 Library load its example case — it runs against a public practice site and
 exercises every control the panel has, so the first thing you do is watch a
 run work rather than author one blind.

@@ -8,9 +8,13 @@ See also — [the case format](case-format.md) for what a case file is, and
 
 ## Install
 
-Enloop is not in the Chrome Web Store. Both paths below install it as an
-**unpacked extension**, which Chrome allows on any profile with Developer mode
-switched on.
+**From the Chrome Web Store** — the normal path:
+[install Enloop](https://chromewebstore.google.com/detail/enloopmd-managing-human-a/fnpjeaabeckcihomnmeoapclokikanod).
+Chrome keeps it updated automatically, and that's the whole install.
+
+The two paths below load it as an **unpacked extension** instead — useful for
+running a specific release or your own build. Chrome allows this on any
+profile with Developer mode switched on.
 
 **A. From a release — no build tools needed.**
 
