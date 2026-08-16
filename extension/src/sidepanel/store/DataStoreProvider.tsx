@@ -7,7 +7,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { DataStore, FreeRun, SuiteSummary, TestCaseMeta } from "@tcm/shared";
+import type {
+  DataStore,
+  EnvironmentsFile,
+  FreeRun,
+  SuiteSummary,
+  TestCaseMeta,
+} from "@tcm/shared";
 import { describeError } from "../../lib/errors.js";
 import { FsaDataStore } from "../../lib/fsa-store.js";
 import {
@@ -201,6 +207,8 @@ export interface WorkspaceValue {
   createTestCaseIn: (storageId: string, body: string, suiteId?: string) => Promise<TestCaseMeta>;
   createSuiteIn: (storageId: string, body: string) => Promise<SuiteSummary>;
   createFreeRunIn: (storageId: string, title: string) => Promise<FreeRun>;
+  getEnvironmentsIn: (storageId: string) => Promise<EnvironmentsFile>;
+  saveEnvironmentsIn: (storageId: string, file: EnvironmentsFile) => Promise<void>;
 }
 
 export function useWorkspace(): WorkspaceValue {
@@ -226,6 +234,14 @@ export function useWorkspace(): WorkspaceValue {
     createFreeRunIn: (storageId, title) => {
       if (!store) throw new Error("No storage connected");
       return store.createFreeRunIn(storageId, title);
+    },
+    getEnvironmentsIn: (storageId) => {
+      if (!store) throw new Error("No storage connected");
+      return store.getEnvironmentsIn(storageId);
+    },
+    saveEnvironmentsIn: (storageId, file) => {
+      if (!store) throw new Error("No storage connected");
+      return store.saveEnvironmentsIn(storageId, file);
     },
   };
 }

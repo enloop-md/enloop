@@ -1,4 +1,5 @@
 import type { CapturedEntry } from "./capture.js";
+import type { EnvironmentsFile } from "./environments.js";
 import type {
   FreeRun,
   FreeRunFile,
@@ -69,6 +70,10 @@ export interface RunStore {
     version: number,
     variableValues?: Record<string, string>,
     tier?: RunTier,
+    /** Display name of the environment that pre-filled the values, recorded
+     * on the run so the report can say where it ran. Absent = no
+     * environment; the values were manual, generated, or defaulted. */
+    environment?: string,
   ): Promise<Run>;
   updateStep(testCaseId: string, runId: string, stepId: string, patch: StepPatch): Promise<Run>;
   /** Run-level fields that are not step state — the tester's comment on the
@@ -106,4 +111,20 @@ export interface FreeRunStore {
   finishFreeRun(id: string): Promise<FreeRun>;
 }
 
-export interface DataStore extends TestCaseStore, RunStore, FreeRunStore {}
+/**
+ * Per-project environments — named value sets a run can pre-fill its
+ * variables from (see `shared/src/environments.ts`). In local mode the
+ * project is the connected folder and the file is `environments.json` at
+ * its root.
+ */
+export interface EnvironmentStore {
+  getEnvironments(): Promise<EnvironmentsFile>;
+  saveEnvironments(file: EnvironmentsFile): Promise<void>;
+  /** The environments of the storage holding this case — identical to
+   * `getEnvironments()` for a single-folder store; a multi-storage wrapper
+   * routes on the id, so the run-setup screen never has to know which
+   * folder a case came from. */
+  getEnvironmentsForCase(testCaseId: string): Promise<EnvironmentsFile>;
+}
+
+export interface DataStore extends TestCaseStore, RunStore, FreeRunStore, EnvironmentStore {}

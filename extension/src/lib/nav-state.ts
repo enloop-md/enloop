@@ -25,7 +25,8 @@ export type Screen =
   | { kind: "run"; testCaseId: string; runId: string }
   | { kind: "freeRun"; freeRunId: string }
   | { kind: "history"; testCaseId?: string }
-  | { kind: "settings" };
+  | { kind: "settings" }
+  | { kind: "environments"; storageId: string };
 
 export const HOME: Screen = { kind: "library" };
 
