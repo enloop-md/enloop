@@ -273,6 +273,16 @@ export function RunScreen({
             quick
           </span>
         )}
+        {/* Visible during the run, not just at setup — "which environment am
+            I on" is the question a tester asks when something looks wrong. */}
+        {run.environment && (
+          <span
+            className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800"
+            title="The environment whose values pre-filled this run"
+          >
+            {run.environment}
+          </span>
+        )}
         <span>
           v{run.testCaseVersion} · {passCount}/{run.steps.length} passed
           {failCount > 0 && <span className="text-red-600"> · {failCount} failed</span>}

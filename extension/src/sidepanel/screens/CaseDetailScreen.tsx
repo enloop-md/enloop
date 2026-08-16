@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  emptyEnvironments,
   generateVariableValue,
   matchesPagePattern,
+  missingEnvironmentValues,
   resolveVariableValues,
   parseCaseDocument,
   renderCasePage,
   renderReadableCase,
+  splitId,
   VARIABLE_GENERATOR_LABELS,
   viewerLink,
   withViewerComment,
+  type EnvironmentsFile,
   type RunTier,
   type TestCaseMeta,
   type TestCaseVariable,
@@ -51,6 +55,9 @@ export function CaseDetailScreen({
   // merged with its suite. Loaded here so starting a run never has to stop
   // and ask — the values are already resolved and on screen.
   const [variables, setVariables] = useState<TestCaseVariable[]>([]);
+  /** True once the run source has been parsed — distinguishes "no variables
+   * declared" from "not looked yet", which the environment restore needs. */
+  const [variablesLoaded, setVariablesLoaded] = useState(false);
   const [runStepCounts, setRunStepCounts] = useState({ total: 0, quick: 0 });
   // Previews only. Nothing here is passed to `createRun` unless the tester
   // typed it: a generated value regenerates at start, so a %TIMESTAMP% is
@@ -62,6 +69,15 @@ export function CaseDetailScreen({
   const [pageRefused, setPageRefused] = useState<Record<string, string>>({});
   const pageUrl = useActivePageUrl();
   const [valuesOpen, setValuesOpen] = useState(false);
+  // This folder's named deployments. A run may pick one to pre-fill its
+  // values, or go without and have them typed — which is also the whole
+  // answer for per-PR domains a service generates (decided 2026-08-16).
+  const [envFile, setEnvFile] = useState<EnvironmentsFile | null>(null);
+  const [selectedEnvId, setSelectedEnvId] = useState<string | null>(null);
+  /** Names the selected environment wrote into `edited`, so switching
+   * environments replaces its own contributions and nothing else. */
+  const [envApplied, setEnvApplied] = useState<ReadonlySet<string>>(new Set());
+  const envRestored = useRef(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   // Asked here rather than left in Settings: whether this run's console is
@@ -69,6 +85,19 @@ export function CaseDetailScreen({
   // only starts from the page's next load — so it has to be decided before the
   // run, not once something interesting has already scrolled past.
   const capture = useCaptureSettings();
+
+  useEffect(() => {
+    let cancelled = false;
+    // Environment trouble must never block a run — a broken
+    // environments.json degrades to "no environments defined".
+    store
+      .getEnvironmentsForCase(testCaseId)
+      .then((f) => !cancelled && setEnvFile(f))
+      .catch(() => !cancelled && setEnvFile(emptyEnvironments()));
+    return () => {
+      cancelled = true;
+    };
+  }, [store, testCaseId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -110,6 +139,7 @@ export function CaseDetailScreen({
         createdAt: new Date().toISOString(),
       });
       setVariables(doc.variables);
+      setVariablesLoaded(true);
       setRunStepCounts({ total: doc.steps.length, quick: doc.steps.filter((s) => s.quick).length });
     })().catch((e) => !cancelled && setError(e));
     return () => {
@@ -148,6 +178,43 @@ export function CaseDetailScreen({
     setPageRefused(refused);
   }, [variables, pageUrl]);
 
+  /** The last choice is remembered per folder — "which deployment am I
+   * testing" rarely changes between runs of cases from the same repo. */
+  const envMemoryKey = `enloop:environment:${splitId(testCaseId).storageId}`;
+
+  function applyEnvironment(envId: string | null) {
+    setSelectedEnvId(envId);
+    if (envId) localStorage.setItem(envMemoryKey, envId);
+    else localStorage.removeItem(envMemoryKey);
+
+    const env = envId ? envFile?.environments.find((e) => e.id === envId) : undefined;
+    const applied = new Set<string>();
+    if (env) {
+      for (const v of variables) {
+        if ((env.values[v.name] ?? "").trim()) applied.add(v.name);
+      }
+    }
+    setEdited((prev) => {
+      const next = { ...prev };
+      // The previous environment's values leave; hand-typed ones stay.
+      for (const name of envApplied) delete next[name];
+      if (env) for (const name of applied) next[name] = env.values[name];
+      return next;
+    });
+    setEnvApplied(applied);
+  }
+
+  // Re-apply the remembered environment once both the environment list and
+  // the declared variables are known — not before, or there is nothing to
+  // pre-fill into.
+  useEffect(() => {
+    if (envRestored.current || !envFile || !variablesLoaded) return;
+    envRestored.current = true;
+    const saved = localStorage.getItem(envMemoryKey);
+    if (saved && envFile.environments.some((e) => e.id === saved)) applyEnvironment(saved);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot restore
+  }, [envFile, variablesLoaded]);
+
   async function startRun(tier: RunTier) {
     if (!meta) return;
     setBusy(true);
@@ -161,7 +228,16 @@ export function CaseDetailScreen({
       // which is also how a `Match:` refusal is overridden.
       const pageUrl = await getActivePageUrl().catch(() => undefined);
       const values = resolveVariableValues(variables, edited, { pageUrl });
-      const run = await store.createRun(testCaseId, meta.currentVersion, values, tier);
+      const environmentName = selectedEnvId
+        ? (envFile?.environments.find((e) => e.id === selectedEnvId)?.name ?? "")
+        : "";
+      const run = await store.createRun(
+        testCaseId,
+        meta.currentVersion,
+        values,
+        tier,
+        environmentName,
+      );
       onRunStarted(run.id);
     } catch (e) {
       setError(e);
@@ -405,6 +481,14 @@ export function CaseDetailScreen({
       </div>
 
       <div className="border-t border-slate-200">
+        {envFile && envFile.environments.length > 0 && (
+          <EnvironmentPicker
+            file={envFile}
+            selectedId={selectedEnvId}
+            appliedCount={envApplied.size}
+            onSelect={applyEnvironment}
+          />
+        )}
         {variables.length > 0 && (
           <RunValues
             variables={variables}
@@ -597,6 +681,60 @@ function ShareMenu({
             </button>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Which deployment this run is against. Selecting one pre-fills the values
+ * below; it locks nothing — every value stays editable, and "No environment"
+ * is always on the list, because some deployments (a per-PR preview whose
+ * domain a service just generated) exist only as a value someone pastes.
+ */
+function EnvironmentPicker({
+  file,
+  selectedId,
+  appliedCount,
+  onSelect,
+}: {
+  file: EnvironmentsFile;
+  selectedId: string | null;
+  appliedCount: number;
+  onSelect: (envId: string | null) => void;
+}) {
+  const selected = selectedId ? file.environments.find((e) => e.id === selectedId) : undefined;
+  const missing = selected ? missingEnvironmentValues(file, selected) : [];
+
+  return (
+    <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-3 py-1.5">
+      <label className="shrink-0 text-[11px] text-slate-500">Environment</label>
+      <select
+        value={selectedId ?? ""}
+        onChange={(e) => onSelect(e.target.value || null)}
+        className="min-w-0 flex-1 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-xs text-slate-700"
+      >
+        <option value="">No environment — values as below</option>
+        {file.environments.map((env) => (
+          <option key={env.id} value={env.id}>
+            {env.name}
+            {missingEnvironmentValues(file, env).length > 0
+              ? ` (${missingEnvironmentValues(file, env).length} empty)`
+              : ""}
+          </option>
+        ))}
+      </select>
+      {selected && (
+        <span
+          className="shrink-0 text-[10px] text-slate-400"
+          title={
+            missing.length > 0
+              ? `No value for ${missing.join(", ")} — those fall back to the case's own defaults.`
+              : undefined
+          }
+        >
+          {appliedCount} filled{missing.length > 0 ? ` · ${missing.length} empty` : ""}
+        </span>
       )}
     </div>
   );

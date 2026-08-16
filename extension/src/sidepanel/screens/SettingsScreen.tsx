@@ -6,7 +6,13 @@ import { useCaptureSettings } from "../useCapture.js";
 import { getBuildInfo } from "../../lib/build-info.js";
 import { relativeTime } from "../../lib/time.js";
 
-export function SettingsScreen({ onBack }: { onBack: () => void }) {
+export function SettingsScreen({
+  onBack,
+  onEnvironments,
+}: {
+  onBack: () => void;
+  onEnvironments: (storageId: string) => void;
+}) {
   const { storages, addStorage, removeStorage, renameStorage, reconnect } = useWorkspace();
   const build = getBuildInfo();
 
@@ -30,6 +36,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
               onRename={(label) => void renameStorage(storage.id, label)}
               onReconnect={() => void reconnect(storage.id)}
               onRemove={() => void removeStorage(storage.id)}
+              onEnvironments={() => onEnvironments(storage.id)}
             />
           ))}
           <button
@@ -115,11 +122,13 @@ function StorageRow({
   onRename,
   onReconnect,
   onRemove,
+  onEnvironments,
 }: {
   storage: { id: string; label: string; folderName: string; permission: string };
   onRename: (label: string) => void;
   onReconnect: () => void;
   onRemove: () => void;
+  onEnvironments: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(storage.label);
@@ -172,6 +181,16 @@ function StorageRow({
         >
           Rename
         </button>
+        {/* Environments belong to the folder, like everything else in it —
+            a repo's staging URL travels with the repo's cases. */}
+        {storage.permission === "granted" && (
+          <button
+            onClick={onEnvironments}
+            className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
+          >
+            Environments
+          </button>
+        )}
         {confirming ? (
           <>
             <button

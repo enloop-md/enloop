@@ -1,6 +1,8 @@
 import {
   buildCaptureDigest,
   buildRunSource,
+  emptyEnvironments,
+  environmentsFileSchema,
   caseBookkeepingSchema,
   countsByStep,
   filterToQuickSteps,
@@ -26,6 +28,7 @@ import {
   type CapturedEntry,
   type CaseBookkeeping,
   type DataStore,
+  type EnvironmentsFile,
   type FreeRun,
   type FreeRunFile,
   type Run,
@@ -67,6 +70,8 @@ const FEEDBACK_FILE = "feedback.md";
 const FREE_RUN_FILE = "free-run.json";
 const NOTES_FILE = "notes.md";
 const SUITE_FILE = "suite.md";
+/** Named value sets for runs — see shared/src/environments.ts. */
+const ENVIRONMENTS_FILE = "environments.json";
 /** What the page printed, as it arrived: one JSON object per line, appended a
  * batch at a time. The machine record — see `shared/src/capture.ts`. */
 const CONSOLE_RECORD_FILE = "console.jsonl";
@@ -211,6 +216,7 @@ function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
     status: runFile.status,
     comment: runFile.comment,
     tier: runFile.tier,
+    environment: runFile.environment,
     consoleInReport: runFile.consoleInReport,
     startedAt: runFile.startedAt,
     finishedAt: runFile.finishedAt,
@@ -495,6 +501,23 @@ export class FsaDataStore implements DataStore {
     return buildRunSource(caseMarkdown, suiteFile?.text ?? null);
   }
 
+  // ---- EnvironmentStore ----
+
+  async getEnvironments(): Promise<EnvironmentsFile> {
+    const file = await tryReadJson(this.root, ENVIRONMENTS_FILE, environmentsFileSchema);
+    return file ?? emptyEnvironments();
+  }
+
+  async saveEnvironments(file: EnvironmentsFile): Promise<void> {
+    await writeJson(this.root, ENVIRONMENTS_FILE, file);
+  }
+
+  /** One folder, one set of environments — the id only matters to the
+   * multi-storage wrapper above this store. */
+  async getEnvironmentsForCase(_testCaseId: string): Promise<EnvironmentsFile> {
+    return this.getEnvironments();
+  }
+
   // ---- RunStore ----
 
   async listRuns(testCaseId?: string): Promise<RunSummary[]> {
@@ -555,6 +578,7 @@ export class FsaDataStore implements DataStore {
     version: number,
     variableValues: Record<string, string> = {},
     tier: RunTier = "full",
+    environment = "",
   ): Promise<Run> {
     const rawMarkdown = await this.getRunSource(testCaseId, version, tier);
     const declared = parseCaseDocument(rawMarkdown, { version, createdAt: nowIso() });
@@ -580,6 +604,7 @@ export class FsaDataStore implements DataStore {
       status: "in_progress",
       comment: "",
       tier,
+      environment,
       consoleInReport: false,
       startedAt: now,
       finishedAt: null,

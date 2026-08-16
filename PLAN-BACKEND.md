@@ -1,6 +1,15 @@
 # Enloop backend — implementation plan
 
-Status: **plan, not yet started.** Written 2026-07-29.
+Status: **phases 0–4 built on branch `backend` (2026-08-16), kept off
+master until the client phases (5–7) are worth landing with it.** That
+branch carries the scaffold, the composeRunSource extraction,
+identity/orgs/tokens, the library API with the TS↔PHP parity harness, and
+runs + the FS importer — with two §4.4 deviations recorded in its plan
+copy (comments replaced notes/tasks; runs carry tier/comment/capture) and
+one §3.4 surprise (the TS parser does not fence-guard; the parity corpus
+pins actual behaviour). **Environments (§17) are no longer deferred: the
+design was revised 2026-08-16 — see the §17 status note — and the local
+mode half is built on master.** Written 2026-07-29.
 
 This document is the execution spec for moving Enloop from a File System
 Access-only Chrome extension to a hosted, multi-user product, without losing
@@ -1247,7 +1256,45 @@ data" flow does not. Needed before this is a real product with real customers.
 
 ---
 
-## 17. Environments (designed, not in this pass)
+## 17. Environments (revised 2026-08-16; local mode built)
+
+Status: **the design below is superseded in three ways, and the local-mode
+half is implemented on master** (`shared/src/environments.ts`,
+`environments.json` per data folder, the Settings editor and run-screen
+picker in the extension, `run.environment` on the run record and report).
+What changed, and why:
+
+1. **Generic variables, not host keys.** 17.1's `environment_schema_host`
+   typed every key as a URL. In practice an environment is a set of
+   *variables* — a domain is just the common one — so the schema is: the
+   project declares variable *names* (the contract that keeps environments
+   from drifting apart), each environment supplies values. Backend tables
+   become `environment_variable` (project_id, name, position),
+   `environment` (project_id, slug, name), `environment_value`
+   (environment_id, name, value) — same discipline, no URL typing, no
+   reserved `<KEY>_URL` injection: values pre-fill *declared* case
+   variables by name.
+2. **Pre-fill, never read-only.** 17.2 made injected values uneditable in
+   run setup. Decided the other way: selecting an environment pre-fills the
+   values and they stay editable; the run header and report still name the
+   environment, which was the point of read-only. This is also the whole
+   answer for dynamic deployments (a Shipyard preview domain generated per
+   PR): run with **no environment** and type the value in. Value templates
+   were considered for that case and cut.
+3. **Incomplete environments stay selectable.** A missing value falls back
+   to the case's own default/generator and is flagged in the editor and the
+   picker — the hole is visible at the cheap moment, but does not block a
+   run that never needed that variable.
+
+The run record change (17.3) shipped: `run.environment` (denormalized name,
+`""` when none) in `run.json`/`runSchema`, an `- Environment:` line in
+`report.md`, and the badge in the run header. When the backend resumes,
+`run` gains `environment_id` (nullable fk) + the denormalized name, and the
+three tables above join Phase 3's migration set; `enloop export`/`import`
+must round-trip `environments.json`.
+
+The original design, kept for the parts still true (the schema-discipline
+argument, local-mode file placement, migration of bare routes):
 
 A project is deployed in several places — local, staging, production — and a
 case should be runnable against any of them without being rewritten. Today a

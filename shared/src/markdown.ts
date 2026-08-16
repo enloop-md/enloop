@@ -820,6 +820,11 @@ export function renderRunReport(
   // does not say which one it was invites "but it passed" about a pass that
   // only ever covered the happy path.
   lines.push(`- Coverage: ${run.tier === "quick" ? "quick (core steps only)" : "full"}`);
+  // "Failed on staging" and "failed on local" are different findings; a
+  // report that cannot tell them apart sends someone debugging the wrong
+  // deployment. Omitted entirely when no environment was chosen — the
+  // values may still have pointed anywhere, and naming none is honest.
+  if (run.environment.trim()) lines.push(`- Environment: ${run.environment.trim()}`);
   lines.push(`- Status: ${run.status}`);
   lines.push(`- Started: ${run.startedAt}`);
   lines.push(`- Finished: ${run.finishedAt ?? "—"}`);

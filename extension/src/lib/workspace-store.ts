@@ -26,6 +26,7 @@ import {
   splitId,
   type CapturedEntry,
   type DataStore,
+  type EnvironmentsFile,
   type FreeRun,
   type FreeRunFile,
   type Run,
@@ -267,6 +268,34 @@ export class WorkspaceStore implements DataStore {
     return store.getRunSource(localId, version, tier);
   }
 
+  // ---- EnvironmentStore ----
+
+  /** Targets the default storage; the run-setup screen uses
+   * `getEnvironmentsForCase` instead, and Settings the `…In` variants. */
+  async getEnvironments(): Promise<EnvironmentsFile> {
+    return this.target().store.getEnvironments();
+  }
+
+  async saveEnvironments(file: EnvironmentsFile): Promise<void> {
+    return this.target().store.saveEnvironments(file);
+  }
+
+  /** Environments live with the case's folder, which routing makes
+   * automatic — a case is offered its own project's deployments, never a
+   * sibling folder's. */
+  async getEnvironmentsForCase(testCaseId: string): Promise<EnvironmentsFile> {
+    const { store, localId } = this.route(testCaseId);
+    return store.getEnvironmentsForCase(localId);
+  }
+
+  async getEnvironmentsIn(storageId: string): Promise<EnvironmentsFile> {
+    return this.child(storageId).getEnvironments();
+  }
+
+  async saveEnvironmentsIn(storageId: string, file: EnvironmentsFile): Promise<void> {
+    return this.child(storageId).saveEnvironments(file);
+  }
+
   // ---- RunStore ----
 
   async listRuns(testCaseId?: string): Promise<RunSummary[]> {
@@ -293,9 +322,13 @@ export class WorkspaceStore implements DataStore {
     version: number,
     variableValues?: Record<string, string>,
     tier?: RunTier,
+    environment?: string,
   ): Promise<Run> {
     const { store, storageId, localId } = this.route(testCaseId);
-    return this.tagRun(storageId, await store.createRun(localId, version, variableValues, tier));
+    return this.tagRun(
+      storageId,
+      await store.createRun(localId, version, variableValues, tier, environment),
+    );
   }
 
   async updateStep(

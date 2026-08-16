@@ -12,6 +12,7 @@ import { FreeRunScreen } from "./screens/FreeRunScreen.js";
 import { SuiteDetailScreen } from "./screens/SuiteDetailScreen.js";
 import { SuiteEditorScreen } from "./screens/SuiteEditorScreen.js";
 import { SettingsScreen } from "./screens/SettingsScreen.js";
+import { EnvironmentsScreen } from "./screens/EnvironmentsScreen.js";
 
 export default function App() {
   return (
@@ -145,6 +146,13 @@ function Shell() {
         />
       );
     case "settings":
-      return <SettingsScreen onBack={pop} />;
+      return (
+        <SettingsScreen
+          onBack={pop}
+          onEnvironments={(storageId) => push({ kind: "environments", storageId })}
+        />
+      );
+    case "environments":
+      return <EnvironmentsScreen storageId={screen.storageId} onBack={pop} />;
   }
 }

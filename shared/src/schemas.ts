@@ -294,6 +294,12 @@ export const runFileSchema = z.object({
   /** Defaulted to `full`: every run recorded before tiers existed executed
    * the whole case, so that is the truthful value for them. */
   tier: runTierSchema.default("full"),
+  /** Name of the environment whose values pre-filled this run, or "" when
+   * the tester ran without one. Denormalized on purpose — the run must
+   * still say where it ran after the environment is renamed or deleted
+   * ("failed on staging" and "failed on local" are different findings).
+   * Defaulted so runs recorded before environments existed still parse. */
+  environment: z.string().default(""),
   /** The tester's decision, at finish, about whether the captured console and
    * network output may be summarized into `report.md` — which is the file an
    * agent reads. Recorded on disk rather than acted on and forgotten, so
@@ -332,6 +338,7 @@ export const runSchema = z.object({
   status: runStatusSchema,
   comment: z.string(),
   tier: runTierSchema,
+  environment: z.string(),
   consoleInReport: z.boolean(),
   startedAt: z.string(),
   finishedAt: z.string().nullable(),
