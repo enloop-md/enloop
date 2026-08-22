@@ -272,7 +272,7 @@ export const CURRENT_FORMAT_VERSION = "0.0.7";
  */
 export function parseCaseDocument(
   raw: string,
-  fallback: { version: number; createdAt: string },
+  fallback: { version: string; createdAt: string },
   opts: { requireSteps?: boolean } = {},
 ): TestCaseVersion {
   const requireSteps = opts.requireSteps ?? true;

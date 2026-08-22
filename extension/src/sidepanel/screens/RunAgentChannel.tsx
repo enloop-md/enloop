@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { AgentCommand, AgentQuestion, CompatResult, Run } from "@tcm/shared";
+import { compareVersionIds, type AgentCommand, type AgentQuestion, type CompatResult, type Run } from "@tcm/shared";
 import { Markdown } from "../../components/Markdown.js";
 import {
   activePageUrl,
@@ -192,10 +192,11 @@ function QuestionCard({
   const waitedMs = Date.now() - Date.parse(question.askedAt);
   const proposed = question.answer?.meta.proposedVersion ?? null;
   // An offer is over once taken (it is in `swaps`) or overtaken (the run
-  // moved to this version or past it some other way).
+  // moved to this version or past it some other way). Version ids compare
+  // by (major, minor), never as strings — "1.2" < "1.10".
   const offerOpen =
     proposed !== null &&
-    run.testCaseVersion < proposed &&
+    compareVersionIds(run.testCaseVersion, proposed) < 0 &&
     !run.swaps.some((s) => s.toVersion === proposed);
 
   return (
@@ -271,7 +272,7 @@ function PatchOffer({
 }: {
   run: Run;
   question: AgentQuestion;
-  toVersion: number;
+  toVersion: string;
   onSwapped: (run: Run) => void;
 }) {
   const store = useReadyStore();

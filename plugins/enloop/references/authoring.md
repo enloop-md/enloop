@@ -333,8 +333,10 @@ where `FsaDataStore` reads, prints the absolute path it wrote, and repeats
 the `cold run` line for your report. `--suite <suiteId>` lands the case
 inside an existing suite instead.
 
-Revising an existing case: add `--case <id>` and it writes
-`versions/v<n+1>.md` beside the existing versions — put a `Change note:`
+Revising an existing case: add `--case <id>` and it writes the next
+major version (`v<n+1>.md`) beside the existing ones — minors like `v3.1`
+are mid-run patches landed by the serve skill's `--patch`, and an authored
+revision always moves past them to the next whole number — put a `Change note:`
 line under the title describing the delta. Previous versions are never
 edited; the history is the audit trail.
 

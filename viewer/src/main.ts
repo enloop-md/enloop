@@ -113,7 +113,7 @@ function fileSlug(title: string): string {
 function parse(markdown: string): TestCaseVersion {
   return parseCaseDocument(
     markdown,
-    { version: 1, createdAt: new Date().toISOString() },
+    { version: "1", createdAt: new Date().toISOString() },
     { requireSteps: false },
   );
 }

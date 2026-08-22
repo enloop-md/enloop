@@ -268,9 +268,13 @@ Two things ride the channel:
 - **Questions.** A tester unsure how to do a step asks from the step itself.
   The serve pass answers from the app's source — the direct answer first,
   the exact click-path after it — and, when the step text itself was the
-  problem, lands a patch as `versions/v<n+1>.md`: same step count, every
-  already-executed step byte-identical — except the asked step itself, which
-  may change whatever its status — with a `Change note:` naming the run. The
+  problem, lands a patch as the next **minor** version — `v3` becomes
+  `v3.1`, another patch `v3.2` — so version history says what happened:
+  minors are mid-run patches, and the whole numbers that `quick`, `full`
+  and `check` land stay authored versions (the next one after `v3.2` is
+  `v4`). A patch keeps the same step count and every already-executed step
+  byte-identical — except the asked step itself, which may change whatever
+  its status — with a `Change note:` naming the run. The
   panel re-verifies that compatibility on its own and only then offers
   "Load v<n+1>" — accepted with one click, the run keeps every recorded
   status, and if the asked step changed after being judged, that one result

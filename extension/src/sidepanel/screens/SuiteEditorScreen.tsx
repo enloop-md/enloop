@@ -41,7 +41,7 @@ export function SuiteEditorScreen({
     try {
       const parsed = parseCaseDocument(
         text,
-        { version: 1, createdAt: new Date().toISOString() },
+        { version: "1", createdAt: new Date().toISOString() },
         { requireSteps: false },
       );
       const stepSummary =

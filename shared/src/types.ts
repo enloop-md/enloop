@@ -129,7 +129,7 @@ export interface TestCaseSummary {
   project: string;
   description: string;
   tags: string[];
-  currentVersion: number;
+  currentVersion: string;
   updatedAt: string;
   archived: boolean;
   /** Set when this case lives inside a suite folder rather than standalone. */
@@ -150,7 +150,7 @@ export interface SuiteSummary {
 }
 
 export interface VersionSummary {
-  version: number;
+  version: string;
   changeNote: string;
   createdAt: string;
   stepCount: number;
@@ -159,7 +159,7 @@ export interface VersionSummary {
 export interface RunSummary {
   id: string;
   testCaseId: string;
-  testCaseVersion: number;
+  testCaseVersion: string;
   testCaseTitle: string;
   status: RunStatus;
   /** Quick and full runs are different evidence; a history that cannot tell

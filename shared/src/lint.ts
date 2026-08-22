@@ -118,10 +118,10 @@ export function lintCase(raw: string, options: { expectProject?: string } = {}):
   const warnings: LintFinding[] = [];
   const createdAt = new Date().toISOString();
 
-  const declared = parseCaseDocument(raw, { version: 1, createdAt });
+  const declared = parseCaseDocument(raw, { version: "1", createdAt });
   const values = resolveVariableValues(declared.variables, {});
   const substituted = substituteVariables(raw, values);
-  const doc = parseCaseDocument(substituted, { version: 1, createdAt });
+  const doc = parseCaseDocument(substituted, { version: "1", createdAt });
 
   // --- the document parsed into something ---------------------------------
 
@@ -405,7 +405,7 @@ export function lintCase(raw: string, options: { expectProject?: string } = {}):
   let quickParses = true;
   if (quickMarked > 0) {
     try {
-      const quickDoc = parseCaseDocument(filterToQuickSteps(substituted), { version: 1, createdAt });
+      const quickDoc = parseCaseDocument(filterToQuickSteps(substituted), { version: "1", createdAt });
       quickParses = quickDoc.steps.length === quickMarked;
       if (!quickParses) {
         errors.push({

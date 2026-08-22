@@ -105,9 +105,9 @@ each one that is not:
 5. Decide whether to patch the case. Patch **only** when the step text
    itself was insufficient — when the next tester would have to ask the same
    question. A patch:
-   - starts from the case's **latest stored** `versions/v<n>.md` — never
-     from the frozen `case.md`, which is substituted and possibly
-     quick-filtered;
+   - starts from the case's **latest stored** version — highest id,
+     minors included (`v3.1` beats `v3`) — never from the frozen
+     `case.md`, which is substituted and possibly quick-filtered;
    - edits only the step(s) the answer clarifies, and only ones the run has
      not judged yet: status `pending` or `running` in `run.json`, an
      untouched extra (`skipped` with null `startedAt` and `finishedAt`),
@@ -131,15 +131,19 @@ each one that is not:
      patch — and if it cannot be both compatible and right, answer without
      a patch;
    - lands via
-     `node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" write <scratch> --data-dir "$DATA_DIR" --case <testCaseId>`.
-     Take the landed number from the `landed v<n>` output line, never from
-     your own count — a concurrent write shifts it.
+     `node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" write <scratch> --data-dir "$DATA_DIR" --case <testCaseId> --patch`.
+     `--patch` is what makes it a **minor** version — `v3` becomes `v3.1`,
+     a second patch `v3.2` — so the folder shows at a glance what was
+     authored (majors) and what was patched mid-run (minors); the next
+     `quick`/`full`/`check` landing goes to `v4`. Take the landed id from
+     the `landed v<id>` output line, never from your own count — a
+     concurrent write shifts it.
 6. Write `answer.md`, then `answer.json` — **that order**; the panel treats
    `answer.json` as the completion marker:
 
    ```json
    { "id": "<question id>", "answeredAt": "<iso now>",
-     "summary": "<one line>", "proposedVersion": <landed n or null> }
+     "summary": "<one line>", "proposedVersion": "<landed id, e.g. \"3.1\">" | null }
    ```
 
    Never claim the patch is compatible — the panel verifies on its own and

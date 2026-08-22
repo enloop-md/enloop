@@ -192,12 +192,12 @@ export class WorkspaceStore implements DataStore {
     return store.listVersions(localId);
   }
 
-  async getVersion(id: string, version: number): Promise<TestCaseVersion> {
+  async getVersion(id: string, version: string): Promise<TestCaseVersion> {
     const { store, localId } = this.route(id);
     return store.getVersion(localId, version);
   }
 
-  async getVersionSource(id: string, version: number): Promise<string> {
+  async getVersionSource(id: string, version: string): Promise<string> {
     const { store, localId } = this.route(id);
     return store.getVersionSource(localId, version);
   }
@@ -277,7 +277,7 @@ export class WorkspaceStore implements DataStore {
     return store.archiveSuite(localId, archived);
   }
 
-  async getRunSource(testCaseId: string, version: number, tier?: RunTier): Promise<string> {
+  async getRunSource(testCaseId: string, version: string, tier?: RunTier): Promise<string> {
     const { store, localId } = this.route(testCaseId);
     return store.getRunSource(localId, version, tier);
   }
@@ -333,7 +333,7 @@ export class WorkspaceStore implements DataStore {
    * where `runs/` is gitignored. */
   async createRun(
     testCaseId: string,
-    version: number,
+    version: string,
     variableValues?: Record<string, string>,
     tier?: RunTier,
     environment?: string,
@@ -437,7 +437,7 @@ export class WorkspaceStore implements DataStore {
   async previewSwap(
     testCaseId: string,
     runId: string,
-    toVersion: number,
+    toVersion: string,
     questionId: string | null,
   ): Promise<CompatResult> {
     const { store, localId } = this.route(testCaseId);
@@ -447,7 +447,7 @@ export class WorkspaceStore implements DataStore {
   async swapRunVersion(
     testCaseId: string,
     runId: string,
-    toVersion: number,
+    toVersion: string,
     questionId: string | null,
   ): Promise<Run> {
     const { store, storageId, localId } = this.route(testCaseId);
