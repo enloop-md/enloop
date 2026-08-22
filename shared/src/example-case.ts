@@ -10,8 +10,9 @@ import { CURRENT_FORMAT_VERSION } from "./markdown.js";
  * something — one case, self-contained, safe to run repeatedly, and chosen
  * to exercise every control the panel offers rather than to be realistic:
  * `Where:` and Go, `Selector:` and Highlight, a quoted value typed into a
- * field, an automated step that decides its own result, a variable, and the
- * quick/full distinction.
+ * field, an automated step that decides its own result, a variable, the
+ * quick/full distinction, and a `Kind: extra` side-check that starts out
+ * skipped.
  *
  * It runs against a public practice site rather than a page bundled here,
  * because the thing being demonstrated is the panel acting on a real page in
@@ -157,10 +158,29 @@ Read the heading of the page you landed on.
 - The heading reads "Secure Area".
 
 ### Note
-This is the one step with no \`Kind: quick\` on it, so a **Quick** run skips
-it and a **Full** run includes it. That is the whole mechanism: a case is
-written once, in full, and the marks pick out the core path worth running
-during development.
+This is the one ordinary step with no \`Kind: quick\` on it, so a **Quick**
+run skips it and a **Full** run includes it. That is the whole mechanism: a
+case is written once, in full, and the marks pick out the core path worth
+running during development.
+
+## Check the footer credit
+Where: %BASE_URL%/secure
+Selector: #page-footer a
+Kind: extra
+Scroll to the bottom of the page and read the footer.
+
+### Expected
+- The footer credits Elemental Selenium, and its link points at
+  elementalselenium.com.
+
+### Note
+\`Kind: extra\` is an optional side-check: it starts every run already marked
+**skipped**, and its number is a minor increment under the step before it —
+this one runs as *6.1*, not *7*. Nothing waits for it; to do it anyway, give
+it a verdict with the buttons like any other step. The other direction works
+too: any ordinary step has a small **Skip this step** link under its buttons,
+and skips are reported to the test writer — a step skipped run after run is
+one the case should stop demanding.
 
 ## Say something about this step
 Kind: quick

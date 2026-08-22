@@ -29,7 +29,7 @@ import type {
  * v1.md/v2.md version history, which tracks edits to a case's *content*
  * under this same grammar.
  */
-export const CURRENT_FORMAT_VERSION = "0.0.6";
+export const CURRENT_FORMAT_VERSION = "0.0.7";
 
 /**
  * Grammar. There is no separate spec by design: this comment is it, sitting
@@ -128,7 +128,13 @@ export const CURRENT_FORMAT_VERSION = "0.0.6";
  *
  *   # Prerequisites                             (optional, bullet list)
  *   - Open https://app.example.com/admin/reports
- *   - API running locally: `npm run dev` in the app repo
+ *   - API running locally: `npm run dev` in the app repo,
+ *     which also starts the worker — wait for "ready" in its output
+ *     - nested detail lines belong to their item too
+ *
+ *   An item is one flush-left `- ` bullet plus everything indented under it:
+ *   wrapped prose and nested bullets stay part of the item they continue
+ *   rather than becoming items of their own.
  *
  *   Anything the tester must *do* before step 1 belongs in Prerequisites,
  *   including where the run begins and starting any service locally — with
@@ -162,8 +168,25 @@ export const CURRENT_FORMAT_VERSION = "0.0.6";
  *                                                 is authored once, in full,
  *                                                 and the marks pick out the
  *                                                 subset worth running during
- *                                                 development. `Kind:` with
- *                                                 any other value is ignored.)
+ *                                                 development.)
+ *   Kind: extra                                 (optional — the opposite dial:
+ *                                                 an optional side-check,
+ *                                                 skipped by default. It stays
+ *                                                 visible in the run, numbered
+ *                                                 with a minor increment under
+ *                                                 the ordinary step before it
+ *                                                 — 2.1, 2.2 — and starts the
+ *                                                 run already marked skipped;
+ *                                                 the tester opts in by giving
+ *                                                 it a verdict. For
+ *                                                 conditionals ("only if a
+ *                                                 second account exists"),
+ *                                                 nice-to-verify checks, and
+ *                                                 steps that keep arriving
+ *                                                 skipped. A step has one
+ *                                                 `Kind:` — quick or extra,
+ *                                                 not both; any other value
+ *                                                 is ignored.)
  *   Selector: #login-button                     (optional — scrolls this
  *                                                 into view and flashes it
  *                                                 in the page when the step
@@ -443,12 +466,40 @@ export function substituteVariables(text: string, values: Record<string, string>
   );
 }
 
+/**
+ * The items of a `# Dependencies` / `# Prerequisites` section, one string per
+ * item, continuation lines included.
+ *
+ * A top-level item is a flush-left(-ish, <2 spaces — CommonMark allows up to
+ * three) `- ` or `* ` bullet. Everything else that is not blank belongs to
+ * the item above it: wrapped prose, and nested bullets, which arrive indented
+ * and stay part of their parent. Continuations are stored with the standard
+ * two-space item indent stripped and real newlines kept, so an item is plain
+ * Markdown relative to its own margin — `renderBulletList` puts the indent
+ * back. The old version of this function kept only the bullet lines, which
+ * silently truncated every item that wrapped.
+ */
 function parseBulletList(text: string): string[] {
-  return text
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.startsWith("- ") || l.startsWith("* "))
-    .map((l) => l.slice(2).trim());
+  const items: string[] = [];
+  for (const line of text.split("\n")) {
+    const indent = /^[ \t]*/.exec(line)![0].length;
+    const trimmed = line.trim();
+    if (indent < 2 && (trimmed.startsWith("- ") || trimmed.startsWith("* "))) {
+      items.push(trimmed.slice(2).trim());
+    } else if (items.length > 0 && trimmed !== "") {
+      items[items.length - 1] += "\n" + line.replace(/^(?: {1,2}|\t)/, "").trimEnd();
+    }
+  }
+  return items;
+}
+
+/** `parseBulletList`'s inverse: items back out as one Markdown list, each
+ * item's continuation lines indented two spaces so they stay inside their
+ * bullet. Every renderer that shows these lists goes through here — a
+ * renderer that writes `- ${item}` flat breaks a multiline item back out of
+ * its bullet, which is the truncation bug in a second form. */
+export function renderBulletList(items: string[]): string {
+  return items.map((item) => `- ${item.trim().replace(/\n/g, "\n  ")}`).join("\n");
 }
 
 function parseSteps(stepsSectionBody: string): Step[] {
@@ -510,6 +561,7 @@ function parseOneStep(title: string, body: string, index: number): Step {
   const selectors: string[] = [];
   let where: string | undefined;
   let quick = false;
+  let extra = false;
   for (; i < lines.length; i++) {
     const selectorMatch = SELECTOR_RE.exec(lines[i]);
     const whereMatch = WHERE_RE.exec(lines[i]);
@@ -518,8 +570,13 @@ function parseOneStep(title: string, body: string, index: number): Step {
       const candidate = selectorMatch[1].trim();
       if (candidate) selectors.push(candidate);
     } else if (whereMatch) where = whereMatch[1].trim() || undefined;
-    else if (kindMatch) quick = kindMatch[1].trim().toLowerCase() === "quick";
-    else break;
+    else if (kindMatch) {
+      // One `Kind:` per step — a later line replaces an earlier one, so the
+      // two marks stay mutually exclusive however the header is edited.
+      const kind = kindMatch[1].trim().toLowerCase();
+      quick = kind === "quick";
+      extra = kind === "extra";
+    } else break;
   }
   const bodyAfterHeader = lines.slice(i).join("\n");
 
@@ -550,8 +607,39 @@ function parseOneStep(title: string, body: string, index: number): Step {
     selectors,
     where,
     quick,
+    extra,
     note,
   };
+}
+
+/**
+ * Display numbers for a step list where `Kind: extra` steps count as minor
+ * increments under the ordinary step before them:
+ *
+ *   1  Open accounts page
+ *   2  Create account
+ *   2.1  Check account picture is set     (extra)
+ *   2.2  Check "test connection" button   (extra)
+ *   3  Create X in account
+ *
+ * One function, used by the run screen, the report, the feedback file and
+ * the console log alike — two renderers numbering the same run differently
+ * would make "step 2.1" unfindable in one of them. An extra step before any
+ * ordinary step numbers from 0 (0.1), which reads as odd because it is: the
+ * case has an optional check ahead of its first real step.
+ */
+export function stepNumberLabels(steps: Array<{ extra: boolean }>): string[] {
+  let major = 0;
+  let minor = 0;
+  return steps.map((step) => {
+    if (step.extra) {
+      minor += 1;
+      return `${major}.${minor}`;
+    }
+    major += 1;
+    minor = 0;
+    return `${major}`;
+  });
 }
 
 /**
@@ -610,7 +698,7 @@ export function renderCaseMarkdown(doc: TestCaseVersion): string {
     if (items.length === 0) continue;
     out.push("");
     out.push(`# ${heading}`);
-    for (const item of items) out.push(`- ${item.trim()}`);
+    out.push(renderBulletList(items));
   }
 
   out.push("");
@@ -626,6 +714,7 @@ export function renderCaseMarkdown(doc: TestCaseVersion): string {
       if (selector.trim()) out.push(`Selector: ${selector.trim()}`);
     }
     if (step.quick) out.push("Kind: quick");
+    else if (step.extra) out.push("Kind: extra");
     if (step.instructions?.trim()) out.push(step.instructions.trim());
     if (step.script !== undefined) {
       // A fenced block in place of instructions is what makes a step
@@ -785,7 +874,8 @@ function stepCounts(state: RunStepState): CaptureCounts {
  * the step list above it. Returns "" for an entry that arrived outside any
  * step, which reads better than "step none". */
 function stepLabeller(doc: TestCaseVersion): (stepId: string | null) => string {
-  const numbers = new Map(doc.steps.map((step, index) => [step.id, index + 1]));
+  const labels = stepNumberLabels(doc.steps);
+  const numbers = new Map(doc.steps.map((step, index) => [step.id, labels[index]]));
   return (stepId) => {
     if (!stepId) return "";
     const number = numbers.get(stepId);
@@ -845,10 +935,15 @@ export function renderRunReport(
   lines.push("## Steps");
   lines.push("");
 
+  const numberLabels = stepNumberLabels(doc.steps);
   doc.steps.forEach((step, index) => {
     const state = byId.get(step.id);
     const status = state?.status ?? "pending";
-    lines.push(`### ${STATUS_ICON[status] ?? ""} ${index + 1}. ${step.title} (${status})`);
+    lines.push(
+      `### ${STATUS_ICON[status] ?? ""} ${numberLabels[index]}. ${step.title} (${status}${
+        step.extra ? ", extra" : ""
+      })`,
+    );
     const comments = state ? stepComments(state) : [];
     if (comments.length) {
       lines.push("");
@@ -881,10 +976,15 @@ export function renderRunReport(
   return lines.join("\n");
 }
 
-function hasStepSignal(state: RunStepState): boolean {
+function hasStepSignal(step: Step, state: RunStepState): boolean {
   return (
     state.status === "failed" ||
     state.status === "warning" ||
+    // A skip the tester chose is a small vote against the step — repeated
+    // across runs it is the test writer's cue to drop it or mark it
+    // `Kind: extra`. An extra step arriving skipped is the default doing its
+    // job, and says nothing.
+    (state.status === "skipped" && !step.extra) ||
     stepComments(state).some((c) => c.text.trim().length > 0) ||
     !!state.automatedResult?.error ||
     // A console error during a step the tester marked passed is signal in its
@@ -919,10 +1019,12 @@ export function renderRunFeedback(
 ): string | null {
   const byId = new Map(run.steps.map((s) => [s.stepId, s]));
   const labelStep = stepLabeller(doc);
+  const numberLabels = stepNumberLabels(doc.steps);
   const signalSteps = doc.steps
     .map((step, index) => ({ step, index, state: byId.get(step.id) }))
     .filter(
-      (s): s is { step: Step; index: number; state: RunStepState } => !!s.state && hasStepSignal(s.state),
+      (s): s is { step: Step; index: number; state: RunStepState } =>
+        !!s.state && hasStepSignal(s.step, s.state),
     );
 
   const runComment = run.comment.trim();
@@ -930,6 +1032,7 @@ export function renderRunFeedback(
 
   const failedCount = run.steps.filter((s) => s.status === "failed").length;
   const warningCount = run.steps.filter((s) => s.status === "warning").length;
+  const skippedCount = signalSteps.filter(({ state }) => state.status === "skipped").length;
   const noteCount = run.steps.reduce((n, s) => n + stepComments(s).length, 0);
 
   const captured: CaptureCounts = {
@@ -943,10 +1046,11 @@ export function renderRunFeedback(
   // scanning for their own section finds it in the same place every time.
   const addressed = new Map<CommentAudience, string[]>(COMMENT_AUDIENCES.map((a) => [a, []]));
   const failedItems: string[] = [];
+  const skippedItems: string[] = [];
   const consoleItems: string[] = [];
 
   for (const { step, index, state } of signalSteps) {
-    const stepNum = index + 1;
+    const stepNum = numberLabels[index];
     const comments = stepComments(state);
     const toDeveloper = comments.some((c) => c.audiences.includes("developer"));
     for (const comment of comments) {
@@ -969,6 +1073,16 @@ export function renderRunFeedback(
         .filter((s): s is string => !!s)
         .join(" — ");
       failedItems.push(`- **${step.title}** (step ${stepNum})${detail ? `: ${detail}` : ""}`);
+    }
+    // An extra step skipped is the default; an ordinary step skipped is the
+    // tester declining work the case asked for, and the test writer is the
+    // one who can act on that.
+    if (state.status === "skipped" && !step.extra) {
+      const detail = comments
+        .map((c) => c.text.trim())
+        .filter(Boolean)
+        .join("; ");
+      skippedItems.push(`- **${step.title}** (step ${stepNum})${detail ? `: ${detail}` : ""}`);
     }
     // The page throwing and the step failing are different statements, and
     // when they disagree the console one is the more precise: it names what
@@ -993,7 +1107,10 @@ export function renderRunFeedback(
     `Human verification run finished ${run.finishedAt ?? "—"} with status **${run.status}**` +
       `${run.tier === "quick" ? ", covering the quick (core) steps only" : ""}.`,
   );
-  lines.push(`${failedCount} failed, ${warningCount} warnings, ${noteCount} tester comments.`);
+  lines.push(
+    `${failedCount} failed, ${warningCount} warnings, ${noteCount} tester comments` +
+      `${skippedCount > 0 ? `, ${skippedCount} ${skippedCount === 1 ? "step" : "steps"} skipped` : ""}.`,
+  );
   if (hasCaptureSignal(captured)) {
     lines.push(
       digest
@@ -1006,7 +1123,8 @@ export function renderRunFeedback(
   }
   lines.push("");
   const addressedCount = [...addressed.values()].reduce((n, items) => n + items.length, 0);
-  const hasActionItems = addressedCount + failedItems.length + consoleItems.length > 0;
+  const hasActionItems =
+    addressedCount + failedItems.length + skippedItems.length + consoleItems.length > 0;
   lines.push(
     hasActionItems
       ? "This file was written by a human tester reviewing the feature. Each section below " +
@@ -1039,6 +1157,17 @@ export function renderRunFeedback(
           : undefined,
     })),
     { heading: "Failed steps the tester left uncommented", items: failedItems },
+    {
+      heading: "Steps the tester skipped",
+      items: skippedItems,
+      // Addressed to the test writer even without a comment: a skip is a
+      // small vote against the step, and only across runs does it become a
+      // verdict — which is why the lead asks for a pattern, not a reaction.
+      lead:
+        "For the test writer. One skip may be circumstance. A step that arrives skipped " +
+        "run after run is not earning its place — mark it `Kind: extra` so it stops " +
+        "demanding a verdict, or remove it.",
+    },
     { heading: "Errors and failed requests from the page", items: consoleItems },
   ];
   // A comment-only handoff has nothing to list, and an empty "Action items"
@@ -1095,7 +1224,9 @@ export function renderRunFeedback(
 
   for (const { step, index, state } of signalSteps) {
     lines.push("");
-    lines.push(`### ${STATUS_ICON[state.status] ?? ""} ${index + 1}. ${step.title} (${state.status})`);
+    lines.push(
+      `### ${STATUS_ICON[state.status] ?? ""} ${numberLabels[index]}. ${step.title} (${state.status})`,
+    );
     if (step.expected) lines.push(`Expected: ${step.expected}`);
     const detailComments = stepComments(state);
     if (detailComments.length > 0) {
@@ -1260,13 +1391,13 @@ export function renderReadableCase(
     lines.push("## Before you start");
     lines.push("");
     if (doc.prerequisites.length > 0) {
-      for (const item of doc.prerequisites) lines.push(`- ${prose(item)}`);
+      lines.push(renderBulletList(doc.prerequisites.map(prose)));
       lines.push("");
     }
     if (doc.dependencies.length > 0) {
       lines.push("These must already be true, and are not yours to arrange:");
       lines.push("");
-      for (const item of doc.dependencies) lines.push(`- ${prose(item)}`);
+      lines.push(renderBulletList(doc.dependencies.map(prose)));
       lines.push("");
     }
   }
@@ -1293,9 +1424,14 @@ export function renderReadableCase(
     lines.push("");
   }
 
+  const runnableLabels = stepNumberLabels(runnable);
   runnable.forEach((step, index) => {
-    lines.push(`### ${index + 1}. ${prose(step.title)}`);
+    lines.push(`### ${runnableLabels[index]}. ${prose(step.title)}`);
     lines.push("");
+    if (step.extra) {
+      lines.push("*Optional — a run skips this by default; do it if it applies and time allows.*");
+      lines.push("");
+    }
     if (step.where) {
       lines.push(`**Where:** ${prose(step.where)}`);
       lines.push("");
