@@ -51,6 +51,13 @@ WHAT THE PANEL DOES
   environment the case declares.
 - Optionally capture what the page said during the run — console errors and
   failed requests land in the report beside the step where they happened.
+- Stuck on a step? Ask the agent session watching your folder, right from
+  the step — the question (with an optional screenshot and page snapshot,
+  written only into your local folder) gets answered in the panel, and if
+  the step itself was unclear, the corrected case version loads into the
+  running test with one click, keeping every result so far. A case's setup
+  commands run the same way: click Run, the agent executes them on your
+  machine and streams the output back.
 - Every run freezes the exact case it executed and writes a readable report,
   plus a feedback file where each comment is addressed to whoever it is
   for: developer, product, test writer, docs, ops.
