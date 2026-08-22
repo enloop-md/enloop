@@ -8,6 +8,18 @@ import type {
 
 const POLL_INTERVAL_MS = 3000;
 
+/** What an ask carries: the text plus whatever the component captured from
+ * the page before submitting. Capture belongs to the UI (it owns the
+ * checkboxes); this layer only transports. */
+export interface AskDraft {
+  stepId: string;
+  question: string;
+  selection: string;
+  pageUrl: string;
+  screenshotPng: Uint8Array | null;
+  pageHtml: string | null;
+}
+
 /** A command still owed a change: the agent has yet to pick it up, is
  * running it, or has been asked to stop it. */
 export function commandPending(command: AgentCommand): boolean {
@@ -65,8 +77,8 @@ export function useAgentChannel(
   }, [active, waiting, refresh]);
 
   const ask = useCallback(
-    async (stepId: string, question: string, selection: string) => {
-      await store.askQuestion(testCaseId, runId, { stepId, question, selection });
+    async (draft: AskDraft) => {
+      await store.askQuestion(testCaseId, runId, draft);
       await refresh();
     },
     [store, testCaseId, runId, refresh],

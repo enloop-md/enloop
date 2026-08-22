@@ -146,6 +146,19 @@ export async function tryReadTextFile(
   }
 }
 
+export async function writeBinaryFile(
+  dir: FileSystemDirectoryHandle,
+  filename: string,
+  data: Uint8Array,
+): Promise<void> {
+  const fileHandle = await dir.getFileHandle(filename, { create: true });
+  const writable = await fileHandle.createWritable();
+  // Copied first: `BufferSource` demands a plain ArrayBuffer, and a
+  // Uint8Array's may be a SharedArrayBuffer as far as the types know.
+  await writable.write(new Uint8Array(data).buffer);
+  await writable.close();
+}
+
 export async function writeTextFile(
   dir: FileSystemDirectoryHandle,
   filename: string,

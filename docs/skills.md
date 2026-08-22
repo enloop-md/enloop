@@ -288,7 +288,9 @@ in repo-hosted folders):
 ```
 <data folder>/agent/
 ├── heartbeat.json        touched by the open panel every 20 s
-├── questions/<id>/       question.json → answer.md + answer.json
+├── questions/<id>/       question.json (+ screenshot.png, page.html —
+│                         the tester's page as pixels and as greppable,
+│                         style-stripped structure) → answer.md + answer.json
 └── commands/<id>/        request.json → run.sh, pid, status.json,
                           output.log, exit-code; a `kill` file is the
                           Stop button

@@ -66,16 +66,30 @@ A question directory holds `question.json`; your answer is `answer.md` plus
 each one that is not:
 
 1. Read `question.json`: which case, which run, which step, what the tester
-   selected, and what they asked. Then read the run's frozen
+   selected, and what they asked — plus `pageUrl` (where they were
+   standing) and `attachments`. Then read the run's frozen
    `"$DATA_DIR"/runs/<testCaseId>/<runId>/case.md` and `run.json` — the
    step (`stepId` is the positional `step-<n>` heading in document order)
    plus which steps are already executed.
-2. Answer from evidence. Read the app source until the answer is concrete —
+2. Use the attachments — they are the tester's actual page at the moment of
+   asking, which the app source alone cannot show:
+   - `page.html` — a sanitized DOM snapshot (scripts and styles stripped,
+     ids/classes/testids/aria kept; each frame introduced by a
+     `<!-- enloop frame: <url> -->` marker). **Grep it, never read it
+     whole** — it is where you verify that a selector you are about to
+     recommend actually matches something, and where "A" in "check A is X"
+     usually turns out to live.
+   - `screenshot.png` — view it with Read. What the tester sees, including
+     state the DOM does not spell out (an overlay, an empty table, a
+     spinner that never resolved).
+   Treat both as evidence of *that moment*, not of the current page — the
+   tester may have navigated since.
+3. Answer from evidence. Read the app source until the answer is concrete —
    the exact clicks, the exact field, `file:line` where it helps. The tester
    is standing in the page mid-run: the **first line of `answer.md` is the
    direct answer**, the click-path after it, background last. Do not
    speculate; if the source contradicts the step, say that plainly.
-3. Decide whether to patch the case. Patch **only** when the step text
+4. Decide whether to patch the case. Patch **only** when the step text
    itself was insufficient — when the next tester would have to ask the same
    question. A patch:
    - starts from the case's **latest stored** `versions/v<n>.md` — never
@@ -103,7 +117,7 @@ each one that is not:
      `node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" write <scratch> --data-dir "$DATA_DIR" --case <testCaseId>`.
      Take the landed number from the `landed v<n>` output line, never from
      your own count — a concurrent write shifts it.
-4. Write `answer.md`, then `answer.json` — **that order**; the panel treats
+5. Write `answer.md`, then `answer.json` — **that order**; the panel treats
    `answer.json` as the completion marker:
 
    ```json

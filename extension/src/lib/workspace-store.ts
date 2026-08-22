@@ -389,7 +389,14 @@ export class WorkspaceStore implements DataStore {
   async askQuestion(
     testCaseId: string,
     runId: string,
-    draft: { stepId: string; question: string; selection: string },
+    draft: {
+      stepId: string;
+      question: string;
+      selection: string;
+      pageUrl: string;
+      screenshotPng: Uint8Array | null;
+      pageHtml: string | null;
+    },
   ): Promise<AgentQuestion> {
     const { store, storageId, localId } = this.route(testCaseId);
     return this.tagQuestion(
