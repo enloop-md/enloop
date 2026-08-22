@@ -167,12 +167,21 @@ export interface AgentChannelStore {
   killCommand(testCaseId: string, commandId: string): Promise<void>;
   /** The dry half of `swapRunVersion`: composes the candidate exactly as the
    * swap would and reports the verdict without writing anything, so the
-   * panel can label the offer before the tester commits. */
-  previewSwap(testCaseId: string, runId: string, toVersion: number): Promise<CompatResult>;
+   * panel can label the offer before the tester commits. `questionId` names
+   * the question whose answer proposed the patch — its step is exempt from
+   * freezing even when already judged. */
+  previewSwap(
+    testCaseId: string,
+    runId: string,
+    toVersion: number,
+    questionId: string | null,
+  ): Promise<CompatResult>;
   /** Repoints an in-flight run at `toVersion`: rewrites the frozen `case.md`
    * with the identically-composed candidate and records the swap. Throws
    * when the candidate is incompatible (see `checkRunCompat`) — statuses
-   * must keep describing the text they were recorded against. */
+   * must keep describing the text they were recorded against. The one
+   * exception is the asked step: if its text changed, its result resets to
+   * undone, which keeps the same invariant the other way around. */
   swapRunVersion(
     testCaseId: string,
     runId: string,

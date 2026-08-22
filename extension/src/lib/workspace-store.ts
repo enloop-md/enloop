@@ -434,9 +434,14 @@ export class WorkspaceStore implements DataStore {
     return store.killCommand(localId, commandId);
   }
 
-  async previewSwap(testCaseId: string, runId: string, toVersion: number): Promise<CompatResult> {
+  async previewSwap(
+    testCaseId: string,
+    runId: string,
+    toVersion: number,
+    questionId: string | null,
+  ): Promise<CompatResult> {
     const { store, localId } = this.route(testCaseId);
-    return store.previewSwap(localId, splitId(runId).localId, toVersion);
+    return store.previewSwap(localId, splitId(runId).localId, toVersion, questionId);
   }
 
   async swapRunVersion(

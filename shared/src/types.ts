@@ -22,6 +22,7 @@ import type {
   freeRunFileSchema,
   runSwapSchema,
   agentQuestionFileSchema,
+  agentQuestionAckSchema,
   agentAnswerMetaSchema,
   agentCommandSourceFieldSchema,
   agentCommandRequestSchema,
@@ -78,6 +79,8 @@ export type RunSwap = z.infer<typeof runSwapSchema>;
 
 /** On-disk `agent/questions/<id>/question.json`. */
 export type AgentQuestionFile = z.infer<typeof agentQuestionFileSchema>;
+/** On-disk `ack.json` — a serve pass has the question and is working. */
+export type AgentQuestionAck = z.infer<typeof agentQuestionAckSchema>;
 /** On-disk `answer.json` — presence marks the question answered. */
 export type AgentAnswerMeta = z.infer<typeof agentAnswerMetaSchema>;
 /** Which part of the case an agent command was quoted from. */
@@ -87,8 +90,11 @@ export type AgentCommandRequest = z.infer<typeof agentCommandRequestSchema>;
 /** On-disk `status.json` for an agent command. */
 export type AgentCommandStatus = z.infer<typeof agentCommandStatusSchema>;
 
-/** Composed question: the envelope plus the answer files when present. */
+/** Composed question: the envelope plus the ack and answer files when
+ * present. `pickedUpAt` null + `answer` null = still waiting for a pass;
+ * `pickedUpAt` set + `answer` null = an agent is working on it. */
 export interface AgentQuestion extends AgentQuestionFile {
+  pickedUpAt: string | null;
   answer: { markdown: string; meta: AgentAnswerMeta } | null;
 }
 

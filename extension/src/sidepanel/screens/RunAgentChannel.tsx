@@ -218,17 +218,24 @@ function QuestionCard({
         </p>
       )}
       {question.answer === null ? (
-        <div className="text-[11px] text-slate-400">
-          <span className="mr-1 inline-block animate-pulse">●</span>
-          Waiting for an agent session…
-          {waitedMs > UNWATCHED_HINT_MS && (
-            <p className="mt-0.5 text-slate-500">
-              No agent session picked this up yet — run{" "}
-              <code className="rounded bg-slate-100 px-1">/loop 1m /enloop:serve</code> in Claude
-              Code.
-            </p>
-          )}
-        </div>
+        question.pickedUpAt !== null ? (
+          <div className="text-[11px] text-emerald-600">
+            <span className="mr-1 inline-block animate-pulse">●</span>
+            Agent is working on the answer…
+          </div>
+        ) : (
+          <div className="text-[11px] text-slate-400">
+            <span className="mr-1 inline-block animate-pulse">●</span>
+            Waiting for an agent session…
+            {waitedMs > UNWATCHED_HINT_MS && (
+              <p className="mt-0.5 text-slate-500">
+                No agent session picked this up yet — run{" "}
+                <code className="rounded bg-slate-100 px-1">/loop 1m /enloop:serve</code> in Claude
+                Code.
+              </p>
+            )}
+          </div>
+        )
       ) : (
         <>
           <Markdown text={question.answer.markdown} className="text-xs text-slate-600" />
@@ -276,13 +283,13 @@ function PatchOffer({
   useEffect(() => {
     let cancelled = false;
     store
-      .previewSwap(run.testCaseId, run.id, toVersion)
+      .previewSwap(run.testCaseId, run.id, toVersion, question.id)
       .then((v) => !cancelled && setVerdict(v))
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)));
     return () => {
       cancelled = true;
     };
-  }, [store, run.testCaseId, run.id, toVersion]);
+  }, [store, run.testCaseId, run.id, toVersion, question.id]);
 
   async function load() {
     setBusy(true);
@@ -313,11 +320,24 @@ function PatchOffer({
       </p>
     );
   }
+  // The asked step is the one exemption from "finished steps unchanged":
+  // if its text changed and it already has a result, loading resets that
+  // result — say so before the click, not after.
+  const asked = run.steps.find((s) => s.stepId === question.stepId);
+  const resetsAsked =
+    verdict.changedStepIds.includes(question.stepId) &&
+    !!asked &&
+    asked.status !== "pending" &&
+    asked.status !== "running" &&
+    !(asked.extra && asked.startedAt === null && asked.finishedAt === null);
+
   return (
     <div className="space-y-1 rounded border border-emerald-200 bg-emerald-50/60 p-2">
       <p className="text-[11px] text-slate-600">
         Load v{toVersion}? {verdict.changedStepIds.length} step
         {verdict.changedStepIds.length === 1 ? "" : "s"} updated, finished steps unchanged.
+        {resetsAsked &&
+          " This step's result resets so you can redo it with the new instructions."}
       </p>
       <div className="flex gap-2">
         <button

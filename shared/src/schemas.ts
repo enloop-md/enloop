@@ -439,6 +439,15 @@ export const agentQuestionFileSchema = z.object({
   askedAt: z.string(),
 });
 
+/** On-disk `ack.json`, written by the agent the moment a pass sees the
+ * question — before reading a single source file — so the panel can turn
+ * "waiting for an agent" into "working on the answer" instead of leaving
+ * the tester staring at the first for the whole think time. */
+export const agentQuestionAckSchema = z.object({
+  id: z.string(),
+  pickedUpAt: z.string(),
+});
+
 /** On-disk `answer.json`, written by the agent after `answer.md` — its
  * presence is the completion marker, so a half-written answer is never
  * shown. */

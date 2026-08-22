@@ -65,13 +65,26 @@ A question directory holds `question.json`; your answer is `answer.md` plus
 `answer.json`. **A directory with `answer.json` is done — skip it.** For
 each one that is not:
 
-1. Read `question.json`: which case, which run, which step, what the tester
+1. **Acknowledge first, before reading anything else.** Write `ack.json`
+   into the question's directory:
+
+   ```json
+   { "id": "<question id>", "pickedUpAt": "<iso now>" }
+   ```
+
+   The tester is watching a "waiting for an agent" line; this file is what
+   turns it into "agent is working on the answer", and it must land within
+   seconds of the pass seeing the question — not after the app source has
+   been read. An `ack.json` already present means an earlier pass died
+   mid-answer: leave the file as it is and keep going, the question still
+   needs its answer.
+2. Read `question.json`: which case, which run, which step, what the tester
    selected, and what they asked — plus `pageUrl` (where they were
    standing) and `attachments`. Then read the run's frozen
    `"$DATA_DIR"/runs/<testCaseId>/<runId>/case.md` and `run.json` — the
    step (`stepId` is the positional `step-<n>` heading in document order)
    plus which steps are already executed.
-2. Use the attachments — they are the tester's actual page at the moment of
+3. Use the attachments — they are the tester's actual page at the moment of
    asking, which the app source alone cannot show:
    - `page.html` — a sanitized DOM snapshot (scripts and styles stripped,
      ids/classes/testids/aria kept; each frame introduced by a
@@ -84,20 +97,23 @@ each one that is not:
      spinner that never resolved).
    Treat both as evidence of *that moment*, not of the current page — the
    tester may have navigated since.
-3. Answer from evidence. Read the app source until the answer is concrete —
+4. Answer from evidence. Read the app source until the answer is concrete —
    the exact clicks, the exact field, `file:line` where it helps. The tester
    is standing in the page mid-run: the **first line of `answer.md` is the
    direct answer**, the click-path after it, background last. Do not
    speculate; if the source contradicts the step, say that plainly.
-4. Decide whether to patch the case. Patch **only** when the step text
+5. Decide whether to patch the case. Patch **only** when the step text
    itself was insufficient — when the next tester would have to ask the same
    question. A patch:
    - starts from the case's **latest stored** `versions/v<n>.md` — never
      from the frozen `case.md`, which is substituted and possibly
      quick-filtered;
-   - edits only the step(s) the answer clarifies, and only ones whose
-     status in `run.json` is `pending` (an untouched extra — `skipped` with
-     null `startedAt` and `finishedAt` — counts as pending);
+   - edits only the step(s) the answer clarifies, and only ones the run has
+     not judged yet: status `pending` or `running` in `run.json`, an
+     untouched extra (`skipped` with null `startedAt` and `finishedAt`),
+     **or the step the question was asked from, whatever its status** — the
+     panel resets that step's result when the tester loads the patch, so a
+     verdict never ends up describing text it did not judge;
    - never adds or removes a step, never changes a `Kind:` line, never
      touches any other step's text, and keeps `@version` as it is;
    - carries a `Change note:` under the title naming what changed and which
@@ -111,13 +127,14 @@ each one that is not:
        "$DATA_DIR/test-cases/<id>/versions/v<n>.md" <scratch file>
      ```
 
-     Exit 0 and every CHANGED step pending in `run.json`, or fix the patch —
-     and if it cannot be both compatible and right, answer without a patch;
+     Exit 0 and every CHANGED step editable by the rule above, or fix the
+     patch — and if it cannot be both compatible and right, answer without
+     a patch;
    - lands via
      `node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" write <scratch> --data-dir "$DATA_DIR" --case <testCaseId>`.
      Take the landed number from the `landed v<n>` output line, never from
      your own count — a concurrent write shifts it.
-5. Write `answer.md`, then `answer.json` — **that order**; the panel treats
+6. Write `answer.md`, then `answer.json` — **that order**; the panel treats
    `answer.json` as the completion marker:
 
    ```json

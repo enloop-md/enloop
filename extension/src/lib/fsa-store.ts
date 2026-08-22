@@ -1,5 +1,6 @@
 import {
   agentAnswerMetaSchema,
+  agentQuestionAckSchema,
   agentCommandRequestSchema,
   agentCommandStatusSchema,
   agentQuestionFileSchema,
@@ -105,6 +106,8 @@ const HEARTBEAT_FILE = "heartbeat.json";
 const QUESTION_FILE = "question.json";
 const QUESTION_SCREENSHOT_FILE = "screenshot.png";
 const QUESTION_PAGE_FILE = "page.html";
+/** Agent-written the moment a pass sees the question — "working on it". */
+const QUESTION_ACK_FILE = "ack.json";
 const ANSWER_FILE = "answer.md";
 const ANSWER_META_FILE = "answer.json";
 const COMMAND_REQUEST_FILE = "request.json";
@@ -978,7 +981,7 @@ export class FsaDataStore implements DataStore {
     }
     if (draft.pageHtml) await writeTextFile(qDir, QUESTION_PAGE_FILE, draft.pageHtml);
     await writeJson(qDir, QUESTION_FILE, question);
-    return { ...question, answer: null };
+    return { ...question, pickedUpAt: null, answer: null };
   }
 
   async listQuestions(testCaseId: string, runId: string): Promise<AgentQuestion[]> {
@@ -992,12 +995,14 @@ export class FsaDataStore implements DataStore {
       if (!question || question.testCaseId !== testCaseId || question.runId !== runId) continue;
       // The agent writes answer.md first and answer.json second; only the
       // pair counts as answered, so a half-written answer is never shown.
-      const [markdown, meta] = await Promise.all([
+      const [ack, markdown, meta] = await Promise.all([
+        tryReadJson(qDir, QUESTION_ACK_FILE, agentQuestionAckSchema),
         tryReadTextFile(qDir, ANSWER_FILE),
         tryReadJson(qDir, ANSWER_META_FILE, agentAnswerMetaSchema),
       ]);
       questions.push({
         ...question,
+        pickedUpAt: ack?.pickedUpAt ?? null,
         answer: markdown && meta ? { markdown: markdown.text, meta } : null,
       });
     }
@@ -1073,23 +1078,44 @@ export class FsaDataStore implements DataStore {
     await writeTextFile(dir, COMMAND_KILL_FILE, "");
   }
 
+  /** The asked step is exempt from freezing (and reset on swap), so the
+   * question named by the offer has to be looked up — but only trusted when
+   * it really belongs to this run. */
+  private async allowedStepIds(
+    testCaseId: string,
+    runId: string,
+    questionId: string | null,
+  ): Promise<string[]> {
+    if (!questionId) return [];
+    const agentDir = await tryGetDir(this.root, AGENT_DIR);
+    const questionsDir = agentDir && (await tryGetDir(agentDir, QUESTIONS_DIR));
+    const qDir = questionsDir && (await tryGetDir(questionsDir, questionId));
+    if (!qDir) return [];
+    const question = await tryReadJson(qDir, QUESTION_FILE, agentQuestionFileSchema);
+    if (!question || question.testCaseId !== testCaseId || question.runId !== runId) return [];
+    return [question.stepId];
+  }
+
   /** The shared front half of preview and swap: read the run, compose the
    * candidate exactly as `createRun` would, and judge it. */
   private async prepareSwap(
     testCaseId: string,
     runId: string,
     toVersion: number,
+    questionId: string | null,
   ): Promise<{
     runDir: FileSystemDirectoryHandle;
     runFile: RunFile;
     verdict: CompatResult;
     substitutedMarkdown: string;
     doc: TestCaseVersion;
+    allowStepIds: string[];
   }> {
     const runDir = await this.getRunDir(testCaseId, runId);
-    const [{ text: rawMarkdown }, runFile] = await Promise.all([
+    const [{ text: rawMarkdown }, runFile, allowStepIds] = await Promise.all([
       readTextFile(runDir, CASE_FILE),
       readJson(runDir, RUN_FILE, runFileSchema),
+      this.allowedStepIds(testCaseId, runId, questionId),
     ]);
     if (runFile.status !== "in_progress") {
       throw new Error("Only an in-flight run can swap versions.");
@@ -1113,12 +1139,17 @@ export class FsaDataStore implements DataStore {
             reasons: ["this run predates variable snapshots, so a candidate cannot be composed identically"],
             changedStepIds: [],
           }
-        : checkRunCompat(currentDoc, doc, runFile.steps);
-    return { runDir, runFile, verdict, substitutedMarkdown, doc };
+        : checkRunCompat(currentDoc, doc, runFile.steps, { allowStepIds });
+    return { runDir, runFile, verdict, substitutedMarkdown, doc, allowStepIds };
   }
 
-  async previewSwap(testCaseId: string, runId: string, toVersion: number): Promise<CompatResult> {
-    const { verdict } = await this.prepareSwap(testCaseId, runId, toVersion);
+  async previewSwap(
+    testCaseId: string,
+    runId: string,
+    toVersion: number,
+    questionId: string | null,
+  ): Promise<CompatResult> {
+    const { verdict } = await this.prepareSwap(testCaseId, runId, toVersion, questionId);
     return verdict;
   }
 
@@ -1128,14 +1159,31 @@ export class FsaDataStore implements DataStore {
     toVersion: number,
     questionId: string | null,
   ): Promise<Run> {
-    const { runDir, runFile, verdict, substitutedMarkdown, doc } = await this.prepareSwap(
-      testCaseId,
-      runId,
-      toVersion,
-    );
+    const { runDir, runFile, verdict, substitutedMarkdown, doc, allowStepIds } =
+      await this.prepareSwap(testCaseId, runId, toVersion, questionId);
     if (!verdict.ok) {
       throw new Error(`v${toVersion} is not compatible with this run: ${verdict.reasons.join("; ")}`);
     }
+    // The asked step may have changed despite carrying a verdict — the one
+    // exemption `allowStepIds` buys. A verdict on text that no longer exists
+    // is not kept: the step goes back to undone (an extra to its resting
+    // skipped state) so the tester re-does it against the new instructions.
+    // Comments stay — the tester's words are about the situation, not the
+    // wording; the automated result goes — it ran the old script.
+    const reset = new Set(
+      allowStepIds.filter((id) => verdict.changedStepIds.includes(id)),
+    );
+    const steps = runFile.steps.map((state, i) => {
+      if (!reset.has(state.stepId)) return state;
+      if (state.status === "pending" || state.status === "running") return state;
+      return {
+        ...state,
+        status: (doc.steps[i]?.extra ? "skipped" : "pending") as "skipped" | "pending",
+        startedAt: null,
+        finishedAt: null,
+        automatedResult: null,
+      };
+    });
     const updated: RunFile = {
       ...runFile,
       testCaseVersion: toVersion,
@@ -1144,6 +1192,7 @@ export class FsaDataStore implements DataStore {
         ...runFile.swaps,
         { fromVersion: runFile.testCaseVersion, toVersion, at: nowIso(), questionId },
       ],
+      steps,
     };
     await writeTextFile(runDir, CASE_FILE, substitutedMarkdown);
     await writeJson(runDir, RUN_FILE, updated);
