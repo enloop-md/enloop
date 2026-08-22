@@ -12,10 +12,12 @@ looping `/enloop:serve`. That works for the developer who lives in Claude
 Code, and for nobody else — a tester without an LLM development setup gets
 "Waiting for an agent session…" forever.
 
-`enloopd` is a CLI daemon that serves the same channel from a plain
-terminal: install it on a tester's machine (or a shared machine), point it
+`enloopd` is a CLI daemon that serves the same channel without an active
+session: install it on a tester's machine (or a shared machine), point it
 at the data folder and the app repo, and questions get answered and
-commands get run — no Claude Code, no editor, no session to babysit.
+commands get run. The answering is still an LLM's — the Claude API, or an
+installed Claude Code / Codex driven headlessly — what goes away is the
+open session someone has to keep looping.
 
 ```
 enloopd setup                                         # pick backend, set up auth, write config

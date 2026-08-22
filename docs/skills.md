@@ -317,8 +317,9 @@ throughout; the panel alone decides what a live run loads.
 No session looping? Questions and commands simply wait, and the panel says
 so — nothing breaks, nothing times out except the scripts themselves. Or
 run **[enloopd](daemon.md)**, the standalone daemon that serves the same
-channel from a plain terminal — through the Claude API, or by driving an
-installed Claude Code or Codex headlessly. When a serve loop and the
+channel without an active session — the answering is still an LLM's
+(the Claude API, or an installed Claude Code or Codex driven headlessly);
+what goes away is the open loop someone babysits. When a serve loop and the
 daemon watch the same folder, Claude Code wins: it holds the task's
 context, so the daemon defers while the loop is provably alive and takes
 over the moment it is not. The panel says which one is working.

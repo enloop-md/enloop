@@ -169,10 +169,11 @@ two more things work during a run, without leaving the panel:
   is how you turn off a server you started from it.
 
 No session watching? Questions and Run requests wait, and the panel says so
-— nothing is lost, and nothing leaves your machine either way. And a
-watching session doesn't have to be Claude Code:
-[enloopd](daemon.md) serves the same channel from a plain terminal, for
-testers who don't develop with an LLM at all.
+— nothing is lost, and nothing leaves your machine either way. And the
+watcher doesn't have to be an interactive session:
+[enloopd](daemon.md) serves the same channel unattended, thinking with
+the same LLMs (the Claude API, or Claude Code / Codex driven headlessly)
+— just with no session anyone has to keep open.
 
 ### Project rules
 
