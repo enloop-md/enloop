@@ -33,7 +33,7 @@ import { looksNavigable } from "../../lib/navigate.js";
 import { NavigateButton } from "../../components/NavigateButton.js";
 import { runCaptureKey } from "../../lib/capture.js";
 import { useCaptureRecorder } from "../useCapture.js";
-import { commandPending, useAgentChannel } from "../useAgentChannel.js";
+import { commandPending, useAgentChannel, type AskDraft } from "../useAgentChannel.js";
 import { CommandList, StepQuestions } from "./RunAgentChannel.js";
 
 export function RunScreen({
@@ -860,7 +860,7 @@ function StepRow({
   run: Run;
   questions: AgentQuestion[];
   commands: AgentCommand[];
-  onAsk: (stepId: string, question: string, selection: string) => Promise<void>;
+  onAsk: (draft: AskDraft) => Promise<void>;
   onSwapped: (run: Run) => void;
   onRunCommand: (command: string, field: "instructions" | "note") => void;
   onKillCommand: (commandId: string) => Promise<void>;

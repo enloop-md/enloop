@@ -67,6 +67,7 @@ import {
   readJson,
   readTextFile,
   readTextTail,
+  writeBinaryFile,
   writeJson,
   writeTextFile,
   tryGetDir,
@@ -102,6 +103,8 @@ const COMMANDS_DIR = "commands";
  * mtime, so the body is informational. */
 const HEARTBEAT_FILE = "heartbeat.json";
 const QUESTION_FILE = "question.json";
+const QUESTION_SCREENSHOT_FILE = "screenshot.png";
+const QUESTION_PAGE_FILE = "page.html";
 const ANSWER_FILE = "answer.md";
 const ANSWER_META_FILE = "answer.json";
 const COMMAND_REQUEST_FILE = "request.json";
@@ -929,7 +932,14 @@ export class FsaDataStore implements DataStore {
   async askQuestion(
     testCaseId: string,
     runId: string,
-    draft: { stepId: string; question: string; selection: string },
+    draft: {
+      stepId: string;
+      question: string;
+      selection: string;
+      pageUrl: string;
+      screenshotPng: Uint8Array | null;
+      pageHtml: string | null;
+    },
   ): Promise<AgentQuestion> {
     const runDir = await this.getRunDir(testCaseId, runId);
     const [{ text: rawMarkdown }, runFile] = await Promise.all([
@@ -942,6 +952,10 @@ export class FsaDataStore implements DataStore {
     });
     const step = doc.steps.find((s) => s.id === draft.stepId);
     if (!step) throw new NotFoundError(`Step not found: ${draft.stepId}`);
+    const attachments = [
+      ...(draft.screenshotPng ? [QUESTION_SCREENSHOT_FILE] : []),
+      ...(draft.pageHtml ? [QUESTION_PAGE_FILE] : []),
+    ];
     const question: AgentQuestionFile = {
       id: newQuestionId(),
       testCaseId,
@@ -952,9 +966,17 @@ export class FsaDataStore implements DataStore {
       selection: draft.selection,
       question: draft.question,
       environment: runFile.environment,
+      pageUrl: draft.pageUrl,
+      attachments,
       askedAt: nowIso(),
     };
     const qDir = await getDir(await this.questionsDir(true), question.id, { create: true });
+    // Attachments land before question.json so a serve pass that sees the
+    // question sees its evidence too — the envelope is the ready marker.
+    if (draft.screenshotPng) {
+      await writeBinaryFile(qDir, QUESTION_SCREENSHOT_FILE, draft.screenshotPng);
+    }
+    if (draft.pageHtml) await writeTextFile(qDir, QUESTION_PAGE_FILE, draft.pageHtml);
     await writeJson(qDir, QUESTION_FILE, question);
     return { ...question, answer: null };
   }

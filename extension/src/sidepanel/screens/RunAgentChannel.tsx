@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { AgentCommand, AgentQuestion, CompatResult, Run } from "@tcm/shared";
 import { Markdown } from "../../components/Markdown.js";
+import {
+  activePageUrl,
+  capturePageSnapshot,
+  captureScreenshot,
+} from "../../lib/page-capture.js";
 import { useReadyStore } from "../store/DataStoreProvider.js";
-import { commandPending } from "../useAgentChannel.js";
+import { commandPending, type AskDraft } from "../useAgentChannel.js";
 
 /**
  * The run-screen half of the agent channel: asking a question from a step,
@@ -29,13 +34,19 @@ export function StepQuestions({
   stepId: string;
   questions: AgentQuestion[];
   readOnly: boolean;
-  onAsk: (stepId: string, question: string, selection: string) => Promise<void>;
+  onAsk: (draft: AskDraft) => Promise<void>;
   onSwapped: (run: Run) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [selection, setSelection] = useState("");
   const [busy, setBusy] = useState(false);
+  // Both default on: "how do I check this?" is almost always a question
+  // about the page in front of the tester, and everything stays in the
+  // local data folder either way. Captures degrade to nothing on a page
+  // the panel cannot script — the question still goes.
+  const [withScreenshot, setWithScreenshot] = useState(true);
+  const [withSnapshot, setWithSnapshot] = useState(true);
   const wrapRef = useRef<HTMLDivElement>(null);
 
   const mine = questions.filter((q) => q.stepId === stepId);
@@ -57,7 +68,18 @@ export function StepQuestions({
     if (!text.trim()) return;
     setBusy(true);
     try {
-      await onAsk(stepId, text.trim(), selection);
+      const [snapshot, screenshot] = await Promise.all([
+        withSnapshot ? capturePageSnapshot() : Promise.resolve(null),
+        withScreenshot ? captureScreenshot() : Promise.resolve(null),
+      ]);
+      await onAsk({
+        stepId,
+        question: text.trim(),
+        selection,
+        pageUrl: snapshot?.url ?? (await activePageUrl()),
+        screenshotPng: screenshot,
+        pageHtml: snapshot?.html ?? null,
+      });
       setText("");
       setSelection("");
       setOpen(false);
@@ -97,6 +119,31 @@ export function StepQuestions({
             placeholder="What do you need to know to do this step?"
             className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
           />
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-600">
+            <label className="flex items-center gap-1" title="PNG of the visible tab — what you are looking at">
+              <input
+                type="checkbox"
+                checked={withScreenshot}
+                onChange={(e) => setWithScreenshot(e.target.checked)}
+              />
+              Screenshot
+            </label>
+            <label
+              className="flex items-center gap-1"
+              title="The page's structure with scripts and styles stripped — what selectors are checked against"
+            >
+              <input
+                type="checkbox"
+                checked={withSnapshot}
+                onChange={(e) => setWithSnapshot(e.target.checked)}
+              />
+              Page snapshot
+            </label>
+          </div>
+          <p className="text-[10px] text-slate-400">
+            Captured from the page in front of you, saved with the question in this folder's{" "}
+            <code>agent/</code> directory.
+          </p>
           <div className="flex gap-2">
             <button
               onClick={() => void submit()}
@@ -116,6 +163,19 @@ export function StepQuestions({
       )}
     </div>
   );
+}
+
+/** Host and path, clipped — enough to recognize the page; the full URL is
+ * in the title attribute. */
+function shortUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    const path = u.pathname === "/" ? "" : u.pathname;
+    const short = `${u.host}${path}`;
+    return short.length > 48 ? `${short.slice(0, 47)}…` : short;
+  } catch {
+    return url.length > 48 ? `${url.slice(0, 47)}…` : url;
+  }
 }
 
 function QuestionCard({
@@ -146,6 +206,15 @@ function QuestionCard({
       {question.selection && (
         <p className="border-l-2 border-violet-200 pl-1.5 text-[11px] italic text-slate-400">
           “{question.selection}”
+        </p>
+      )}
+      {(question.pageUrl || question.attachments.length > 0) && (
+        <p className="text-[10px] text-slate-400">
+          {question.pageUrl && (
+            <span title={question.pageUrl}>on {shortUrl(question.pageUrl)}</span>
+          )}
+          {question.pageUrl && question.attachments.length > 0 && " · "}
+          {question.attachments.length > 0 && <>📎 {question.attachments.join(" · ")}</>}
         </p>
       )}
       {question.answer === null ? (

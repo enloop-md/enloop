@@ -141,7 +141,19 @@ export interface AgentChannelStore {
   askQuestion(
     testCaseId: string,
     runId: string,
-    draft: { stepId: string; question: string; selection: string },
+    draft: {
+      stepId: string;
+      question: string;
+      selection: string;
+      /** Where the tester was standing, "" when no scriptable tab. */
+      pageUrl: string;
+      /** PNG of the visible tab, null when not captured — saved beside the
+       * question as `screenshot.png`. */
+      screenshotPng: Uint8Array | null;
+      /** Sanitized DOM snapshot, null when not captured — saved as
+       * `page.html`, the file selectors get verified against. */
+      pageHtml: string | null;
+    },
   ): Promise<AgentQuestion>;
   listQuestions(testCaseId: string, runId: string): Promise<AgentQuestion[]>;
   requestCommand(

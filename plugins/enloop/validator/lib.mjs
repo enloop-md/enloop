@@ -3972,6 +3972,15 @@ z.object({
 	selection: z.string(),
 	question: z.string(),
 	environment: z.string(),
+	/** URL of the page in front of the tester when they asked — where "here"
+	* was. Empty when no scriptable tab was there. */
+	pageUrl: z.string().default(""),
+	/** Files saved next to question.json: `screenshot.png` (the visible tab)
+	* and/or `page.html` (a sanitized DOM snapshot — scripts and styles
+	* stripped, structure and attributes kept, so selectors can be verified
+	* against it). Defaulted so questions from before attachments existed
+	* still parse. */
+	attachments: z.array(z.string()).default([]),
 	askedAt: z.string()
 });
 z.object({
