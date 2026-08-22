@@ -269,11 +269,16 @@ Two things ride the channel:
   The serve pass answers from the app's source — the direct answer first,
   the exact click-path after it — and, when the step text itself was the
   problem, lands a patch as `versions/v<n+1>.md`: same step count, every
-  already-executed step byte-identical, `Change note:` naming the run. The
+  already-executed step byte-identical — except the asked step itself, which
+  may change whatever its status — with a `Change note:` naming the run. The
   panel re-verifies that compatibility on its own and only then offers
   "Load v<n+1>" — accepted with one click, the run keeps every recorded
-  status. An incompatible patch is still an ordinary next version for the
-  next run; nothing is lost, only the hot-swap declined.
+  status, and if the asked step changed after being judged, that one result
+  resets so it gets re-done against the new text. The pass acknowledges each
+  question the moment it sees it (`ack.json`), so the panel shows "agent is
+  working on the answer" instead of "waiting" while the answer is
+  researched. An incompatible patch is still an ordinary next version for
+  the next run; nothing is lost, only the hot-swap declined.
 - **Commands.** A case's Dependencies often say things like
   `node scripts/seed.js --org https://…`. The panel shows Run on such
   commands; the serve pass executes them in the background from the app
@@ -290,7 +295,8 @@ in repo-hosted folders):
 ├── heartbeat.json        touched by the open panel every 20 s
 ├── questions/<id>/       question.json (+ screenshot.png, page.html —
 │                         the tester's page as pixels and as greppable,
-│                         style-stripped structure) → answer.md + answer.json
+│                         style-stripped structure) → ack.json ("working
+│                         on it") → answer.md + answer.json
 └── commands/<id>/        request.json → run.sh, pid, status.json,
                           output.log, exit-code; a `kill` file is the
                           Stop button

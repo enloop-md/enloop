@@ -18,10 +18,17 @@ export interface CompatResult {
  * text it was recorded against, so its definition may not change. An extra
  * step starts life `skipped` without anyone touching it (see `createRun`),
  * which is why status alone is not the test — untouched extras are still
- * free to change.
+ * free to change, and `running` is automation in flight, not a verdict.
+ *
+ * `allowed` lists steps exempt regardless of status — the step a question
+ * was asked from. The tester asking about a step they already judged is
+ * asking because that judgement is in doubt; the swap keeps the invariant a
+ * different way, by resetting the step's result so it gets re-done against
+ * the new text (see `swapRunVersion`).
  */
-function isFrozen(def: Step, state: RunStepState): boolean {
-  if (state.status === "pending") return false;
+function isFrozen(def: Step, state: RunStepState, allowed: ReadonlySet<string>): boolean {
+  if (allowed.has(def.id)) return false;
+  if (state.status === "pending" || state.status === "running") return false;
   if (def.extra && state.startedAt === null && state.finishedAt === null) return false;
   return true;
 }
@@ -61,7 +68,9 @@ export function checkRunCompat(
   current: TestCaseVersion,
   candidate: TestCaseVersion,
   steps: RunStepState[],
+  opts: { allowStepIds?: string[] } = {},
 ): CompatResult {
+  const allowed = new Set(opts.allowStepIds ?? []);
   if (current.steps.length !== steps.length) {
     // One state per doc step is createRun's invariant; a mismatch is a
     // corrupt run, not an incompatible candidate.
@@ -82,7 +91,7 @@ export function checkRunCompat(
   for (let i = 0; i < current.steps.length; i++) {
     const diff = changedFields(current.steps[i], candidate.steps[i]);
     if (diff.length === 0) continue;
-    if (isFrozen(current.steps[i], steps[i])) {
+    if (isFrozen(current.steps[i], steps[i], allowed)) {
       reasons.push(
         `executed step ${current.steps[i].id} "${current.steps[i].title}" changed (${diff.join(", ")})`,
       );

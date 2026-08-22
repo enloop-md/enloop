@@ -3985,6 +3985,10 @@ z.object({
 });
 z.object({
 	id: z.string(),
+	pickedUpAt: z.string()
+});
+z.object({
+	id: z.string(),
 	answeredAt: z.string(),
 	/** One line for collapsed views; the full answer is `answer.md`. */
 	summary: z.string(),
