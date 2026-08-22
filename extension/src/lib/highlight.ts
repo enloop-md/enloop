@@ -12,6 +12,11 @@ import { getPageAccess, type PageAccess } from "./page-access.js";
  * `querySelector` throw; that candidate is skipped rather than aborting the
  * whole attempt, since the point of a fallback list is to survive one bad
  * entry.
+ *
+ * Runs once per frame (`allFrames`), because the target may live inside an
+ * iframe — cross-origin included — and a frame can only search its own
+ * document. Two frames matching means two flashes; for a visual aid that is
+ * a feature, not a conflict to resolve.
  */
 function highlightElement(selectors: string[]): { matched: string | null } {
   for (const selector of selectors) {
@@ -61,13 +66,22 @@ export async function highlightSelectors(selectors: string[]): Promise<Highlight
   if (access.status !== "ready") return { status: "blocked", access };
 
   try {
-    const [injection] = await chrome.scripting.executeScript({
-      target: { tabId: access.tabId },
+    const injections = await chrome.scripting.executeScript({
+      target: { tabId: access.tabId, allFrames: true },
       world: "ISOLATED",
       func: highlightElement,
       args: [selectors],
     });
-    const matched = injection?.result?.matched ?? null;
+    // Frames report independently; the one that matched the earliest-listed
+    // selector wins the label, since the list is ordered by specificity.
+    let matched: string | null = null;
+    for (const injection of injections) {
+      const candidate = injection?.result?.matched ?? null;
+      if (!candidate) continue;
+      if (matched === null || selectors.indexOf(candidate) < selectors.indexOf(matched)) {
+        matched = candidate;
+      }
+    }
     return matched ? { status: "matched", selector: matched } : { status: "no-match" };
   } catch {
     // Access was there a moment ago, so this is the page itself refusing —
