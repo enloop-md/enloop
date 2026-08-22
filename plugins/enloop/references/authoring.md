@@ -259,7 +259,8 @@ not say, and this skill does:
   doesn't respond. The section renders collapsed, so listing what is usually
   already running costs nothing.
 - **`# Steps`** — per the contract, with `Kind: quick` on the core path
-  (rule 3b) and cleanup steps at the end.
+  (rule 3b), `Kind: extra` on optional side-checks and conditionals
+  (rule 3c), and cleanup steps at the end.
 
 Write it to a scratch file first. It is not going into the cases folder
 until it parses clean and passes the by-eye list.

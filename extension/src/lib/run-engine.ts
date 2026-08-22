@@ -116,6 +116,13 @@ export async function chainAutomatedFrom(
 
   while (true) {
     const next = current.steps[index + 1];
+    // An extra step still in its resting skipped state is transparent to the
+    // chain — it was opted out of by default, and stopping at it would strand
+    // the pending automated step behind it.
+    if (next && next.extra && next.status === "skipped") {
+      index += 1;
+      continue;
+    }
     if (!next || next.type !== "automated" || next.status !== "pending") break;
     current = await runAutomatedStep(store, current, next.stepId);
     index += 1;

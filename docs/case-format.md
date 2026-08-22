@@ -9,7 +9,7 @@ and it is the thing to read when writing cases by hand.
 
 ```markdown
 # Careerminds: Sync a contact from the CRM to the mailer
-@version 0.0.6
+@version 0.0.7
 @author Your Name
 @project Careerminds
 Tags: sync-console, integrations, manual
@@ -113,6 +113,31 @@ two-minute run without anyone writing a second case. Suite prep steps always
 run. The tier is recorded on the run and shown in the report, the run header and
 run history — a quick pass and a full pass are not the same evidence.
 
+## Extra steps, and skipping
+
+`Kind: extra` is the opposite dial: an optional side-check the case is better
+for carrying but no run is required to make. It stays visible in the run,
+numbered with a minor increment under the ordinary step before it —
+
+```
+1    Open accounts page
+2    Create account
+2.1  Check account picture is set        (extra)
+2.2  Check "test connection" button      (extra)
+3    Create X in account
+```
+
+— and starts the run already marked **skipped**; the tester opts in by giving
+it a verdict. Conditionals ("only if a second account exists"), nice-to-verify
+polish checks, and steps that need data not every tester has are what it is
+for. A step carries one `Kind:` — quick or extra, not both — and extra steps
+are never part of a quick run.
+
+Any step can also be skipped mid-run: a small **Skip this step** link sits
+under the Pass/Warning/Fail buttons. A skip is recorded, not discarded —
+skipped ordinary steps land in `feedback.md` addressed to the test writer,
+because a step that arrives skipped run after run is telling you it should be
+`Kind: extra` or gone.
 
 ## Prerequisites, project and variables
 
@@ -217,7 +242,8 @@ The rules, in brief:
 6. Test data is resolved before the run. A variable gets a default, a
    generator, or explicit instructions for obtaining it — never "find a company
    that…" mid-run.
-7. No conditionals inside a step. A conditional becomes its own skippable step.
+7. No conditionals inside a step. A conditional becomes its own step, usually
+   `Kind: extra` so it is skipped unless it applies.
 8. Cleanup is explicit. A case that can't be run twice will be run once.
 
 It ends in two lists the skill checks before writing anything: the mechanical

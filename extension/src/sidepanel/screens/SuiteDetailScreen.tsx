@@ -198,7 +198,8 @@ function SuiteRuns({ runs }: { runs: RunSummary[] }) {
   };
   // listRuns sorts newest-first and filtering preserves that order.
   const last = runs[0];
-  const undecided = last.stepCount - last.passCount - last.failCount - last.warnCount;
+  const undecided =
+    last.stepCount - last.passCount - last.failCount - last.warnCount - last.skipCount;
 
   return (
     <div className="space-y-2">
@@ -236,8 +237,10 @@ function SuiteRuns({ runs }: { runs: RunSummary[] }) {
           <Tally count={last.passCount} label="passed" className="text-emerald-600" />
           <Tally count={last.warnCount} label="warning" className="text-amber-600" />
           <Tally count={last.failCount} label="failed" className="text-red-600" />
-          {/* Pending or skipped. Worth naming: on an aborted run this is the
-              difference between "nothing went wrong" and "nobody got to it". */}
+          <Tally count={last.skipCount} label="skipped" className="text-slate-400" />
+          {/* Pending only. Worth naming: on an aborted run this is the
+              difference between "nothing went wrong" and "nobody got to it".
+              Skipped is its own tally — a skip was decided, not left. */}
           <Tally count={undecided} label="not run" className="text-slate-400" />
         </div>
       </div>

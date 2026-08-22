@@ -31,6 +31,7 @@ interface StepDraft {
   where: string;
   selectors: string;
   quick: boolean;
+  extra: boolean;
   instructions: string;
   script: string;
   expected: string;
@@ -63,6 +64,7 @@ function emptyStep(): StepDraft {
     where: "",
     selectors: "",
     quick: false,
+    extra: false,
     instructions: "",
     script: "",
     expected: "",
@@ -90,6 +92,27 @@ const lines = (text: string): string[] =>
     .map((l) => l.replace(/^\s*[-*]\s*/, "").trim())
     .filter(Boolean);
 
+/** Dependencies/prerequisites from their textarea: one item per line, the
+ * bullet prefix optional — but an *indented* line continues the item above
+ * it, matching the grammar's multiline items so an edited case round-trips
+ * instead of having its wrapped items flattened into separate ones. */
+const bulletItems = (text: string): string[] => {
+  const items: string[] = [];
+  for (const line of text.split("\n")) {
+    if (line.trim() === "") continue;
+    if (/^[ \t]/.test(line) && items.length > 0) {
+      items[items.length - 1] += "\n" + line.replace(/^(?: {1,2}|\t)/, "").trimEnd();
+    } else {
+      items.push(line.replace(/^[-*]\s*/, "").trim());
+    }
+  }
+  return items;
+};
+
+/** Items back into textarea form, continuations indented under their item. */
+const bulletText = (items: string[]): string =>
+  items.map((item) => item.replace(/\n/g, "\n  ")).join("\n");
+
 /** The draft as the parser's own model, ready to serialize. */
 function toDocument(draft: Draft): TestCaseVersion {
   return {
@@ -114,8 +137,8 @@ function toDocument(draft: Draft): TestCaseVersion {
         generator: (v.generator || undefined) as TestCaseVersion["variables"][number]["generator"],
         generatorArg: v.generatorArg.trim() || undefined,
       })),
-    dependencies: lines(draft.dependencies),
-    prerequisites: lines(draft.prerequisites),
+    dependencies: bulletItems(draft.dependencies),
+    prerequisites: bulletItems(draft.prerequisites),
     steps: draft.steps.map((s, index) => ({
       id: `step-${index + 1}`,
       order: index,
@@ -127,6 +150,7 @@ function toDocument(draft: Draft): TestCaseVersion {
       selectors: lines(s.selectors),
       where: s.where.trim() || undefined,
       quick: s.quick,
+      extra: s.extra,
       note: s.note.trim() || undefined,
     })),
   };
@@ -145,8 +169,8 @@ function fromMarkdown(markdown: string): Draft {
     author: doc.author,
     tags: doc.tags.join(", "),
     description: doc.description,
-    dependencies: doc.dependencies.join("\n"),
-    prerequisites: doc.prerequisites.join("\n"),
+    dependencies: bulletText(doc.dependencies),
+    prerequisites: bulletText(doc.prerequisites),
     variables: doc.variables.map((v) => ({
       name: v.name,
       description: v.description,
@@ -161,6 +185,7 @@ function fromMarkdown(markdown: string): Draft {
             where: s.where ?? "",
             selectors: s.selectors.join("\n"),
             quick: s.quick,
+            extra: s.extra,
             instructions: s.instructions ?? "",
             script: s.script ?? "",
             expected: s.expected ?? "",
@@ -503,16 +528,40 @@ export function renderBuilder(
         }),
       );
 
+      // One `Kind:` per step, so the two checkboxes are mutually exclusive —
+      // ticking one clears the other rather than silently losing in the
+      // serializer, where quick would win.
       const quickWrap = el("label", "bcheck");
       const quick = el("input");
       quick.type = "checkbox";
+      const extraWrap = el("label", "bcheck");
+      const extra = el("input");
+      extra.type = "checkbox";
       quick.checked = step.quick;
       quick.addEventListener("change", () => {
         step.quick = quick.checked;
+        if (quick.checked) {
+          step.extra = false;
+          extra.checked = false;
+        }
         refreshPreview();
       });
       quickWrap.append(quick, document.createTextNode(" part of the quick path"));
       card.appendChild(quickWrap);
+      extra.checked = step.extra;
+      extra.addEventListener("change", () => {
+        step.extra = extra.checked;
+        if (extra.checked) {
+          step.quick = false;
+          quick.checked = false;
+        }
+        refreshPreview();
+      });
+      extraWrap.append(
+        extra,
+        document.createTextNode(" extra — optional side-check, skipped by default"),
+      );
+      card.appendChild(extraWrap);
 
       stepsList.appendChild(card);
     });

@@ -6,6 +6,7 @@ import {
   missingEnvironmentValues,
   resolveVariableValues,
   parseCaseDocument,
+  renderBulletList,
   renderCasePage,
   renderReadableCase,
   splitId,
@@ -403,20 +404,14 @@ export function CaseDetailScreen({
         {version && version.dependencies.length > 0 && (
           <div className="mb-3">
             <h2 className="mb-1 text-xs font-semibold uppercase text-slate-400">Dependencies</h2>
-            <Markdown
-              text={version.dependencies.map((d) => `- ${d}`).join("\n")}
-              className="text-sm text-slate-600"
-            />
+            <Markdown text={renderBulletList(version.dependencies)} className="text-sm text-slate-600" />
           </div>
         )}
 
         {version && version.prerequisites.length > 0 && (
           <div className="mb-3">
             <h2 className="mb-1 text-xs font-semibold uppercase text-slate-400">Prerequisites</h2>
-            <Markdown
-              text={version.prerequisites.map((p) => `- ${p}`).join("\n")}
-              className="text-sm text-slate-600"
-            />
+            <Markdown text={renderBulletList(version.prerequisites)} className="text-sm text-slate-600" />
           </div>
         )}
 

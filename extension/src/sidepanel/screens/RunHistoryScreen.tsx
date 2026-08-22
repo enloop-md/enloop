@@ -81,10 +81,13 @@ export function RunHistoryScreen({
                   </div>
                   <div className="text-xs text-slate-400">
                     v{entry.run.testCaseVersion} · {new Date(entry.run.startedAt).toLocaleString()} ·{" "}
-                    {entry.run.passCount}/{entry.run.stepCount} passed
+                    {/* Skipped steps leave the denominator, same as the run
+                        screen's own header — see the note there. */}
+                    {entry.run.passCount}/{entry.run.stepCount - entry.run.skipCount} passed
                     {entry.run.failCount > 0 && (
                       <span className="text-red-500"> · {entry.run.failCount} failed</span>
                     )}
+                    {entry.run.skipCount > 0 && <span> · {entry.run.skipCount} skipped</span>}
                   </div>
                 </button>
               </li>

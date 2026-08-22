@@ -429,6 +429,13 @@ export function lintCase(raw: string, options: { expectProject?: string } = {}):
       message: "Every step is marked `Kind: quick`, so a quick run costs what a full one does. Correct for a quick-tier case, wrong for a full one.",
     });
   }
+  if (doc.steps[0]?.extra) {
+    warnings.push({
+      rule: "3b",
+      at: doc.steps[0].title,
+      message: "The first step is `Kind: extra`, so it numbers 0.1 — an optional check before any ordinary step exists. Put an ordinary step first, or unmark it.",
+    });
+  }
 
   // --- the cold-run readout ------------------------------------------------
 

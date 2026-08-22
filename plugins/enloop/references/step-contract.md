@@ -268,6 +268,33 @@ they always do.
 A case with no marks is full-only, which is a fine answer for a case that is
 all edge cases.
 
+## 3c. Mark optional side-checks with `Kind: extra`
+
+The opposite dial. `Kind: extra` says the check is worth keeping in the case
+but no run is required to make it: it stays in the list, numbered with a
+minor increment under the ordinary step before it (2.1, 2.2), and starts the
+run already marked skipped — the tester opts in by giving it a verdict.
+
+    ## Create account
+    Where: %BASE_URL%/accounts
+    Selector: [data-testid="create-account"]
+    ...
+
+    ## Check the account picture is set
+    Kind: extra
+    Selector: [data-testid="account-avatar"]
+    ...
+
+Mark a step `extra` when it is conditional ("only if a second enabled
+account exists"), when it verifies polish rather than function, or when it
+needs data or access not every tester has. A step has one `Kind:` — quick or
+extra, never both — and extra steps are never part of a quick run.
+
+Testers can also skip any step mid-run, and skips are reported to the test
+writer: a step that arrives skipped run after run should become `Kind:
+extra` or be removed. Do not pre-empt that by marking half the case extra —
+an extra step is one you have decided may be declined, not one you doubt.
+
 ## 4. `### Expected` is pass criteria only
 
 Bullets. Observable. Binary. A tester reading only the Expected block must
@@ -369,10 +396,11 @@ Values are insertable wherever they appear in a running case — instructions,
 ## 7. No conditionals inside a step
 
 "If a second enabled account exists, do X" makes the tester decide. Make
-it its own step whose title states the condition, so it can be marked
-Skipped as a first-class outcome:
+it its own step whose title states the condition, marked `Kind: extra` so
+skipping it is the default rather than a verdict the tester must spend:
 
 > ## (Only if a second enabled connection exists) Account-scoped webhook stays scoped
+> Kind: extra
 
 ## 8. State cleanup explicitly
 

@@ -473,8 +473,10 @@ export function renderCaseBody(doc: TestCaseVersion, opts: CasePageOptions = {})
     if (doc.prerequisites.length > 0) {
       parts.push(`<ul class="checklist">`);
       for (const item of doc.prerequisites) {
+        // renderInline passes newlines through as text, where HTML would
+        // collapse them — <br> keeps a wrapped item's lines apart.
         parts.push(
-          `<li><label><input type="checkbox" class="pre-check"> <span>${renderInline(item, values)}</span></label></li>`,
+          `<li><label><input type="checkbox" class="pre-check"> <span>${renderInline(item, values).replace(/\n/g, "<br>")}</span></label></li>`,
         );
       }
       parts.push("</ul>");
@@ -483,7 +485,7 @@ export function renderCaseBody(doc: TestCaseVersion, opts: CasePageOptions = {})
       parts.push('<p class="hint">These must already be true, and are not yours to arrange:</p>');
       parts.push(
         `<ul class="deps">${doc.dependencies
-          .map((d) => `<li>${renderInline(d, values)}</li>`)
+          .map((d) => `<li>${renderInline(d, values).replace(/\n/g, "<br>")}</li>`)
           .join("")}</ul>`,
       );
     }
