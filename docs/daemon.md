@@ -3,10 +3,13 @@
 The agent channel ([skills.md](skills.md#serving-the-panel-live)) needs a
 server: something watching the data folder to answer mid-run questions and
 run case commands. A Claude Code session looping `/enloop:serve` is one
-server. `enloopd` is the other — a plain CLI daemon for testers who don't
-develop with an LLM, machines without Claude Code, or a shared box serving
-a team. The extension needs no configuration to use it: both servers speak
-the same files, and the panel simply shows which one picked a question up.
+server. `enloopd` is the other — the same LLM-powered answering, **without
+an active session**. It thinks with the Claude API, or with an installed
+Claude Code or Codex driven headlessly; what it removes is the open
+session someone has to keep looping. Leave it running on a tester's
+machine or a shared box, and the tester never touches a terminal. The
+extension needs no configuration to use it: both servers speak the same
+files, and the panel simply shows which one picked a question up.
 
 ## Install
 
@@ -66,10 +69,7 @@ makes cron the scheduler:
 
 ## Backends and their auth
 
-The command half — provenance check, spawn, output streaming, Stop,
-timeouts, heartbeat kill — is deterministic code and needs **no model and
-no key**: `--commands-only` is a complete deployment on its own. Questions
-need a brain, and `--backend` picks it:
+Answering is always an LLM's work — `--backend` picks whose:
 
 | Backend | What it does | Auth — set up once |
 | --- | --- | --- |
@@ -81,6 +81,12 @@ need a brain, and `--backend` picks it:
 paid for — then a resolvable Anthropic credential, then `codex`. With
 nothing viable the daemon **refuses to start** rather than silently
 ignoring questions; `enloopd setup` walks the fix.
+
+One narrow exception: the command half — provenance check, spawn, output
+streaming, Stop, timeouts, heartbeat kill — is deterministic code, so
+`--commands-only` runs it with no backend and no key at all. That mode
+answers nothing; it exists for a machine that should only execute the
+commands testers click.
 
 ## Configuration
 

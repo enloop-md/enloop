@@ -147,9 +147,11 @@ export function loadConfig(argv: string[]): DaemonConfig {
 }
 
 export const HELP = `enloopd — answers the Enloop extension's mid-run questions and runs its
-commands, from a plain terminal. The other end of the same channel a Claude
-Code session serves with /loop 1m /enloop:serve — and when both run, Claude
-Code wins (it holds the task's context; this daemon defers while it is alive).
+commands, with no active session to keep open. The answering is still an
+LLM's — the Claude API, or an installed Claude Code / Codex driven
+headlessly. The other end of the same channel is a Claude Code session
+looping /loop 1m /enloop:serve — and when both run, Claude Code wins (it
+holds the task's context; this daemon defers while it is alive).
 
 Usage:
   enloopd setup                      interactive backend + auth + config wizard

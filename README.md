@@ -122,7 +122,7 @@ no database, no account.
 | Write cases with **Claude Code** | [docs/claude-code.md](docs/claude-code.md) |
 | Write cases with **Codex** | [docs/codex.md](docs/codex.md) |
 | Understand what the skills do | [docs/skills.md](docs/skills.md) |
-| Answer testers without Claude Code | [docs/daemon.md](docs/daemon.md) |
+| Answer questions with no session open (enloopd) | [docs/daemon.md](docs/daemon.md) |
 | Write or read a case by hand | [docs/case-format.md](docs/case-format.md) |
 | Share a case with someone | [the viewer](https://enloop-md.github.io/enloop/) |
 

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Standalone answering daemon for the Enloop agent channel — serves the extension's mid-run questions and commands without a Claude Code session.",
+  "description": "Answers the Enloop extension's mid-run questions and runs its commands with no active agent session to keep open — the answering runs on the Claude API, or an installed Claude Code / Codex driven headlessly.",
   "bin": {
     "enloopd": "./dist/enloopd.mjs"
   },
