@@ -14,3 +14,9 @@ export { lintCase } from "./lint.js";
 export type { LintResult, LintFinding } from "./lint.js";
 export { newTestCaseId } from "./id.js";
 export { CURRENT_FORMAT_VERSION, stepNumberLabels } from "./markdown.js";
+export {
+  compareVersionIds,
+  nextMajorId,
+  nextMinorId,
+  versionIdFromFileName,
+} from "./version-id.js";

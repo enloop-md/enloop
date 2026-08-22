@@ -116,7 +116,7 @@ const bulletText = (items: string[]): string =>
 /** The draft as the parser's own model, ready to serialize. */
 function toDocument(draft: Draft): TestCaseVersion {
   return {
-    version: 1,
+    version: "1",
     createdAt: new Date().toISOString(),
     formatVersion: CURRENT_FORMAT_VERSION,
     author: draft.author,
@@ -160,7 +160,7 @@ function toDocument(draft: Draft): TestCaseVersion {
 function fromMarkdown(markdown: string): Draft {
   const doc = parseCaseDocument(
     markdown,
-    { version: 1, createdAt: new Date().toISOString() },
+    { version: "1", createdAt: new Date().toISOString() },
     { requireSteps: false },
   );
   return {

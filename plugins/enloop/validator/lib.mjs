@@ -3616,7 +3616,74 @@ var z = /*#__PURE__*/ Object.freeze({
 	ZodError
 });
 //#endregion
+//#region shared/src/version-id.ts
+/**
+* Case version identifiers: `"1"`, `"2"`, … for authored (major) versions,
+* `"1.1"`, `"1.2"`, … for mid-run patches (minors) landed by a serve pass.
+*
+* The distinction is provenance, visible at a glance in the folder: an
+* authoring skill or the editor produces the next major; answering a
+* tester's question produces the next minor of whatever is current. The
+* filename is the id — `versions/v1.md`, `versions/v1.2.md` — and a major
+* has no `.0` suffix, which is what keeps every pre-minor folder valid
+* as-is.
+*
+* Ids are strings everywhere in memory and on disk. JSON written before
+* minors existed carries bare numbers; the schema layer normalizes those
+* to strings on read (see `caseVersionIdSchema`).
+*/
+var VERSION_ID_RE = /^\d+(?:\.\d+)?$/;
+var VERSION_FILE_RE = /^v(\d+(?:\.\d+)?)\.md$/;
+function parseVersionId(id) {
+	if (!VERSION_ID_RE.test(id)) throw new Error(`Not a version id: ${id}`);
+	const [major, minor] = id.split(".");
+	return {
+		major: Number(major),
+		minor: minor === void 0 ? 0 : Number(minor)
+	};
+}
+function formatVersionId(major, minor) {
+	return minor === 0 ? String(major) : `${major}.${minor}`;
+}
+/** Numeric by (major, minor) — `"1.2" < "1.10" < "2"`, which string
+* comparison gets wrong twice. */
+function compareVersionIds(a, b) {
+	const pa = parseVersionId(a);
+	const pb = parseVersionId(b);
+	return pa.major - pb.major || pa.minor - pb.minor;
+}
+/** The id inside a `v<id>.md` filename, null for anything else. */
+function versionIdFromFileName(name) {
+	return VERSION_FILE_RE.exec(name)?.[1] ?? null;
+}
+function latestVersionId(ids) {
+	if (ids.length === 0) return null;
+	return ids.reduce((a, b) => compareVersionIds(a, b) >= 0 ? a : b);
+}
+/** What an authoring pass lands: the next major, minors left behind —
+* after `["1", "1.2"]` comes `"2"`. */
+function nextMajorId(ids) {
+	const majors = ids.map((id) => parseVersionId(id).major);
+	return String(majors.length === 0 ? 1 : Math.max(...majors) + 1);
+}
+/** What a mid-run patch lands: the next minor of the latest version —
+* after `["1"]` comes `"1.1"`, after `["1", "1.2"]` comes `"1.3"`, after
+* `["1.2", "2"]` comes `"2.1"`. */
+function nextMinorId(ids) {
+	const latest = latestVersionId(ids);
+	if (latest === null) return "1";
+	const { major, minor } = parseVersionId(latest);
+	return formatVersionId(major, minor + 1);
+}
+//#endregion
 //#region shared/src/schemas.ts
+/**
+* A case version id — `"3"` (authored major) or `"3.1"` (mid-run patch
+* minor); see version-id.ts. Every file written before minors existed
+* stored versions as bare JSON numbers, so numbers are accepted and
+* normalized to strings on read.
+*/
+var caseVersionIdSchema = z.union([z.number().int().positive(), z.string().regex(VERSION_ID_RE)]).transform(String);
 var stepTypeSchema = z.enum(["manual", "automated"]);
 var VARIABLE_GENERATORS = [
 	"timestamp",
@@ -3679,7 +3746,7 @@ var stepSchema = z.object({
 	note: z.string().optional()
 });
 z.object({
-	version: z.number().int().positive(),
+	version: caseVersionIdSchema,
 	createdAt: z.string(),
 	/** Format version of the grammar this document was parsed with, e.g.
 	* `@version 0.0.1`. Not the same as `version` above. */
@@ -3709,7 +3776,7 @@ z.object({
 	project: z.string(),
 	description: z.string(),
 	tags: z.array(z.string()),
-	currentVersion: z.number().int().positive(),
+	currentVersion: caseVersionIdSchema,
 	createdAt: z.string(),
 	updatedAt: z.string(),
 	archived: z.boolean(),
@@ -3853,8 +3920,8 @@ var runStepStateSchema = z.object({
 * step actually executed against, and so the panel can tell an offer it
 * already took from one still open. */
 var runSwapSchema = z.object({
-	fromVersion: z.number().int().positive(),
-	toVersion: z.number().int().positive(),
+	fromVersion: caseVersionIdSchema,
+	toVersion: caseVersionIdSchema,
 	at: z.string(),
 	/** The question whose answer proposed the patch, null for a swap that
 	* arrives some other way. */
@@ -3873,7 +3940,7 @@ var runTierSchema = z.enum(["quick", "full"]);
 z.object({
 	id: z.string(),
 	testCaseId: z.string(),
-	testCaseVersion: z.number().int().positive(),
+	testCaseVersion: caseVersionIdSchema,
 	testCaseTitle: z.string(),
 	status: runStatusSchema,
 	/** Free text about the run as a whole, not any one step — "ran against an
@@ -3926,7 +3993,7 @@ var runStepSchema = stepSchema.omit({ id: true }).extend({
 z.object({
 	id: z.string(),
 	testCaseId: z.string(),
-	testCaseVersion: z.number().int().positive(),
+	testCaseVersion: caseVersionIdSchema,
 	testCaseTitle: z.string(),
 	status: runStatusSchema,
 	comment: z.string(),
@@ -3964,7 +4031,7 @@ z.object({
 	id: z.string(),
 	testCaseId: z.string(),
 	runId: z.string(),
-	testCaseVersion: z.number().int().positive(),
+	testCaseVersion: caseVersionIdSchema,
 	stepId: z.string(),
 	stepTitle: z.string(),
 	/** What the tester had selected in the step when they asked — the "this"
@@ -3995,7 +4062,7 @@ z.object({
 	/** Version the agent landed as a candidate patch, null when the answer
 	* needed no case change. A claim, not a promise: the panel re-verifies
 	* compatibility itself before offering to load it. */
-	proposedVersion: z.number().int().positive().nullable()
+	proposedVersion: caseVersionIdSchema.nullable()
 });
 /** Which part of the case the command was quoted from — `stepId` is null
 * exactly when this is a run-level field. */
@@ -4788,13 +4855,13 @@ function lintCase(raw, options = {}) {
 	const warnings = [];
 	const createdAt = (/* @__PURE__ */ new Date()).toISOString();
 	const declared = parseCaseDocument(raw, {
-		version: 1,
+		version: "1",
 		createdAt
 	});
 	const values = resolveVariableValues(declared.variables, {});
 	const substituted = substituteVariables(raw, values);
 	const doc = parseCaseDocument(substituted, {
-		version: 1,
+		version: "1",
 		createdAt
 	});
 	if (!doc.title.trim()) errors.push({
@@ -4987,7 +5054,7 @@ function lintCase(raw, options = {}) {
 	let quickParses = true;
 	if (quickMarked > 0) try {
 		const quickDoc = parseCaseDocument(filterToQuickSteps(substituted), {
-			version: 1,
+			version: "1",
 			createdAt
 		});
 		quickParses = quickDoc.steps.length === quickMarked;
@@ -5052,4 +5119,4 @@ function newTestCaseId(title) {
 	return `${slugify(title) || "test-case"}-${shortId()}`;
 }
 //#endregion
-export { CURRENT_FORMAT_VERSION, lintCase, newTestCaseId, stepNumberLabels };
+export { CURRENT_FORMAT_VERSION, compareVersionIds, lintCase, newTestCaseId, nextMajorId, nextMinorId, stepNumberLabels, versionIdFromFileName };

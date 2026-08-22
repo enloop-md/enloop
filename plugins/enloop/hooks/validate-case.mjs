@@ -26,7 +26,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-const CASE_FILE = /\/versions\/v\d+\.md$/;
+const CASE_FILE = /\/versions\/v\d+(?:\.\d+)?\.md$/;
 
 let filePath = "";
 try {

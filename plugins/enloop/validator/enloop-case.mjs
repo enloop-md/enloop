@@ -10,7 +10,7 @@
  *
  *   node enloop-case.mjs validate <case.md> [--project <name>] [--findings-only]
  *   node enloop-case.mjs write <case.md> --data-dir <folder>   validate, then land it
- *                        [--project <name>] [--case <id>] [--suite <suiteId>]
+ *                        [--project <name>] [--case <id> [--patch]] [--suite <suiteId>]
  *   node enloop-case.mjs compat <old.md> <new.md>      can new replace old under a live run
  *   node enloop-case.mjs brief [--example]             the floor: a clean minimal case + the rules
  *   node enloop-case.mjs data-folder [--want <path>]   where this repo's cases go
@@ -32,7 +32,15 @@
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { lintCase, newTestCaseId, stepNumberLabels, CURRENT_FORMAT_VERSION } from "./lib.mjs";
+import {
+  lintCase,
+  newTestCaseId,
+  stepNumberLabels,
+  nextMajorId,
+  nextMinorId,
+  versionIdFromFileName,
+  CURRENT_FORMAT_VERSION,
+} from "./lib.mjs";
 
 const [command, ...rest] = process.argv.slice(2);
 
@@ -282,10 +290,11 @@ switch (command) {
     const dataDirArg = flag("data-dir");
     if (!file || !dataDirArg) {
       die(
-        "usage: enloop-case.mjs write <case.md> --data-dir <folder> [--project <name>] [--case <id>] [--suite <suiteId>]",
+        "usage: enloop-case.mjs write <case.md> --data-dir <folder> [--project <name>] [--case <id> [--patch]] [--suite <suiteId>]",
       );
     }
     const intoCase = flag("case");
+    const asPatch = rest.includes("--patch");
     const intoSuite = flag("suite");
 
     let raw;
@@ -313,6 +322,9 @@ switch (command) {
       );
       process.exit(1);
     }
+    if (asPatch && !intoCase) {
+      die("--patch needs --case <id>: a minor is a patch of an existing case's current version");
+    }
     const resolved = levelOf(dataDirArg);
     if (resolved.state === "unrecognised") {
       console.error(
@@ -339,11 +351,13 @@ switch (command) {
         console.error(`REFUSED  no case ${intoCase} under ${casesRoot}. Nothing was written.`);
         process.exit(1);
       }
-      const numbers = entries(path.join(caseDir, "versions"))
-        .map((f) => /^v(\d+)\.md$/.exec(f)?.[1])
-        .filter(Boolean)
-        .map(Number);
-      const next = (numbers.length ? Math.max(...numbers) : 0) + 1;
+      const ids = entries(path.join(caseDir, "versions"))
+        .map((f) => versionIdFromFileName(f))
+        .filter(Boolean);
+      // Authoring lands the next major (v3), leaving any minors behind; a
+      // mid-run patch (--patch, the serve path) lands the next minor of
+      // whatever is current (v3 -> v3.1, v3.1 -> v3.2).
+      const next = asPatch ? nextMinorId(ids) : nextMajorId(ids);
       versionFile = path.join(caseDir, "versions", `v${next}.md`);
       landed = `v${next} of ${intoCase}`;
     } else {
@@ -577,7 +591,7 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
 
     const dir = path.resolve(dataDir).replace(/\/+$/, "");
     const versions = path.join(dir, "test-cases", caseId, "versions");
-    const files = entries(versions).filter((f) => /^v\d+\.md$/.test(f));
+    const files = entries(versions).filter((f) => versionIdFromFileName(f) !== null);
 
     if (files.length > 0) {
       for (const f of files.sort()) console.log(`OK  ${path.join(versions, f)}`);
@@ -647,7 +661,7 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
     die(
       "usage:\n" +
         "  enloop-case.mjs validate <case.md> [--project <name>] [--findings-only]\n" +
-        "  enloop-case.mjs write <case.md> --data-dir <folder> [--project <name>] [--case <id>] [--suite <suiteId>]\n" +
+        "  enloop-case.mjs write <case.md> --data-dir <folder> [--project <name>] [--case <id> [--patch]] [--suite <suiteId>]\n" +
         "  enloop-case.mjs compat <old.md> <new.md>\n" +
         "  enloop-case.mjs brief [--example]\n" +
         "  enloop-case.mjs data-folder [--want <path>]\n" +

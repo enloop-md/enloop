@@ -49,7 +49,7 @@ export function CaseDetailScreen({
   const [meta, setMeta] = useState<TestCaseMeta | null>(null);
   const [versions, setVersions] = useState<VersionSummary[] | null>(null);
   const [version, setVersion] = useState<TestCaseVersion | null>(null);
-  const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
+  const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   // What a run of the current version would actually execute: the case
@@ -389,7 +389,7 @@ export function CaseDetailScreen({
           <label className="text-slate-500">Version</label>
           <select
             value={selectedVersion ?? meta.currentVersion}
-            onChange={(e) => setSelectedVersion(Number(e.target.value))}
+            onChange={(e) => setSelectedVersion(e.target.value)}
             className="rounded border border-slate-300 px-2 py-1 text-sm"
           >
             {versions?.map((v) => (
@@ -612,7 +612,7 @@ function ShareMenu({
   onDownload,
   onCopyLink,
 }: {
-  version: number | null;
+  version: string | null;
   busy: boolean;
   copied: boolean;
   open: boolean;

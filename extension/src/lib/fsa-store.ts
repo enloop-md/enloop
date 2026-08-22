@@ -7,6 +7,10 @@ import {
   buildCaptureDigest,
   buildRunSource,
   checkRunCompat,
+  compareVersionIds,
+  nextMajorId,
+  versionFileName,
+  versionIdFromFileName,
   emptyEnvironments,
   environmentsFileSchema,
   caseBookkeepingSchema,
@@ -121,27 +125,23 @@ const COMMAND_KILL_FILE = "kill";
 const LOG_TAIL_BYTES = 4096;
 const DEFAULT_COMMAND_TIMEOUT_SECONDS = 900;
 
-function versionFile(version: number): string {
-  return `v${version}.md`;
-}
-
-const VERSION_FILE_RE = /^v(\d+)\.md$/;
-
-async function listVersionNumbers(versionsDir: FileSystemDirectoryHandle): Promise<number[]> {
-  const versions: number[] = [];
+/** Ids are `"3"` (authored major) or `"3.1"` (mid-run patch minor) — see
+ * shared/src/version-id.ts. Sorted ascending by (major, minor). */
+async function listVersionIds(versionsDir: FileSystemDirectoryHandle): Promise<string[]> {
+  const versions: string[] = [];
   for await (const [name, handle] of versionsDir.entries()) {
     if (handle.kind !== "file") continue;
-    const match = VERSION_FILE_RE.exec(name);
-    if (match) versions.push(Number(match[1]));
+    const id = versionIdFromFileName(name);
+    if (id !== null) versions.push(id);
   }
-  return versions.sort((a, b) => a - b);
+  return versions.sort(compareVersionIds);
 }
 
 async function readVersion(
   versionsDir: FileSystemDirectoryHandle,
-  version: number,
+  version: string,
 ): Promise<TestCaseVersion> {
-  const { text, lastModified } = await readTextFile(versionsDir, versionFile(version));
+  const { text, lastModified } = await readTextFile(versionsDir, versionFileName(version));
   return parseCaseDocument(text, { version, createdAt: lastModified });
 }
 
@@ -155,7 +155,7 @@ async function readSuiteDoc(
   suiteDir: FileSystemDirectoryHandle,
 ): Promise<TestCaseVersion> {
   const { text, lastModified } = await readTextFile(suiteDir, SUITE_FILE);
-  return parseCaseDocument(text, { version: 1, createdAt: lastModified }, { requireSteps: false });
+  return parseCaseDocument(text, { version: "1", createdAt: lastModified }, { requireSteps: false });
 }
 
 /** Most recently edited first — `updatedAt` is the current version file's
@@ -343,7 +343,7 @@ export class FsaDataStore implements DataStore {
   async getTestCase(id: string): Promise<TestCaseMeta> {
     const { dir: caseDir, suiteId } = await this.findCaseDir(id);
     const versionsDir = await getDir(caseDir, "versions", { create: true });
-    const versions = await listVersionNumbers(versionsDir);
+    const versions = await listVersionIds(versionsDir);
     if (versions.length === 0) {
       throw new NotFoundError(`No versions found for test case: ${id}`);
     }
@@ -370,7 +370,7 @@ export class FsaDataStore implements DataStore {
   async listVersions(id: string): Promise<VersionSummary[]> {
     const { dir: caseDir } = await this.findCaseDir(id);
     const versionsDir = await getDir(caseDir, "versions", { create: true });
-    const versions = await listVersionNumbers(versionsDir);
+    const versions = await listVersionIds(versionsDir);
     const summaries: VersionSummary[] = [];
     for (const v of versions) {
       const doc = await readVersion(versionsDir, v);
@@ -384,7 +384,7 @@ export class FsaDataStore implements DataStore {
     return summaries;
   }
 
-  async getVersion(id: string, version: number): Promise<TestCaseVersion> {
+  async getVersion(id: string, version: string): Promise<TestCaseVersion> {
     const { dir: caseDir } = await this.findCaseDir(id);
     const versionsDir = await getDir(caseDir, "versions");
     return readVersion(versionsDir, version);
@@ -394,21 +394,21 @@ export class FsaDataStore implements DataStore {
    * out — it is regenerated on every write, so an editor that showed it
    * would be inviting someone to hand-edit a line that is about to be
    * overwritten, and an export that kept it could carry a stale link. */
-  async getVersionSource(id: string, version: number): Promise<string> {
+  async getVersionSource(id: string, version: string): Promise<string> {
     const { dir: caseDir } = await this.findCaseDir(id);
     const versionsDir = await getDir(caseDir, "versions");
-    const { text } = await readTextFile(versionsDir, versionFile(version));
+    const { text } = await readTextFile(versionsDir, versionFileName(version));
     return stripViewerComment(text);
   }
 
   async createTestCase(bodyMarkdown: string, suiteId?: string): Promise<TestCaseMeta> {
-    const parsed = parseCaseDocument(bodyMarkdown, { version: 1, createdAt: nowIso() });
+    const parsed = parseCaseDocument(bodyMarkdown, { version: "1", createdAt: nowIso() });
     const id = newTestCaseId(parsed.title);
     const casesDir = await this.testCasesDir(true);
     const parentDir = suiteId ? await getDir(casesDir, suiteId, { create: true }) : casesDir;
     const caseDir = await getDir(parentDir, id, { create: true });
     const versionsDir = await getDir(caseDir, "versions", { create: true });
-    await writeTextFile(versionsDir, versionFile(1), await withViewerComment(bodyMarkdown));
+    await writeTextFile(versionsDir, versionFileName("1"), await withViewerComment(bodyMarkdown));
     await writeJson(caseDir, META_FILE, { archived: false } satisfies CaseBookkeeping);
     return this.getTestCase(id);
   }
@@ -416,8 +416,10 @@ export class FsaDataStore implements DataStore {
   async createVersion(id: string, bodyMarkdown: string): Promise<TestCaseVersion> {
     const { dir: caseDir } = await this.findCaseDir(id);
     const versionsDir = await getDir(caseDir, "versions", { create: true });
-    const versions = await listVersionNumbers(versionsDir);
-    const nextVersion = (versions[versions.length - 1] ?? 0) + 1;
+    const versions = await listVersionIds(versionsDir);
+    // The editor and the authoring skills land majors; minors are the
+    // serve patch path (validator `write --patch`).
+    const nextVersion = nextMajorId(versions);
     // Validate before writing so a typo never lands as a broken version.
     parseCaseDocument(bodyMarkdown, { version: nextVersion, createdAt: nowIso() });
     // The link comment is appended on the way to disk rather than being the
@@ -425,7 +427,7 @@ export class FsaDataStore implements DataStore {
     // a link that quietly stops matching the case it is attached to.
     await writeTextFile(
       versionsDir,
-      versionFile(nextVersion),
+      versionFileName(nextVersion),
       await withViewerComment(bodyMarkdown),
     );
     return readVersion(versionsDir, nextVersion);
@@ -507,7 +509,7 @@ export class FsaDataStore implements DataStore {
   }
 
   async createSuite(bodyMarkdown: string): Promise<SuiteSummary> {
-    const parsed = parseCaseDocument(bodyMarkdown, { version: 1, createdAt: nowIso() }, { requireSteps: false });
+    const parsed = parseCaseDocument(bodyMarkdown, { version: "1", createdAt: nowIso() }, { requireSteps: false });
     const id = newTestCaseId(parsed.title);
     const suiteDir = await getDir(await this.testCasesDir(true), id, { create: true });
     await writeTextFile(suiteDir, SUITE_FILE, bodyMarkdown);
@@ -525,7 +527,7 @@ export class FsaDataStore implements DataStore {
 
   async saveSuite(id: string, bodyMarkdown: string): Promise<void> {
     // Validate before writing so a typo never lands as a broken suite.
-    parseCaseDocument(bodyMarkdown, { version: 1, createdAt: nowIso() }, { requireSteps: false });
+    parseCaseDocument(bodyMarkdown, { version: "1", createdAt: nowIso() }, { requireSteps: false });
     const suiteDir = await getDir(await this.testCasesDir(true), id);
     await writeTextFile(suiteDir, SUITE_FILE, bodyMarkdown);
   }
@@ -535,10 +537,10 @@ export class FsaDataStore implements DataStore {
     await writeJson(suiteDir, META_FILE, { archived } satisfies CaseBookkeeping);
   }
 
-  async getRunSource(testCaseId: string, version: number, tier: RunTier = "full"): Promise<string> {
+  async getRunSource(testCaseId: string, version: string, tier: RunTier = "full"): Promise<string> {
     const { dir: caseDir, suiteId } = await this.findCaseDir(testCaseId);
     const versionsDir = await getDir(caseDir, "versions");
-    const { text } = await readTextFile(versionsDir, versionFile(version));
+    const { text } = await readTextFile(versionsDir, versionFileName(version));
     // Filter before merging: a suite's prep steps are shared setup, not
     // optional coverage, so a quick run keeps all of them.
     const caseMarkdown = tier === "quick" ? filterToQuickSteps(text) : text;
@@ -631,7 +633,7 @@ export class FsaDataStore implements DataStore {
    */
   private async composeRunSource(
     testCaseId: string,
-    version: number,
+    version: string,
     tier: RunTier,
     variableValues: Record<string, string>,
   ): Promise<{
@@ -650,7 +652,7 @@ export class FsaDataStore implements DataStore {
 
   async createRun(
     testCaseId: string,
-    version: number,
+    version: string,
     variableValues: Record<string, string> = {},
     tier: RunTier = "full",
     environment = "",
@@ -1101,7 +1103,7 @@ export class FsaDataStore implements DataStore {
   private async prepareSwap(
     testCaseId: string,
     runId: string,
-    toVersion: number,
+    toVersion: string,
     questionId: string | null,
   ): Promise<{
     runDir: FileSystemDirectoryHandle;
@@ -1146,7 +1148,7 @@ export class FsaDataStore implements DataStore {
   async previewSwap(
     testCaseId: string,
     runId: string,
-    toVersion: number,
+    toVersion: string,
     questionId: string | null,
   ): Promise<CompatResult> {
     const { verdict } = await this.prepareSwap(testCaseId, runId, toVersion, questionId);
@@ -1156,7 +1158,7 @@ export class FsaDataStore implements DataStore {
   async swapRunVersion(
     testCaseId: string,
     runId: string,
-    toVersion: number,
+    toVersion: string,
     questionId: string | null,
   ): Promise<Run> {
     const { runDir, runFile, verdict, substitutedMarkdown, doc, allowStepIds } =

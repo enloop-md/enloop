@@ -34,9 +34,9 @@ export interface TestCaseStore {
   listTestCases(): Promise<TestCaseSummary[]>;
   getTestCase(id: string): Promise<TestCaseMeta>;
   listVersions(id: string): Promise<VersionSummary[]>;
-  getVersion(id: string, version: number): Promise<TestCaseVersion>;
+  getVersion(id: string, version: string): Promise<TestCaseVersion>;
   /** Raw Markdown text of a version, exactly as stored — for editing. */
-  getVersionSource(id: string, version: number): Promise<string>;
+  getVersionSource(id: string, version: string): Promise<string>;
   createTestCase(bodyMarkdown: string, suiteId?: string): Promise<TestCaseMeta>;
   createVersion(id: string, bodyMarkdown: string): Promise<TestCaseVersion>;
   archiveTestCase(id: string, archived: boolean): Promise<void>;
@@ -51,7 +51,7 @@ export interface TestCaseStore {
   /** Raw Markdown a run should freeze: the case's own version merged with
    * its suite's prep steps/variables (see `buildRunSource`), or just the
    * case's own version text when it isn't in a suite. */
-  getRunSource(testCaseId: string, version: number, tier?: RunTier): Promise<string>;
+  getRunSource(testCaseId: string, version: string, tier?: RunTier): Promise<string>;
 }
 
 /** Everything that reads/writes runs. Same swap-later story as TestCaseStore. */
@@ -71,7 +71,7 @@ export interface RunStore {
    */
   createRun(
     testCaseId: string,
-    version: number,
+    version: string,
     variableValues?: Record<string, string>,
     tier?: RunTier,
     /** Display name of the environment that pre-filled the values, recorded
@@ -173,7 +173,7 @@ export interface AgentChannelStore {
   previewSwap(
     testCaseId: string,
     runId: string,
-    toVersion: number,
+    toVersion: string,
     questionId: string | null,
   ): Promise<CompatResult>;
   /** Repoints an in-flight run at `toVersion`: rewrites the frozen `case.md`
@@ -185,7 +185,7 @@ export interface AgentChannelStore {
   swapRunVersion(
     testCaseId: string,
     runId: string,
-    toVersion: number,
+    toVersion: string,
     questionId: string | null,
   ): Promise<Run>;
   /** Marks the panel alive in every connected folder that has an `agent/`

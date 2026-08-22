@@ -153,9 +153,10 @@ two more things work during a run, without leaving the panel:
   **page snapshot** (its structure, stripped of scripts and styles), both
   saved into the folder's `agent/` directory and nowhere else; untick either
   before sending. The answer appears under the step. If the step text itself
-  was the problem, the agent lands a patched version and the panel offers
-  **Load v‹n›** — it verifies first that every step you already executed is
-  unchanged, and loading keeps every recorded status. The one exception is
+  was the problem, the agent lands a patched version — a minor: `v3`
+  becomes `v3.1`, so patches never masquerade as authored versions — and
+  the panel offers **Load v‹3.1›**. It verifies first that every step you
+  already executed is unchanged, and loading keeps every recorded status. The one exception is
   the step you asked from: it may be rewritten even if you already gave it
   a result, and loading then resets that one result so you redo the step
   against the new text. The panel says when you've been "waiting for an

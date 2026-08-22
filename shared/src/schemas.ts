@@ -1,4 +1,15 @@
 import { z } from "zod";
+import { VERSION_ID_RE } from "./version-id.js";
+
+/**
+ * A case version id — `"3"` (authored major) or `"3.1"` (mid-run patch
+ * minor); see version-id.ts. Every file written before minors existed
+ * stored versions as bare JSON numbers, so numbers are accepted and
+ * normalized to strings on read.
+ */
+export const caseVersionIdSchema = z
+  .union([z.number().int().positive(), z.string().regex(VERSION_ID_RE)])
+  .transform(String);
 
 // NOTE: schemas intentionally avoid zod's `.default()` — in the installed
 // zod version it makes the *output* type optional too (z.infer<> ends up
@@ -84,7 +95,7 @@ export const stepSchema = z.object({
  * file's mtime; everything else comes from the document body.
  */
 export const testCaseVersionSchema = z.object({
-  version: z.number().int().positive(),
+  version: caseVersionIdSchema,
   createdAt: z.string(),
   /** Format version of the grammar this document was parsed with, e.g.
    * `@version 0.0.1`. Not the same as `version` above. */
@@ -120,7 +131,7 @@ export const testCaseMetaSchema = z.object({
   project: z.string(),
   description: z.string(),
   tags: z.array(z.string()),
-  currentVersion: z.number().int().positive(),
+  currentVersion: caseVersionIdSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
   archived: z.boolean(),
@@ -283,8 +294,8 @@ export const runStepStateSchema = z
  * step actually executed against, and so the panel can tell an offer it
  * already took from one still open. */
 export const runSwapSchema = z.object({
-  fromVersion: z.number().int().positive(),
-  toVersion: z.number().int().positive(),
+  fromVersion: caseVersionIdSchema,
+  toVersion: caseVersionIdSchema,
   at: z.string(),
   /** The question whose answer proposed the patch, null for a swap that
    * arrives some other way. */
@@ -304,7 +315,7 @@ export const runTierSchema = z.enum(["quick", "full"]);
 export const runFileSchema = z.object({
   id: z.string(),
   testCaseId: z.string(),
-  testCaseVersion: z.number().int().positive(),
+  testCaseVersion: caseVersionIdSchema,
   testCaseTitle: z.string(),
   status: runStatusSchema,
   /** Free text about the run as a whole, not any one step — "ran against an
@@ -362,7 +373,7 @@ export const runStepSchema = stepSchema.omit({ id: true }).extend({
 export const runSchema = z.object({
   id: z.string(),
   testCaseId: z.string(),
-  testCaseVersion: z.number().int().positive(),
+  testCaseVersion: caseVersionIdSchema,
   testCaseTitle: z.string(),
   status: runStatusSchema,
   comment: z.string(),
@@ -419,7 +430,7 @@ export const agentQuestionFileSchema = z.object({
   id: z.string(),
   testCaseId: z.string(),
   runId: z.string(),
-  testCaseVersion: z.number().int().positive(),
+  testCaseVersion: caseVersionIdSchema,
   stepId: z.string(),
   stepTitle: z.string(),
   /** What the tester had selected in the step when they asked — the "this"
@@ -459,7 +470,7 @@ export const agentAnswerMetaSchema = z.object({
   /** Version the agent landed as a candidate patch, null when the answer
    * needed no case change. A claim, not a promise: the panel re-verifies
    * compatibility itself before offering to load it. */
-  proposedVersion: z.number().int().positive().nullable(),
+  proposedVersion: caseVersionIdSchema.nullable(),
 });
 
 export const AGENT_COMMAND_SOURCE_FIELDS = [
