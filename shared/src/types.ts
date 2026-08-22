@@ -20,6 +20,12 @@ import type {
   runSchema,
   stepPatchSchema,
   freeRunFileSchema,
+  runSwapSchema,
+  agentQuestionFileSchema,
+  agentAnswerMetaSchema,
+  agentCommandSourceFieldSchema,
+  agentCommandRequestSchema,
+  agentCommandStatusSchema,
 } from "./schemas.js";
 
 export type StepType = z.infer<typeof stepTypeSchema>;
@@ -66,6 +72,41 @@ export type RunTier = z.infer<typeof runTierSchema>;
 /** Composed run: case.md + run.json merged — what store callers see. */
 export type Run = z.infer<typeof runSchema>;
 export type StepPatch = z.infer<typeof stepPatchSchema>;
+
+/** One mid-run version hot-swap recorded on the run. */
+export type RunSwap = z.infer<typeof runSwapSchema>;
+
+/** On-disk `agent/questions/<id>/question.json`. */
+export type AgentQuestionFile = z.infer<typeof agentQuestionFileSchema>;
+/** On-disk `answer.json` — presence marks the question answered. */
+export type AgentAnswerMeta = z.infer<typeof agentAnswerMetaSchema>;
+/** Which part of the case an agent command was quoted from. */
+export type AgentCommandSourceField = z.infer<typeof agentCommandSourceFieldSchema>;
+/** On-disk `agent/commands/<id>/request.json`. */
+export type AgentCommandRequest = z.infer<typeof agentCommandRequestSchema>;
+/** On-disk `status.json` for an agent command. */
+export type AgentCommandStatus = z.infer<typeof agentCommandStatusSchema>;
+
+/** Composed question: the envelope plus the answer files when present. */
+export interface AgentQuestion extends AgentQuestionFile {
+  answer: { markdown: string; meta: AgentAnswerMeta } | null;
+}
+
+/** What the panel shows for a command. `queued` = no `status.json` yet (no
+ * agent session has picked it up); `stopping` = a kill was requested and
+ * the agent has not yet honored it. */
+export type AgentCommandDisplay = "queued" | "running" | "stopping" | "exited" | "killed" | "refused";
+
+/** Composed command: request + state derived across the agent-written
+ * `status.json` and the wrapper-written `exit-code` (which outranks it for
+ * completion — see `agentCommandStatusSchema`). */
+export interface AgentCommand extends AgentCommandRequest {
+  display: AgentCommandDisplay;
+  exitCode: number | null;
+  reason: string | null;
+  /** Tail of `output.log`, capped by the store; "" before any output. */
+  logTail: string;
+}
 
 /** On-disk `free-run.json` shape — metadata for an unscripted verification session. */
 export type FreeRunFile = z.infer<typeof freeRunFileSchema>;
@@ -127,4 +168,8 @@ export interface RunSummary {
    * saying. Counted here so a summary can show the whole verdict without
    * loading the run — a run with warnings is not the same as a clean one. */
   warnCount: number;
+  /** Steps that finished the run skipped — extra steps left at their default,
+   * and ordinary steps the tester declined. Counted so a summary can tell
+   * "5/5 passed, 2 skipped" apart from a run that was abandoned midway. */
+  skipCount: number;
 }

@@ -1,13 +1,20 @@
 import {
+  agentAnswerMetaSchema,
+  agentCommandRequestSchema,
+  agentCommandStatusSchema,
+  agentQuestionFileSchema,
   buildCaptureDigest,
   buildRunSource,
+  checkRunCompat,
   emptyEnvironments,
   environmentsFileSchema,
   caseBookkeepingSchema,
   countsByStep,
   filterToQuickSteps,
   freeRunFileSchema,
+  newCommandId,
   newFreeRunId,
+  newQuestionId,
   newRunId,
   newTestCaseId,
   parseCaseDocument,
@@ -19,14 +26,22 @@ import {
   resolveVariableValues,
   runFileSchema,
   stepComments,
+  stepNumberLabels,
   stripViewerComment,
   substituteVariables,
   toJsonl,
   withViewerComment,
   CAPTURE_MAX_BYTES,
   ZERO_CAPTURE_COUNTS,
+  type AgentCommand,
+  type AgentCommandDisplay,
+  type AgentCommandRequest,
+  type AgentCommandSourceField,
+  type AgentQuestion,
+  type AgentQuestionFile,
   type CapturedEntry,
   type CaseBookkeeping,
+  type CompatResult,
   type DataStore,
   type EnvironmentsFile,
   type FreeRun,
@@ -51,6 +66,7 @@ import {
   nowIso,
   readJson,
   readTextFile,
+  readTextTail,
   writeJson,
   writeTextFile,
   tryGetDir,
@@ -77,6 +93,27 @@ const ENVIRONMENTS_FILE = "environments.json";
 const CONSOLE_RECORD_FILE = "console.jsonl";
 /** The same thing rendered for a person, written once when the run finishes. */
 const CONSOLE_FILE = "console.md";
+
+// ---- the agent channel (`agent/`) — protocol in shared/src/schemas.ts ----
+const AGENT_DIR = "agent";
+const QUESTIONS_DIR = "questions";
+const COMMANDS_DIR = "commands";
+/** Touched by the panel while it is open; the watching session reads the
+ * mtime, so the body is informational. */
+const HEARTBEAT_FILE = "heartbeat.json";
+const QUESTION_FILE = "question.json";
+const ANSWER_FILE = "answer.md";
+const ANSWER_META_FILE = "answer.json";
+const COMMAND_REQUEST_FILE = "request.json";
+const COMMAND_STATUS_FILE = "status.json";
+const COMMAND_LOG_FILE = "output.log";
+/** Written by the spawn wrapper the moment the process exits — the agent
+ * only ticks once a minute, so this outranks `status.json` for completion. */
+const COMMAND_EXIT_FILE = "exit-code";
+/** Empty flag file: the tester asked for a stop; the session does the kill. */
+const COMMAND_KILL_FILE = "kill";
+const LOG_TAIL_BYTES = 4096;
+const DEFAULT_COMMAND_TIMEOUT_SECONDS = 900;
 
 function versionFile(version: number): string {
   return `v${version}.md`;
@@ -178,7 +215,9 @@ function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
   const steps = doc.steps.map((step) => {
     const state = stateByStepId.get(step.id) ?? {
       stepId: step.id,
-      status: "pending" as const,
+      // Mirrors createRun: an extra step's resting state is skipped, and a
+      // run.json missing the entry should not resurrect it as pending.
+      status: (step.extra ? "skipped" : "pending") as "skipped" | "pending",
       comments: [],
       draft: null,
       automatedResult: null,
@@ -196,6 +235,7 @@ function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
       script: step.script,
       selectors: step.selectors,
       quick: step.quick,
+      extra: step.extra,
       status: state.status,
       comments: state.comments,
       draft: state.draft,
@@ -222,6 +262,7 @@ function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
     finishedAt: runFile.finishedAt,
     dependencies: doc.dependencies,
     prerequisites: doc.prerequisites,
+    swaps: runFile.swaps,
     steps,
   };
 }
@@ -540,6 +581,7 @@ export class FsaDataStore implements DataStore {
         const passCount = runFile.steps.filter((s) => s.status === "success").length;
         const failCount = runFile.steps.filter((s) => s.status === "failed").length;
         const warnCount = runFile.steps.filter((s) => s.status === "warning").length;
+        const skipCount = runFile.steps.filter((s) => s.status === "skipped").length;
         summaries.push({
           id: runFile.id,
           testCaseId: runFile.testCaseId,
@@ -553,6 +595,7 @@ export class FsaDataStore implements DataStore {
           passCount,
           failCount,
           warnCount,
+          skipCount,
         });
       }
     }
@@ -573,6 +616,32 @@ export class FsaDataStore implements DataStore {
     return composeRun(doc, runFile);
   }
 
+  /**
+   * The one pipeline that turns a stored version into what a run freezes:
+   * compose (suite prep merged, tier filtered), resolve values, substitute,
+   * re-parse. `createRun` and the hot-swap both go through here — the swap's
+   * whole correctness argument is that its `case.md` is byte-equivalent to
+   * what `createRun` would have written for the same version and values.
+   */
+  private async composeRunSource(
+    testCaseId: string,
+    version: number,
+    tier: RunTier,
+    variableValues: Record<string, string>,
+  ): Promise<{
+    substitutedMarkdown: string;
+    doc: TestCaseVersion;
+    declared: TestCaseVersion;
+    resolvedValues: Record<string, string>;
+  }> {
+    const rawMarkdown = await this.getRunSource(testCaseId, version, tier);
+    const declared = parseCaseDocument(rawMarkdown, { version, createdAt: nowIso() });
+    const resolvedValues = resolveVariableValues(declared.variables, variableValues);
+    const substitutedMarkdown = substituteVariables(rawMarkdown, resolvedValues);
+    const doc = parseCaseDocument(substitutedMarkdown, { version, createdAt: nowIso() });
+    return { substitutedMarkdown, doc, declared, resolvedValues };
+  }
+
   async createRun(
     testCaseId: string,
     version: number,
@@ -580,11 +649,12 @@ export class FsaDataStore implements DataStore {
     tier: RunTier = "full",
     environment = "",
   ): Promise<Run> {
-    const rawMarkdown = await this.getRunSource(testCaseId, version, tier);
-    const declared = parseCaseDocument(rawMarkdown, { version, createdAt: nowIso() });
-    const resolvedValues = resolveVariableValues(declared.variables, variableValues);
-    const substitutedMarkdown = substituteVariables(rawMarkdown, resolvedValues);
-    const doc = parseCaseDocument(substitutedMarkdown, { version, createdAt: nowIso() });
+    const { substitutedMarkdown, doc, resolvedValues } = await this.composeRunSource(
+      testCaseId,
+      version,
+      tier,
+      variableValues,
+    );
 
     const runId = newRunId();
     const runsDir = await this.runsDir(true);
@@ -608,9 +678,14 @@ export class FsaDataStore implements DataStore {
       consoleInReport: false,
       startedAt: now,
       finishedAt: null,
+      variables: resolvedValues,
+      swaps: [],
       steps: doc.steps.map((s) => ({
         stepId: s.id,
-        status: "pending",
+        // An extra step is opt-in: it starts the run already skipped, so the
+        // "current step" walk passes over it and an untouched one finishes
+        // the run as what it truthfully was — skipped, not left undone.
+        status: s.extra ? "skipped" : "pending",
         comments: [],
         draft: null,
         automatedResult: null,
@@ -715,7 +790,8 @@ export class FsaDataStore implements DataStore {
     });
 
     if (captured.length > 0) {
-      const stepNumbers = new Map(doc.steps.map((step, index) => [step.id, index + 1]));
+      const labels = stepNumberLabels(doc.steps);
+      const stepNumbers = new Map(doc.steps.map((step, index) => [step.id, labels[index]]));
       await writeTextFile(
         runDir,
         CONSOLE_FILE,
@@ -835,5 +911,226 @@ export class FsaDataStore implements DataStore {
       );
     }
     return { ...updated, notes };
+  }
+
+  // ---- AgentChannelStore ----
+
+  /** `agent/` is created by the first ask/request and never by connect or
+   * heartbeat — its presence is what tells both sides the channel is in
+   * use, so an unused folder must stay clean. */
+  private async questionsDir(create = false): Promise<FileSystemDirectoryHandle> {
+    return getDir(await getDir(this.root, AGENT_DIR, { create }), QUESTIONS_DIR, { create });
+  }
+
+  private async commandsDir(create = false): Promise<FileSystemDirectoryHandle> {
+    return getDir(await getDir(this.root, AGENT_DIR, { create }), COMMANDS_DIR, { create });
+  }
+
+  async askQuestion(
+    testCaseId: string,
+    runId: string,
+    draft: { stepId: string; question: string; selection: string },
+  ): Promise<AgentQuestion> {
+    const runDir = await this.getRunDir(testCaseId, runId);
+    const [{ text: rawMarkdown }, runFile] = await Promise.all([
+      readTextFile(runDir, CASE_FILE),
+      readJson(runDir, RUN_FILE, runFileSchema),
+    ]);
+    const doc = parseCaseDocument(rawMarkdown, {
+      version: runFile.testCaseVersion,
+      createdAt: runFile.startedAt,
+    });
+    const step = doc.steps.find((s) => s.id === draft.stepId);
+    if (!step) throw new NotFoundError(`Step not found: ${draft.stepId}`);
+    const question: AgentQuestionFile = {
+      id: newQuestionId(),
+      testCaseId,
+      runId,
+      testCaseVersion: runFile.testCaseVersion,
+      stepId: draft.stepId,
+      stepTitle: step.title,
+      selection: draft.selection,
+      question: draft.question,
+      environment: runFile.environment,
+      askedAt: nowIso(),
+    };
+    const qDir = await getDir(await this.questionsDir(true), question.id, { create: true });
+    await writeJson(qDir, QUESTION_FILE, question);
+    return { ...question, answer: null };
+  }
+
+  async listQuestions(testCaseId: string, runId: string): Promise<AgentQuestion[]> {
+    const agentDir = await tryGetDir(this.root, AGENT_DIR);
+    const questionsDir = agentDir && (await tryGetDir(agentDir, QUESTIONS_DIR));
+    if (!questionsDir) return [];
+    const questions: AgentQuestion[] = [];
+    for (const name of await listDirNames(questionsDir)) {
+      const qDir = await getDir(questionsDir, name);
+      const question = await tryReadJson(qDir, QUESTION_FILE, agentQuestionFileSchema);
+      if (!question || question.testCaseId !== testCaseId || question.runId !== runId) continue;
+      // The agent writes answer.md first and answer.json second; only the
+      // pair counts as answered, so a half-written answer is never shown.
+      const [markdown, meta] = await Promise.all([
+        tryReadTextFile(qDir, ANSWER_FILE),
+        tryReadJson(qDir, ANSWER_META_FILE, agentAnswerMetaSchema),
+      ]);
+      questions.push({
+        ...question,
+        answer: markdown && meta ? { markdown: markdown.text, meta } : null,
+      });
+    }
+    // Ids embed the asked-at stamp, so lexicographic is chronological.
+    return questions.sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  private async composeCommand(
+    dir: FileSystemDirectoryHandle,
+    request: AgentCommandRequest,
+  ): Promise<AgentCommand> {
+    const [status, exitText, killFlag, logTail] = await Promise.all([
+      tryReadJson(dir, COMMAND_STATUS_FILE, agentCommandStatusSchema),
+      tryReadTextFile(dir, COMMAND_EXIT_FILE),
+      tryReadTextFile(dir, COMMAND_KILL_FILE),
+      readTextTail(dir, COMMAND_LOG_FILE, LOG_TAIL_BYTES),
+    ]);
+    const exitCode = exitText ? Number.parseInt(exitText.text.trim(), 10) : null;
+    const finishedOnDisk = exitCode !== null && Number.isFinite(exitCode);
+
+    let display: AgentCommandDisplay;
+    if (status?.state === "refused") display = "refused";
+    else if (finishedOnDisk) display = "exited";
+    else if (status?.state === "killed") display = "killed";
+    else if (!status) display = killFlag ? "stopping" : "queued";
+    else display = killFlag ? "stopping" : "running";
+
+    return {
+      ...request,
+      display,
+      exitCode: finishedOnDisk ? exitCode : (status?.exitCode ?? null),
+      reason: status?.reason ?? null,
+      logTail,
+    };
+  }
+
+  async requestCommand(
+    testCaseId: string,
+    runId: string,
+    draft: { command: string; stepId: string | null; sourceField: AgentCommandSourceField },
+  ): Promise<AgentCommand> {
+    const request: AgentCommandRequest = {
+      id: newCommandId(),
+      testCaseId,
+      runId,
+      stepId: draft.stepId,
+      sourceField: draft.sourceField,
+      command: draft.command,
+      timeoutSeconds: DEFAULT_COMMAND_TIMEOUT_SECONDS,
+      requestedAt: nowIso(),
+    };
+    const dir = await getDir(await this.commandsDir(true), request.id, { create: true });
+    await writeJson(dir, COMMAND_REQUEST_FILE, request);
+    return { ...request, display: "queued", exitCode: null, reason: null, logTail: "" };
+  }
+
+  async listCommands(testCaseId: string, runId: string): Promise<AgentCommand[]> {
+    const agentDir = await tryGetDir(this.root, AGENT_DIR);
+    const commandsDir = agentDir && (await tryGetDir(agentDir, COMMANDS_DIR));
+    if (!commandsDir) return [];
+    const commands: AgentCommand[] = [];
+    for (const name of await listDirNames(commandsDir)) {
+      const dir = await getDir(commandsDir, name);
+      const request = await tryReadJson(dir, COMMAND_REQUEST_FILE, agentCommandRequestSchema);
+      if (!request || request.testCaseId !== testCaseId || request.runId !== runId) continue;
+      commands.push(await this.composeCommand(dir, request));
+    }
+    return commands.sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  async killCommand(_testCaseId: string, commandId: string): Promise<void> {
+    const dir = await getDir(await this.commandsDir(), commandId);
+    await writeTextFile(dir, COMMAND_KILL_FILE, "");
+  }
+
+  /** The shared front half of preview and swap: read the run, compose the
+   * candidate exactly as `createRun` would, and judge it. */
+  private async prepareSwap(
+    testCaseId: string,
+    runId: string,
+    toVersion: number,
+  ): Promise<{
+    runDir: FileSystemDirectoryHandle;
+    runFile: RunFile;
+    verdict: CompatResult;
+    substitutedMarkdown: string;
+    doc: TestCaseVersion;
+  }> {
+    const runDir = await this.getRunDir(testCaseId, runId);
+    const [{ text: rawMarkdown }, runFile] = await Promise.all([
+      readTextFile(runDir, CASE_FILE),
+      readJson(runDir, RUN_FILE, runFileSchema),
+    ]);
+    if (runFile.status !== "in_progress") {
+      throw new Error("Only an in-flight run can swap versions.");
+    }
+    const currentDoc = parseCaseDocument(rawMarkdown, {
+      version: runFile.testCaseVersion,
+      createdAt: runFile.startedAt,
+    });
+    const { substitutedMarkdown, doc, declared } = await this.composeRunSource(
+      testCaseId,
+      toVersion,
+      runFile.tier,
+      runFile.variables,
+    );
+    // A run recorded before variable snapshots existed cannot prove the
+    // candidate composes to the same values its case.md was frozen with.
+    const verdict: CompatResult =
+      declared.variables.length > 0 && Object.keys(runFile.variables).length === 0
+        ? {
+            ok: false,
+            reasons: ["this run predates variable snapshots, so a candidate cannot be composed identically"],
+            changedStepIds: [],
+          }
+        : checkRunCompat(currentDoc, doc, runFile.steps);
+    return { runDir, runFile, verdict, substitutedMarkdown, doc };
+  }
+
+  async previewSwap(testCaseId: string, runId: string, toVersion: number): Promise<CompatResult> {
+    const { verdict } = await this.prepareSwap(testCaseId, runId, toVersion);
+    return verdict;
+  }
+
+  async swapRunVersion(
+    testCaseId: string,
+    runId: string,
+    toVersion: number,
+    questionId: string | null,
+  ): Promise<Run> {
+    const { runDir, runFile, verdict, substitutedMarkdown, doc } = await this.prepareSwap(
+      testCaseId,
+      runId,
+      toVersion,
+    );
+    if (!verdict.ok) {
+      throw new Error(`v${toVersion} is not compatible with this run: ${verdict.reasons.join("; ")}`);
+    }
+    const updated: RunFile = {
+      ...runFile,
+      testCaseVersion: toVersion,
+      testCaseTitle: doc.title,
+      swaps: [
+        ...runFile.swaps,
+        { fromVersion: runFile.testCaseVersion, toVersion, at: nowIso(), questionId },
+      ],
+    };
+    await writeTextFile(runDir, CASE_FILE, substitutedMarkdown);
+    await writeJson(runDir, RUN_FILE, updated);
+    return composeRun(doc, updated);
+  }
+
+  async touchHeartbeat(): Promise<void> {
+    const agentDir = await tryGetDir(this.root, AGENT_DIR);
+    if (!agentDir) return;
+    await writeJson(agentDir, HEARTBEAT_FILE, { touchedAt: nowIso() });
   }
 }

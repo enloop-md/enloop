@@ -52,7 +52,9 @@ extension creates its layout inside:
 <your folder>/
 ├── test-cases/          cases and suites
 ├── runs/                one folder per run: case.md, run.json, report.md
-└── free-runs/           unscripted sessions
+├── free-runs/           unscripted sessions
+└── agent/               the live channel to a watching agent session —
+                         created on first use; see skills.md
 ```
 
 A freshly connected folder is empty, and the Library offers to **load an

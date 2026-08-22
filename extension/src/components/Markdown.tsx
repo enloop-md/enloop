@@ -34,17 +34,26 @@ import { rehypeQuotedValues } from "../lib/quoted-values.js";
  *
  * Pass `highlightSelectors={false}` where a page to highlight against is not
  * the point — free-run notes, say — to render everything as plain text.
+ *
+ * Where `onRunCommand` is set (the run screen's dependencies, prerequisites
+ * and manual-step prose), inline code that reads as a shell command gets a
+ * Run button — the command is handed to the agent session watching the data
+ * folder, since a side panel cannot spawn processes. Inline code only, by
+ * design: a fenced block inside a step is what makes the step automated,
+ * and its fence is a *browser* script, never shell.
  */
 export function Markdown({
   text,
   className,
   highlightSelectors = true,
   insertValues = false,
+  onRunCommand,
 }: {
   text: string;
   className?: string;
   highlightSelectors?: boolean;
   insertValues?: boolean;
+  onRunCommand?: (command: string) => void;
 }) {
   return (
     <div className={className}>
@@ -79,6 +88,25 @@ export function Markdown({
             if (highlightSelectors && value && looksLikeSelector(value)) {
               return <HighlightLink selector={value.trim()} label={value.trim()} />;
             }
+            // Inline code cannot contain a newline, which is what keeps
+            // fenced blocks (and automated-step scripts) out of this.
+            if (onRunCommand && value && !value.includes("\n")) {
+              const command = value.trim();
+              if (RUNNABLE_COMMAND_RE.test(command)) {
+                return (
+                  <>
+                    <code className="rounded bg-slate-100 px-1 py-0.5 text-[11px]">{command}</code>{" "}
+                    <button
+                      onClick={() => onRunCommand(command)}
+                      className="rounded border border-sky-200 bg-sky-50 px-1 py-px align-baseline text-[10px] font-medium text-sky-700 hover:bg-sky-100"
+                      title="Run in the agent session watching this folder"
+                    >
+                      ▶ Run
+                    </button>
+                  </>
+                );
+              }
+            }
             return (
               <code className="rounded bg-slate-100 px-1 py-0.5 text-[11px]" {...props}>
                 {children}
@@ -92,6 +120,14 @@ export function Markdown({
     </div>
   );
 }
+
+/** What marks inline code as runnable: it starts like a command someone
+ * would author into Dependencies ("node scripts/seed.js --org …"), not like
+ * a selector, a value, or a file path. An allowlist of first tokens rather
+ * than a heuristic — a false Run button on `#save-btn` costs trust, a
+ * missing one costs a copy-paste. */
+const RUNNABLE_COMMAND_RE =
+  /^(node|npm|npx|pnpm|yarn|python3?|pip|php|composer|symfony|bash|sh|make|docker(-compose)?|go|cargo|\.\/)\s/;
 
 /** The chip needs the literal string an author quoted. Markdown inside a
  * quoted span would arrive as nested nodes rather than a string, so flatten

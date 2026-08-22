@@ -24,7 +24,11 @@
 import {
   joinId,
   splitId,
+  type AgentCommand,
+  type AgentCommandSourceField,
+  type AgentQuestion,
   type CapturedEntry,
+  type CompatResult,
   type DataStore,
   type EnvironmentsFile,
   type FreeRun,
@@ -151,6 +155,16 @@ export class WorkspaceStore implements DataStore {
 
   private tagFreeRunFile(storageId: string, f: FreeRunFile): FreeRunFile {
     return { ...f, id: joinId(storageId, f.id) };
+  }
+
+  /** Question/command ids themselves are never namespaced — every method
+   * that takes one also takes the (namespaced) testCaseId that routes it. */
+  private tagQuestion(storageId: string, q: AgentQuestion): AgentQuestion {
+    return { ...q, testCaseId: joinId(storageId, q.testCaseId), runId: joinId(storageId, q.runId) };
+  }
+
+  private tagCommand(storageId: string, c: AgentCommand): AgentCommand {
+    return { ...c, testCaseId: joinId(storageId, c.testCaseId), runId: joinId(storageId, c.runId) };
   }
 
   private tagFreeRun(storageId: string, f: FreeRun): FreeRun {
@@ -368,6 +382,74 @@ export class WorkspaceStore implements DataStore {
   async finishRun(testCaseId: string, runId: string, status: RunStatus): Promise<Run> {
     const { store, storageId, localId } = this.route(testCaseId);
     return this.tagRun(storageId, await store.finishRun(localId, splitId(runId).localId, status));
+  }
+
+  // ---- AgentChannelStore ----
+
+  async askQuestion(
+    testCaseId: string,
+    runId: string,
+    draft: { stepId: string; question: string; selection: string },
+  ): Promise<AgentQuestion> {
+    const { store, storageId, localId } = this.route(testCaseId);
+    return this.tagQuestion(
+      storageId,
+      await store.askQuestion(localId, splitId(runId).localId, draft),
+    );
+  }
+
+  async listQuestions(testCaseId: string, runId: string): Promise<AgentQuestion[]> {
+    const { store, storageId, localId } = this.route(testCaseId);
+    const rows = await store.listQuestions(localId, splitId(runId).localId);
+    return rows.map((q) => this.tagQuestion(storageId, q));
+  }
+
+  async requestCommand(
+    testCaseId: string,
+    runId: string,
+    draft: { command: string; stepId: string | null; sourceField: AgentCommandSourceField },
+  ): Promise<AgentCommand> {
+    const { store, storageId, localId } = this.route(testCaseId);
+    return this.tagCommand(
+      storageId,
+      await store.requestCommand(localId, splitId(runId).localId, draft),
+    );
+  }
+
+  async listCommands(testCaseId: string, runId: string): Promise<AgentCommand[]> {
+    const { store, storageId, localId } = this.route(testCaseId);
+    const rows = await store.listCommands(localId, splitId(runId).localId);
+    return rows.map((c) => this.tagCommand(storageId, c));
+  }
+
+  async killCommand(testCaseId: string, commandId: string): Promise<void> {
+    const { store, localId } = this.route(testCaseId);
+    return store.killCommand(localId, commandId);
+  }
+
+  async previewSwap(testCaseId: string, runId: string, toVersion: number): Promise<CompatResult> {
+    const { store, localId } = this.route(testCaseId);
+    return store.previewSwap(localId, splitId(runId).localId, toVersion);
+  }
+
+  async swapRunVersion(
+    testCaseId: string,
+    runId: string,
+    toVersion: number,
+    questionId: string | null,
+  ): Promise<Run> {
+    const { store, storageId, localId } = this.route(testCaseId);
+    return this.tagRun(
+      storageId,
+      await store.swapRunVersion(localId, splitId(runId).localId, toVersion, questionId),
+    );
+  }
+
+  async touchHeartbeat(): Promise<void> {
+    // Deliberately not `fanOut`: a lapsed folder failing a background
+    // heartbeat must not raise and clear the Library's degraded banners on
+    // a 20-second cadence. The next user-initiated fan-out reports it.
+    await Promise.allSettled([...this.children.values()].map((store) => store.touchHeartbeat()));
   }
 
   // ---- FreeRunStore ----

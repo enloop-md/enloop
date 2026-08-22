@@ -117,6 +117,23 @@ export async function fileSize(
   }
 }
 
+/** Last `maxBytes` of a file as text, `""` when it isn't there — a sliced
+ * read, not a full one, because a live process log grows without bound. May
+ * open on a split multi-byte character; for a log tail that is fine. */
+export async function readTextTail(
+  dir: FileSystemDirectoryHandle,
+  filename: string,
+  maxBytes: number,
+): Promise<string> {
+  try {
+    const fileHandle = await dir.getFileHandle(filename, { create: false });
+    const file = await fileHandle.getFile();
+    return await file.slice(Math.max(0, file.size - maxBytes)).text();
+  } catch {
+    return "";
+  }
+}
+
 export async function tryReadTextFile(
   dir: FileSystemDirectoryHandle,
   filename: string,

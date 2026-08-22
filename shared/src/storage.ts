@@ -1,6 +1,10 @@
 import type { CapturedEntry } from "./capture.js";
 import type { EnvironmentsFile } from "./environments.js";
+import type { CompatResult } from "./run-compat.js";
 import type {
+  AgentCommand,
+  AgentCommandSourceField,
+  AgentQuestion,
   FreeRun,
   FreeRunFile,
   Run,
@@ -127,4 +131,47 @@ export interface EnvironmentStore {
   getEnvironmentsForCase(testCaseId: string): Promise<EnvironmentsFile>;
 }
 
-export interface DataStore extends TestCaseStore, RunStore, FreeRunStore, EnvironmentStore {}
+/**
+ * The live channel between the panel and a looping agent session — see the
+ * `agent/` section of schemas.ts for the on-disk protocol. Everything here
+ * is run-scoped (routed by `testCaseId` in a multi-storage wrapper) except
+ * `touchHeartbeat`, which fans out: liveness is per folder, not per case.
+ */
+export interface AgentChannelStore {
+  askQuestion(
+    testCaseId: string,
+    runId: string,
+    draft: { stepId: string; question: string; selection: string },
+  ): Promise<AgentQuestion>;
+  listQuestions(testCaseId: string, runId: string): Promise<AgentQuestion[]>;
+  requestCommand(
+    testCaseId: string,
+    runId: string,
+    draft: { command: string; stepId: string | null; sourceField: AgentCommandSourceField },
+  ): Promise<AgentCommand>;
+  listCommands(testCaseId: string, runId: string): Promise<AgentCommand[]>;
+  /** Requests a stop; the watching session does the killing, so the command
+   * shows `stopping` until its next tick honors the flag. */
+  killCommand(testCaseId: string, commandId: string): Promise<void>;
+  /** The dry half of `swapRunVersion`: composes the candidate exactly as the
+   * swap would and reports the verdict without writing anything, so the
+   * panel can label the offer before the tester commits. */
+  previewSwap(testCaseId: string, runId: string, toVersion: number): Promise<CompatResult>;
+  /** Repoints an in-flight run at `toVersion`: rewrites the frozen `case.md`
+   * with the identically-composed candidate and records the swap. Throws
+   * when the candidate is incompatible (see `checkRunCompat`) — statuses
+   * must keep describing the text they were recorded against. */
+  swapRunVersion(
+    testCaseId: string,
+    runId: string,
+    toVersion: number,
+    questionId: string | null,
+  ): Promise<Run>;
+  /** Marks the panel alive in every connected folder that has an `agent/`
+   * dir (never creates one). The watching session kills the scripts it
+   * spawned once this goes stale. */
+  touchHeartbeat(): Promise<void>;
+}
+
+export interface DataStore
+  extends TestCaseStore, RunStore, FreeRunStore, EnvironmentStore, AgentChannelStore {}
