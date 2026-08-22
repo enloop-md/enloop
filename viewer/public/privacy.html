@@ -28,7 +28,7 @@
 </head>
 <body>
 <h1>Enloop privacy policy</h1>
-<p class="meta">Effective 2026-08-14 · the canonical, history-tracked copy is
+<p class="meta">Effective 2026-08-22 · the canonical, history-tracked copy is
 <a href="https://github.com/enloop-md/enloop/blob/master/PRIVACY.md">PRIVACY.md in the repository</a></p>
 
 <h2>The short version</h2>
@@ -40,6 +40,13 @@ nothing, and stores everything on your machine, in places you choose.</p>
   <li><strong>Test cases, runs, reports and feedback files</strong> are plain
   files in a local folder you connect through your browser's File System
   Access picker. They never leave that folder unless you move them.</li>
+  <li><strong>Questions you send to a local agent session</strong> — and, if
+  you leave the boxes ticked when asking, a screenshot of the visible tab and
+  a scripts-and-styles-stripped copy of the page's HTML — are files in that
+  same connected folder (its <code>agent/</code> directory). They exist so an
+  agent running on your own machine can read them; the extension sends them
+  nowhere, and the folder's <code>.gitignore</code> keeps them out of version
+  control.</li>
   <li><strong>Panel state</strong> — which screen was open, your capture
   preferences — lives in the browser's extension storage on your machine.</li>
   <li><strong>Site access</strong> is granted by you, per origin, at the

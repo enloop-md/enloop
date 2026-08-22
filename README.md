@@ -29,7 +29,7 @@ for you.
 
 ```markdown
 # Careerminds: Sync a contact from the CRM to the mailer
-@version 0.0.6
+@version 0.0.7
 @author Your Name
 @project Careerminds
 Tags: sync-console, integrations, manual
@@ -108,6 +108,10 @@ no database, no account.
   repo once, **quick** and **full** write a case for a real feature or ticket from inside
   the repo being tested, and **check** triages the finished run back in that
   same repo — deciding per failure whether the app is wrong or the case is.
+  **serve** stays in the loop *during* a run: a session watching your folder
+  answers "how do I check this?" from the step itself — with your screenshot
+  and page structure in hand — patches the case if the step was the problem,
+  and runs a case's setup commands when you click them in the panel.
 
 ## Start here
 

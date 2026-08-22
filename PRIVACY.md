@@ -1,6 +1,6 @@
 # Enloop privacy policy
 
-Effective 2026-08-14. This file is the policy; its history is public in this
+Effective 2026-08-22. This file is the policy; its history is public in this
 repository, so every change to it is visible. The same text is served at
 <https://enloop-md.github.io/enloop/privacy.html> for the Chrome Web Store
 listing — keep the two in step.
@@ -15,6 +15,12 @@ nothing, and stores everything on your machine, in places you choose.
 - **Test cases, runs, reports and feedback files** are plain files in a
   local folder you connect through your browser's File System Access
   picker. They never leave that folder unless you move them.
+- **Questions you send to a local agent session** — and, if you leave the
+  boxes ticked when asking, a screenshot of the visible tab and a
+  scripts-and-styles-stripped copy of the page's HTML — are files in that
+  same connected folder (its `agent/` directory). They exist so an agent
+  running on your own machine can read them; the extension sends them
+  nowhere, and the folder's `.gitignore` keeps them out of version control.
 - **Panel state** — which screen was open, your capture preferences — lives
   in the browser's extension storage on your machine.
 - **Site access** is granted by you, per origin, at the moment a step first

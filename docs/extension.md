@@ -141,6 +141,31 @@ above the steps, and it counts as feedback signal on its own, so a run that
 passed while worrying the tester still produces a `feedback.md` for
 the **check** skill to read.
 
+### Asking the agent mid-run
+
+When an agent session is watching your data folder (`/loop 1m /enloop:serve`
+in Claude Code — [the serve contract](skills.md#serving-the-panel-live)),
+two more things work during a run, without leaving the panel:
+
+- **Ask the agent.** Select the confusing part of a step, press *Ask the
+  agent*, and type the question — "how do I check this specifically?". By
+  default the question carries a **screenshot** of the page you are on and a
+  **page snapshot** (its structure, stripped of scripts and styles), both
+  saved into the folder's `agent/` directory and nowhere else; untick either
+  before sending. The answer appears under the step. If the step text itself
+  was the problem, the agent lands a patched version and the panel offers
+  **Load v‹n›** — it verifies first that every step you already executed is
+  unchanged, and loading keeps every recorded status.
+- **Run a case's commands.** Inline commands in Dependencies, Prerequisites
+  and step text (`node scripts/seed.js …`) get a ▶ **Run** button. The
+  watching session executes them from the app repo, output streams into a
+  card in the panel, and **Stop** kills the process. Scripts die on their
+  own timeout, or a few minutes after the panel closes — closing the panel
+  is how you turn off a server you started from it.
+
+No session watching? Questions and Run requests wait, and the panel says so
+— nothing is lost, and nothing leaves your machine either way.
+
 ### Project rules
 
 A tester saying "this case should have started from the admin dashboard" is
