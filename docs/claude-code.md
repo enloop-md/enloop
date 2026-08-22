@@ -51,10 +51,20 @@ Claude Code namespaces a plugin's skills, so each one is `/enloop:<skill>`:
 | Write the full case, edges and cleanup | `/enloop:full <ticket>` |
 | Triage a finished run | `/enloop:check` |
 | Backfill test selectors | `/enloop:instrument` |
+| Serve the panel's live requests | `/loop 1m /enloop:serve` |
 
-All four carry `disable-model-invocation: true`: they edit repos and write
+All of them carry `disable-model-invocation: true`: they edit repos and write
 case files, so they run when you ask rather than when Claude infers you might
 have wanted them.
+
+`serve` is the one meant to be left running: each pass sweeps the data
+folder's `agent/` directory for what the extension asked — a tester's
+mid-run question to answer (optionally landing a compatible patch version
+the panel offers to hot-swap), a case command to execute in the background —
+and `/loop` re-invokes it every minute. Stopping the loop stops the
+answering; the scripts it started die on their own timeouts, or five minutes
+after the panel closes, whichever comes first. The full contract is in
+[skills.md](skills.md#serving-the-panel-live).
 
 The authoring skills want a Sonnet-class model or better — a config pinned
 to a smaller one for cost trades authoring quality for it; see

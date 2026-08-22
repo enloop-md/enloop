@@ -6,7 +6,12 @@ import {
   describeCounts,
   hasCaptureSignal,
   newCommentId,
+  renderBulletList,
   stepComments,
+  stepNumberLabels,
+  type AgentCommand,
+  type AgentCommandSourceField,
+  type AgentQuestion,
   type RunCommentDraft,
   type CapturedEntry,
   type CommentAudience,
@@ -28,6 +33,8 @@ import { looksNavigable } from "../../lib/navigate.js";
 import { NavigateButton } from "../../components/NavigateButton.js";
 import { runCaptureKey } from "../../lib/capture.js";
 import { useCaptureRecorder } from "../useCapture.js";
+import { commandPending, useAgentChannel } from "../useAgentChannel.js";
+import { CommandList, StepQuestions } from "./RunAgentChannel.js";
 
 export function RunScreen({
   testCaseId,
@@ -109,6 +116,11 @@ export function RunScreen({
   // gets ticked by someone who already knew what they were looking for.
   const [consoleChoice, setConsoleChoice] = useState<boolean | null>(null);
   const consoleInReport = consoleChoice ?? capture.counts.consoleErrors > 0;
+
+  // Questions and commands for this run, re-read from disk while anything is
+  // pending — the other side is a Claude Code session looping over the
+  // folder, so files are the only place state can live.
+  const agent = useAgentChannel(store, testCaseId, runId, run?.status === "in_progress");
 
   // What each step's comment box holds right now, updated on every keystroke.
   // The box persists itself on a timer; this exists for the one gap that
@@ -199,6 +211,38 @@ export function RunScreen({
     }
   }
 
+  async function handleRunCommand(
+    command: string,
+    stepId: string | null,
+    sourceField: AgentCommandSourceField,
+  ) {
+    // One in flight per command per place: a second ▶ while the first is
+    // queued or running is a double-click, not a second request.
+    if (agent.commands.some((c) => c.command === command && c.stepId === stepId && commandPending(c)))
+      return;
+    try {
+      await agent.runCommand(command, stepId, sourceField);
+    } catch (e) {
+      setError(e);
+    }
+  }
+
+  async function handleRunAgain(command: AgentCommand) {
+    try {
+      await agent.runCommand(command.command, command.stepId, command.sourceField);
+    } catch (e) {
+      setError(e);
+    }
+  }
+
+  async function handleKillCommand(commandId: string) {
+    try {
+      await agent.kill(commandId);
+    } catch (e) {
+      setError(e);
+    }
+  }
+
   async function finishRun(status: "passed" | "failed" | "aborted") {
     if (!run) return;
     setError(null);
@@ -240,8 +284,10 @@ export function RunScreen({
 
   const passCount = run.steps.filter((s) => s.status === "success").length;
   const failCount = run.steps.filter((s) => s.status === "failed").length;
+  const skippedCount = run.steps.filter((s) => s.status === "skipped").length;
   const allExpanded = run.steps.every((s) => expandedIds.has(s.stepId));
   const currentIndex = run.steps.findIndex((s) => s.stepId === currentStepId);
+  const numberLabels = stepNumberLabels(run.steps);
   // Must mirror renderRunFeedback's own test, including the run-level
   // comment — a banner promising a feedback.md that was never written is
   // worse than no banner.
@@ -251,6 +297,7 @@ export function RunScreen({
       (s) =>
         s.status === "failed" ||
         s.status === "warning" ||
+        (s.status === "skipped" && !s.extra) ||
         stepComments(s).some((c) => c.text.trim().length > 0) ||
         !!s.automatedResult?.error ||
         s.consoleErrors > 0,
@@ -284,8 +331,11 @@ export function RunScreen({
           </span>
         )}
         <span>
-          v{run.testCaseVersion} · {passCount}/{run.steps.length} passed
+          {/* Skipped steps leave the denominator: "5/5 passed · 2 skipped"
+              is a done run, "5/7 passed" is a run that looks abandoned. */}
+          v{run.testCaseVersion} · {passCount}/{run.steps.length - skippedCount} passed
           {failCount > 0 && <span className="text-red-600"> · {failCount} failed</span>}
+          {skippedCount > 0 && <span> · {skippedCount} skipped</span>}
         </span>
         <span className="ml-auto flex items-center gap-1.5">
           <button
@@ -321,11 +371,29 @@ export function RunScreen({
       )}
 
       <div className="flex-1 overflow-y-auto">
-        <BeforeYouStart dependencies={run.dependencies} prerequisites={run.prerequisites} />
+        <BeforeYouStart
+          dependencies={run.dependencies}
+          prerequisites={run.prerequisites}
+          onRunCommand={
+            readOnly ? undefined : (command, field) => void handleRunCommand(command, null, field)
+          }
+        />
+        {/* Run-level command cards live outside the collapsed details above:
+            a server someone started must stay visible while it runs. */}
+        {agent.commands.some((c) => c.stepId === null) && (
+          <div className="border-b border-slate-100 px-3 py-2">
+            <CommandList
+              commands={agent.commands.filter((c) => c.stepId === null)}
+              readOnly={readOnly}
+              onKill={handleKillCommand}
+              onRunAgain={handleRunAgain}
+            />
+          </div>
+        )}
         {run.steps.map((step, index) => (
           <StepRow
             key={step.stepId}
-            index={index}
+            numberLabel={numberLabels[index]}
             step={step}
             expanded={expandedIds.has(step.stepId)}
             isCurrent={step.stepId === currentStepId}
@@ -343,6 +411,14 @@ export function RunScreen({
             onRunAutomated={() => handleRunAutomated(step)}
             onUpdateFields={(patch) => updateStepFields(step, patch)}
             onDraftChange={(draft) => pendingDrafts.current.set(step.stepId, draft)}
+            run={run}
+            questions={agent.questions}
+            commands={agent.commands.filter((c) => c.stepId === step.stepId)}
+            onAsk={agent.ask}
+            onSwapped={setRun}
+            onRunCommand={(command, field) => void handleRunCommand(command, step.stepId, field)}
+            onKillCommand={handleKillCommand}
+            onRunAgain={handleRunAgain}
           />
         ))}
       </div>
@@ -424,9 +500,13 @@ export function RunScreen({
 function BeforeYouStart({
   dependencies,
   prerequisites,
+  onRunCommand,
 }: {
   dependencies: string[];
   prerequisites: string[];
+  /** Hands an authored command to the watching agent session; absent when
+   * the run is read-only. */
+  onRunCommand?: (command: string, field: "dependencies" | "prerequisites") => void;
 }) {
   if (dependencies.length === 0 && prerequisites.length === 0) return null;
 
@@ -451,8 +531,9 @@ function BeforeYouStart({
               Prerequisites
             </h3>
             <Markdown
-              text={prerequisites.map((p) => `- ${p}`).join("\n")}
+              text={renderBulletList(prerequisites)}
               className="text-xs text-slate-600"
+              onRunCommand={onRunCommand && ((c) => onRunCommand(c, "prerequisites"))}
             />
           </div>
         )}
@@ -462,8 +543,9 @@ function BeforeYouStart({
               Dependencies
             </h3>
             <Markdown
-              text={dependencies.map((d) => `- ${d}`).join("\n")}
+              text={renderBulletList(dependencies)}
               className="text-xs text-slate-600"
+              onRunCommand={onRunCommand && ((c) => onRunCommand(c, "dependencies"))}
             />
           </div>
         )}
@@ -741,7 +823,7 @@ function StepComments({
 }
 
 function StepRow({
-  index,
+  numberLabel,
   step,
   expanded,
   isCurrent,
@@ -753,8 +835,17 @@ function StepRow({
   onRunAutomated,
   onUpdateFields,
   onDraftChange,
+  run,
+  questions,
+  commands,
+  onAsk,
+  onSwapped,
+  onRunCommand,
+  onKillCommand,
+  onRunAgain,
 }: {
-  index: number;
+  /** "2" for an ordinary step, "2.1" for an extra one — see stepNumberLabels. */
+  numberLabel: string;
   step: RunStep;
   expanded: boolean;
   isCurrent: boolean;
@@ -766,6 +857,14 @@ function StepRow({
   onRunAutomated: () => void;
   onUpdateFields: (patch: Partial<RunStep>) => void;
   onDraftChange: (draft: RunCommentDraft | null) => void;
+  run: Run;
+  questions: AgentQuestion[];
+  commands: AgentCommand[];
+  onAsk: (stepId: string, question: string, selection: string) => Promise<void>;
+  onSwapped: (run: Run) => void;
+  onRunCommand: (command: string, field: "instructions" | "note") => void;
+  onKillCommand: (commandId: string) => Promise<void>;
+  onRunAgain: (command: AgentCommand) => Promise<void>;
 }) {
   const [highlightState, setHighlightState] = useState<"idle" | "highlighting" | "not-found">(
     "idle",
@@ -830,6 +929,9 @@ function StepRow({
   return (
     <div
       ref={rowRef}
+      // The marker StepQuestions uses to tell "selected text in this step"
+      // from a selection elsewhere in the panel.
+      data-step-row
       className={`border-b border-slate-100 border-l-2 transition-colors duration-200 ${
         isCurrent ? "border-l-sky-500 bg-sky-50/60" : "border-l-transparent"
       }`}
@@ -855,7 +957,7 @@ function StepRow({
         >
           ▸
         </span>
-        <span className="text-xs text-slate-400">#{index + 1}</span>
+        <span className="text-xs text-slate-400">#{numberLabel}</span>
         <span
           className={`flex-1 truncate text-sm ${
             isCurrent ? "font-medium text-slate-900" : "text-slate-800"
@@ -869,6 +971,14 @@ function StepRow({
         {step.type === "automated" && (
           <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-700">
             automated
+          </span>
+        )}
+        {step.extra && (
+          <span
+            className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500"
+            title="Optional side-check — skipped unless you decide to do it"
+          >
+            extra
           </span>
         )}
         <StepStatusBadge status={step.status} />
@@ -946,6 +1056,11 @@ function StepRow({
                 text={step.instructions}
                 insertValues
                 className="text-sm text-slate-600"
+                onRunCommand={
+                  !readOnly && step.type === "manual"
+                    ? (c) => onRunCommand(c, "instructions")
+                    : undefined
+                }
               />
             )}
             {step.type === "automated" && step.script && (
@@ -962,9 +1077,23 @@ function StepRow({
             {step.note && (
               <div className="border-l-2 border-slate-200 pl-2 text-[11px] text-slate-400">
                 <span className="font-medium">Note:</span>
-                <Markdown text={step.note} insertValues className="text-[11px] text-slate-400" />
+                <Markdown
+                  text={step.note}
+                  insertValues
+                  className="text-[11px] text-slate-400"
+                  onRunCommand={
+                    !readOnly && step.type === "manual" ? (c) => onRunCommand(c, "note") : undefined
+                  }
+                />
               </div>
             )}
+
+            <CommandList
+              commands={commands}
+              readOnly={readOnly}
+              onKill={onKillCommand}
+              onRunAgain={onRunAgain}
+            />
 
             {/* Counts are folded into run.json when the run finishes, so this
                 is a record on a finished run rather than a live meter. The
@@ -1006,6 +1135,15 @@ function StepRow({
                 </button>
               </div>
             )}
+
+            <StepQuestions
+              run={run}
+              stepId={step.stepId}
+              questions={questions}
+              readOnly={readOnly}
+              onAsk={onAsk}
+              onSwapped={onSwapped}
+            />
 
             <StepComments
               step={step}
@@ -1052,6 +1190,21 @@ function StepRow({
                     onMark={onMark}
                   />
                 </div>
+                {/* A link, not a fourth button: skipping is declining to
+                    judge, and giving it a button's weight would put it on
+                    equal footing with the three verdicts. Skips land in
+                    feedback.md for the test writer — a step skipped run
+                    after run is one the case may not need. Hidden once the
+                    step is skipped: the buttons above are the way back. */}
+                {step.status !== "skipped" && (
+                  <button
+                    onClick={() => onMark("skipped")}
+                    disabled={busy}
+                    className="mx-auto block pt-0.5 text-[11px] text-slate-400 hover:text-slate-600 hover:underline disabled:opacity-50"
+                  >
+                    {step.extra ? "Back to skipped" : "Skip this step"}
+                  </button>
+                )}
               </div>
             )}
           </div>

@@ -11,6 +11,7 @@
  *   node enloop-case.mjs validate <case.md> [--project <name>] [--findings-only]
  *   node enloop-case.mjs write <case.md> --data-dir <folder>   validate, then land it
  *                        [--project <name>] [--case <id>] [--suite <suiteId>]
+ *   node enloop-case.mjs compat <old.md> <new.md>      can new replace old under a live run
  *   node enloop-case.mjs brief [--example]             the floor: a clean minimal case + the rules
  *   node enloop-case.mjs data-folder [--want <path>]   where this repo's cases go
  *   node enloop-case.mjs verify <data folder> <caseId> did the case land right
@@ -31,7 +32,7 @@
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { lintCase, newTestCaseId, CURRENT_FORMAT_VERSION } from "./lib.mjs";
+import { lintCase, newTestCaseId, stepNumberLabels, CURRENT_FORMAT_VERSION } from "./lib.mjs";
 
 const [command, ...rest] = process.argv.slice(2);
 
@@ -174,9 +175,12 @@ switch (command) {
       }
 
       console.log("\nsteps as parsed");
+      // The same labels every renderer uses: extra steps as minor increments
+      // (2.1, 2.2), so what this prints is what the tester will see.
+      const labels = stepNumberLabels(doc.steps);
       for (const [i, s] of doc.steps.entries()) {
         console.log(
-          `  ${i + 1}. ${s.title}${s.quick ? "  [quick]" : ""}${s.type === "automated" ? "  [automated]" : ""}`,
+          `  ${labels[i]}. ${s.title}${s.quick ? "  [quick]" : ""}${s.extra ? "  [extra]" : ""}${s.type === "automated" ? "  [automated]" : ""}`,
         );
         console.log(`     where     ${s.where ?? "(none)"}`);
         console.log(`     selectors ${s.selectors.length ? JSON.stringify(s.selectors) : "(none)"}`);
@@ -196,6 +200,62 @@ switch (command) {
       );
     }
     process.exit(result.ok ? 0 : 1);
+  }
+
+  /**
+   * Can <new> replace <old> under a live run? The structural half only: same
+   * step count, plus a per-step SAME/CHANGED report. Whether a CHANGED step
+   * is allowed to change — whether the run has executed it yet — is the
+   * caller's knowledge: the serve skill reads run.json, and the extension
+   * re-verifies on its own before offering the swap. Exit 0 when counts
+   * match regardless of CHANGED lines; 1 when they differ.
+   */
+  case "compat": {
+    const files = rest.filter((a) => !a.startsWith("--"));
+    if (files.length !== 2) die("usage: enloop-case.mjs compat <old.md> <new.md>");
+    const docs = files.map((file) => {
+      let raw;
+      try {
+        raw = readFileSync(file, "utf8");
+      } catch (e) {
+        die(`Cannot read ${file}: ${e.message}`);
+      }
+      try {
+        return lintCase(raw).doc;
+      } catch (e) {
+        die(`Cannot parse ${file}: ${e.message}`);
+      }
+    });
+    const [oldDoc, newDoc] = docs;
+    console.log(`steps    ${oldDoc.steps.length} → ${newDoc.steps.length}`);
+    if (oldDoc.steps.length !== newDoc.steps.length) {
+      console.log("verdict  INCOMPATIBLE: step count changed");
+      process.exit(1);
+    }
+    const norm = (v) => v ?? "";
+    const changed = [];
+    for (const [i, a] of oldDoc.steps.entries()) {
+      const b = newDoc.steps[i];
+      const diff = [];
+      for (const field of ["title", "type", "instructions", "expected", "note", "script", "where"]) {
+        if (norm(a[field]) !== norm(b[field])) diff.push(field);
+      }
+      if (a.quick !== b.quick) diff.push("quick");
+      if (a.extra !== b.extra) diff.push("extra");
+      if (JSON.stringify(a.selectors) !== JSON.stringify(b.selectors)) diff.push("selectors");
+      if (diff.length === 0) {
+        console.log(`${a.id}   SAME    ${a.title}`);
+      } else {
+        console.log(`${a.id}   CHANGED ${a.title}   (${diff.join(", ")})`);
+        changed.push(a.id);
+      }
+    }
+    console.log(
+      changed.length === 0
+        ? "verdict  IDENTICAL"
+        : `verdict  COMPATIBLE-IF-UNRUN ${changed.join(", ")} — every CHANGED step must still be pending in the run`,
+    );
+    process.exit(0);
   }
 
   /**
@@ -588,6 +648,7 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
       "usage:\n" +
         "  enloop-case.mjs validate <case.md> [--project <name>] [--findings-only]\n" +
         "  enloop-case.mjs write <case.md> --data-dir <folder> [--project <name>] [--case <id>] [--suite <suiteId>]\n" +
+        "  enloop-case.mjs compat <old.md> <new.md>\n" +
         "  enloop-case.mjs brief [--example]\n" +
         "  enloop-case.mjs data-folder [--want <path>]\n" +
         "  enloop-case.mjs verify <data folder> <caseId>\n" +

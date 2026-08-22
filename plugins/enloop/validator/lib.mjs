@@ -3662,6 +3662,13 @@ var stepSchema = z.object({
 	* executes only these; a full run executes every step. Authored once, in
 	* full, so the quick subset costs nothing extra to maintain. */
 	quick: z.boolean(),
+	/** Marked `Kind: extra` — a side-check worth having in the case but not
+	* worth demanding of every run: a conditional, a nice-to-verify, a check
+	* that needs data not every tester has. Shown in the list with a minor
+	* number (2.1, 2.2) under the preceding ordinary step, starts a run
+	* already `skipped`, and the tester opts in rather than out. Mutually
+	* exclusive with `quick` — a step has one `Kind:`. */
+	extra: z.boolean(),
 	/** Where the tester should be standing before doing this step — a route,
 	* screen name, or other surface, e.g. `Where: /admin/sync-console`.
 	* Keeps "which app/tab am I in?" out of the instructions prose. */
@@ -3841,6 +3848,18 @@ var runStepStateSchema = z.object({
 		comments: [...migrated, ...comments]
 	};
 });
+/** One mid-run version hot-swap: the tester loaded an agent-patched
+* version into an in-flight run. Recorded so the run says which text each
+* step actually executed against, and so the panel can tell an offer it
+* already took from one still open. */
+var runSwapSchema = z.object({
+	fromVersion: z.number().int().positive(),
+	toVersion: z.number().int().positive(),
+	at: z.string(),
+	/** The question whose answer proposed the patch, null for a swap that
+	* arrives some other way. */
+	questionId: z.string().nullable()
+});
 var runStatusSchema = z.enum([
 	"in_progress",
 	"passed",
@@ -3864,6 +3883,12 @@ z.object({
 	/** Defaulted to `full`: every run recorded before tiers existed executed
 	* the whole case, so that is the truthful value for them. */
 	tier: runTierSchema.default("full"),
+	/** Name of the environment whose values pre-filled this run, or "" when
+	* the tester ran without one. Denormalized on purpose — the run must
+	* still say where it ran after the environment is renamed or deleted
+	* ("failed on staging" and "failed on local" are different findings).
+	* Defaulted so runs recorded before environments existed still parse. */
+	environment: z.string().default(""),
 	/** The tester's decision, at finish, about whether the captured console and
 	* network output may be summarized into `report.md` — which is the file an
 	* agent reads. Recorded on disk rather than acted on and forgotten, so
@@ -3872,6 +3897,15 @@ z.object({
 	consoleInReport: z.boolean().default(false),
 	startedAt: z.string(),
 	finishedAt: z.string().nullable(),
+	/** The resolved variable values this run was frozen with. `case.md` keeps
+	* the substituted text, not the values, so composing a candidate version
+	* identically during a hot-swap is impossible without this snapshot.
+	* Defaulted for runs recorded before hot-swap existed — an empty map on a
+	* case that declares variables simply makes the swap unavailable. */
+	variables: z.record(z.string()).default({}),
+	/** Audit trail of mid-run hot-swaps, oldest first. Empty for the common
+	* run that finishes on the version it started with. */
+	swaps: z.array(runSwapSchema).default([]),
 	steps: z.array(runStepStateSchema)
 });
 /** Step definition (from case.md) merged with its execution state (from
@@ -3897,6 +3931,7 @@ z.object({
 	status: runStatusSchema,
 	comment: z.string(),
 	tier: runTierSchema,
+	environment: z.string(),
 	consoleInReport: z.boolean(),
 	startedAt: z.string(),
 	finishedAt: z.string().nullable(),
@@ -3906,6 +3941,9 @@ z.object({
 	* execution state only. */
 	dependencies: z.array(z.string()),
 	prerequisites: z.array(z.string()),
+	/** From `run.json` — the panel needs it to tell a patch offer it already
+	* loaded from one still open. */
+	swaps: z.array(runSwapSchema),
 	steps: z.array(runStepSchema)
 });
 z.object({
@@ -3921,6 +3959,68 @@ z.object({
 	automatedResult: automatedResultSchema.nullable().optional(),
 	startedAt: z.string().nullable().optional(),
 	finishedAt: z.string().nullable().optional()
+});
+z.object({
+	id: z.string(),
+	testCaseId: z.string(),
+	runId: z.string(),
+	testCaseVersion: z.number().int().positive(),
+	stepId: z.string(),
+	stepTitle: z.string(),
+	/** What the tester had selected in the step when they asked — the "this"
+	* their question points at. Empty when nothing was selected. */
+	selection: z.string(),
+	question: z.string(),
+	environment: z.string(),
+	askedAt: z.string()
+});
+z.object({
+	id: z.string(),
+	answeredAt: z.string(),
+	/** One line for collapsed views; the full answer is `answer.md`. */
+	summary: z.string(),
+	/** Version the agent landed as a candidate patch, null when the answer
+	* needed no case change. A claim, not a promise: the panel re-verifies
+	* compatibility itself before offering to load it. */
+	proposedVersion: z.number().int().positive().nullable()
+});
+/** Which part of the case the command was quoted from — `stepId` is null
+* exactly when this is a run-level field. */
+var agentCommandSourceFieldSchema = z.enum([
+	"dependencies",
+	"prerequisites",
+	"instructions",
+	"note"
+]);
+z.object({
+	id: z.string(),
+	testCaseId: z.string(),
+	runId: z.string(),
+	stepId: z.string().nullable(),
+	sourceField: agentCommandSourceFieldSchema,
+	command: z.string(),
+	/** Hard cap on the process's life; 0 = uncapped, though the heartbeat
+	* still bounds it. */
+	timeoutSeconds: z.number().int().nonnegative(),
+	requestedAt: z.string()
+});
+z.object({
+	state: z.enum([
+		"running",
+		"exited",
+		"killed",
+		"refused"
+	]),
+	pid: z.number().int().nullable(),
+	startedAt: z.string().nullable(),
+	exitCode: z.number().int().nullable(),
+	endedAt: z.string().nullable(),
+	reason: z.enum([
+		"user",
+		"heartbeat",
+		"timeout",
+		"provenance"
+	]).nullable()
 });
 //#endregion
 //#region shared/src/viewer-link.ts
@@ -3952,7 +4052,7 @@ function stripViewerComment(markdown) {
 * v1.md/v2.md version history, which tracks edits to a case's *content*
 * under this same grammar.
 */
-var CURRENT_FORMAT_VERSION = "0.0.6";
+var CURRENT_FORMAT_VERSION = "0.0.7";
 /**
 * Grammar. There is no separate spec by design: this comment is it, sitting
 * against the parser that implements it, and `scripts/build-plugin.mjs`
@@ -4050,7 +4150,13 @@ var CURRENT_FORMAT_VERSION = "0.0.6";
 *
 *   # Prerequisites                             (optional, bullet list)
 *   - Open https://app.example.com/admin/reports
-*   - API running locally: `npm run dev` in the app repo
+*   - API running locally: `npm run dev` in the app repo,
+*     which also starts the worker — wait for "ready" in its output
+*     - nested detail lines belong to their item too
+*
+*   An item is one flush-left `- ` bullet plus everything indented under it:
+*   wrapped prose and nested bullets stay part of the item they continue
+*   rather than becoming items of their own.
 *
 *   Anything the tester must *do* before step 1 belongs in Prerequisites,
 *   including where the run begins and starting any service locally — with
@@ -4084,8 +4190,25 @@ var CURRENT_FORMAT_VERSION = "0.0.6";
 *                                                 is authored once, in full,
 *                                                 and the marks pick out the
 *                                                 subset worth running during
-*                                                 development. `Kind:` with
-*                                                 any other value is ignored.)
+*                                                 development.)
+*   Kind: extra                                 (optional — the opposite dial:
+*                                                 an optional side-check,
+*                                                 skipped by default. It stays
+*                                                 visible in the run, numbered
+*                                                 with a minor increment under
+*                                                 the ordinary step before it
+*                                                 — 2.1, 2.2 — and starts the
+*                                                 run already marked skipped;
+*                                                 the tester opts in by giving
+*                                                 it a verdict. For
+*                                                 conditionals ("only if a
+*                                                 second account exists"),
+*                                                 nice-to-verify checks, and
+*                                                 steps that keep arriving
+*                                                 skipped. A step has one
+*                                                 `Kind:` — quick or extra,
+*                                                 not both; any other value
+*                                                 is ignored.)
 *   Selector: #login-button                     (optional — scrolls this
 *                                                 into view and flashes it
 *                                                 in the page when the step
@@ -4326,8 +4449,28 @@ var PLACEHOLDER_RE = /%([A-Za-z_][A-Za-z0-9_]*)%/g;
 function substituteVariables(text, values) {
 	return text.replace(PLACEHOLDER_RE, (match, name) => values[name]?.trim() ? values[name] : match);
 }
+/**
+* The items of a `# Dependencies` / `# Prerequisites` section, one string per
+* item, continuation lines included.
+*
+* A top-level item is a flush-left(-ish, <2 spaces — CommonMark allows up to
+* three) `- ` or `* ` bullet. Everything else that is not blank belongs to
+* the item above it: wrapped prose, and nested bullets, which arrive indented
+* and stay part of their parent. Continuations are stored with the standard
+* two-space item indent stripped and real newlines kept, so an item is plain
+* Markdown relative to its own margin — `renderBulletList` puts the indent
+* back. The old version of this function kept only the bullet lines, which
+* silently truncated every item that wrapped.
+*/
 function parseBulletList(text) {
-	return text.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("- ") || l.startsWith("* ")).map((l) => l.slice(2).trim());
+	const items = [];
+	for (const line of text.split("\n")) {
+		const indent = /^[ \t]*/.exec(line)[0].length;
+		const trimmed = line.trim();
+		if (indent < 2 && (trimmed.startsWith("- ") || trimmed.startsWith("* "))) items.push(trimmed.slice(2).trim());
+		else if (items.length > 0 && trimmed !== "") items[items.length - 1] += "\n" + line.replace(/^(?: {1,2}|\t)/, "").trimEnd();
+	}
+	return items;
 }
 function parseSteps(stepsSectionBody) {
 	const { sections } = splitTopSections(stepsSectionBody, 2);
@@ -4374,6 +4517,7 @@ function parseOneStep(title, body, index) {
 	const selectors = [];
 	let where;
 	let quick = false;
+	let extra = false;
 	for (; i < lines.length; i++) {
 		const selectorMatch = SELECTOR_RE.exec(lines[i]);
 		const whereMatch = WHERE_RE.exec(lines[i]);
@@ -4382,8 +4526,11 @@ function parseOneStep(title, body, index) {
 			const candidate = selectorMatch[1].trim();
 			if (candidate) selectors.push(candidate);
 		} else if (whereMatch) where = whereMatch[1].trim() || void 0;
-		else if (kindMatch) quick = kindMatch[1].trim().toLowerCase() === "quick";
-		else break;
+		else if (kindMatch) {
+			const kind = kindMatch[1].trim().toLowerCase();
+			quick = kind === "quick";
+			extra = kind === "extra";
+		} else break;
 	}
 	const bodyAfterHeader = lines.slice(i).join("\n");
 	let script;
@@ -4406,8 +4553,38 @@ function parseOneStep(title, body, index) {
 		selectors,
 		where,
 		quick,
+		extra,
 		note
 	};
+}
+/**
+* Display numbers for a step list where `Kind: extra` steps count as minor
+* increments under the ordinary step before them:
+*
+*   1  Open accounts page
+*   2  Create account
+*   2.1  Check account picture is set     (extra)
+*   2.2  Check "test connection" button   (extra)
+*   3  Create X in account
+*
+* One function, used by the run screen, the report, the feedback file and
+* the console log alike — two renderers numbering the same run differently
+* would make "step 2.1" unfindable in one of them. An extra step before any
+* ordinary step numbers from 0 (0.1), which reads as odd because it is: the
+* case has an optional check ahead of its first real step.
+*/
+function stepNumberLabels(steps) {
+	let major = 0;
+	let minor = 0;
+	return steps.map((step) => {
+		if (step.extra) {
+			minor += 1;
+			return `${major}.${minor}`;
+		}
+		major += 1;
+		minor = 0;
+		return `${major}`;
+	});
 }
 /** Start/end offsets of a top-level section's content — from right after
 * its heading line to right before the next top-level (`# `) heading, or
@@ -4647,7 +4824,7 @@ function lintCase(raw, options = {}) {
 		rule: "6",
 		message: `%${name}% is used but never declared under \`# Variables\`, so it stays literal in the run — a typo, or a missing declaration.`
 	});
-	if (doc.formatVersion && doc.formatVersion !== "0.0.6") warnings.push({
+	if (doc.formatVersion && doc.formatVersion !== "0.0.7") warnings.push({
 		rule: "7",
 		message: `@version is ${doc.formatVersion}; this parser implements ${CURRENT_FORMAT_VERSION}. Re-read the grammar before trusting anything below.`
 	});
@@ -4820,6 +4997,11 @@ function lintCase(raw, options = {}) {
 		rule: "3b",
 		message: "Every step is marked `Kind: quick`, so a quick run costs what a full one does. Correct for a quick-tier case, wrong for a full one."
 	});
+	if (doc.steps[0]?.extra) warnings.push({
+		rule: "3b",
+		at: doc.steps[0].title,
+		message: "The first step is `Kind: extra`, so it numbers 0.1 — an optional check before any ordinary step exists. Put an ordinary step first, or unmark it."
+	});
 	const uiSteps = doc.steps.filter((s) => s.type === "manual");
 	const navigableSteps = uiSteps.filter((s) => {
 		const w = s.where?.trim() ?? "";
@@ -4857,4 +5039,4 @@ function newTestCaseId(title) {
 	return `${slugify(title) || "test-case"}-${shortId()}`;
 }
 //#endregion
-export { CURRENT_FORMAT_VERSION, lintCase, newTestCaseId };
+export { CURRENT_FORMAT_VERSION, lintCase, newTestCaseId, stepNumberLabels };

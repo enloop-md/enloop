@@ -31,3 +31,15 @@ export function newFreeRunId(): string {
 export function newCommentId(): string {
   return `comment-${shortId()}`;
 }
+
+export function newQuestionId(): string {
+  const now = new Date();
+  const stamp = now.toISOString().replace(/[:.]/g, "-");
+  return `q-${stamp}-${shortId()}`;
+}
+
+export function newCommandId(): string {
+  const now = new Date();
+  const stamp = now.toISOString().replace(/[:.]/g, "-");
+  return `cmd-${stamp}-${shortId()}`;
+}

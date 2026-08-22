@@ -9,5 +9,6 @@ export * from "./environments.js";
 export * from "./selector-text.js";
 export * from "./viewer-link.js";
 export * from "./storage-id.js";
+export * from "./run-compat.js";
 export * from "./capture.js";
 export * from "./html.js";

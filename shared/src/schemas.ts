@@ -60,6 +60,13 @@ export const stepSchema = z.object({
    * executes only these; a full run executes every step. Authored once, in
    * full, so the quick subset costs nothing extra to maintain. */
   quick: z.boolean(),
+  /** Marked `Kind: extra` — a side-check worth having in the case but not
+   * worth demanding of every run: a conditional, a nice-to-verify, a check
+   * that needs data not every tester has. Shown in the list with a minor
+   * number (2.1, 2.2) under the preceding ordinary step, starts a run
+   * already `skipped`, and the tester opts in rather than out. Mutually
+   * exclusive with `quick` — a step has one `Kind:`. */
+  extra: z.boolean(),
   /** Where the tester should be standing before doing this step — a route,
    * screen name, or other surface, e.g. `Where: /admin/sync-console`.
    * Keeps "which app/tab am I in?" out of the instructions prose. */
@@ -271,6 +278,19 @@ export const runStepStateSchema = z
     return { ...rest, comments: [...migrated, ...comments] };
   });
 
+/** One mid-run version hot-swap: the tester loaded an agent-patched
+ * version into an in-flight run. Recorded so the run says which text each
+ * step actually executed against, and so the panel can tell an offer it
+ * already took from one still open. */
+export const runSwapSchema = z.object({
+  fromVersion: z.number().int().positive(),
+  toVersion: z.number().int().positive(),
+  at: z.string(),
+  /** The question whose answer proposed the patch, null for a swap that
+   * arrives some other way. */
+  questionId: z.string().nullable(),
+});
+
 export const runStatusSchema = z.enum(["in_progress", "passed", "failed", "aborted"]);
 
 /** How much of the case a run covers. `quick` executes only the steps
@@ -308,6 +328,15 @@ export const runFileSchema = z.object({
   consoleInReport: z.boolean().default(false),
   startedAt: z.string(),
   finishedAt: z.string().nullable(),
+  /** The resolved variable values this run was frozen with. `case.md` keeps
+   * the substituted text, not the values, so composing a candidate version
+   * identically during a hot-swap is impossible without this snapshot.
+   * Defaulted for runs recorded before hot-swap existed — an empty map on a
+   * case that declares variables simply makes the swap unavailable. */
+  variables: z.record(z.string()).default({}),
+  /** Audit trail of mid-run hot-swaps, oldest first. Empty for the common
+   * run that finishes on the version it started with. */
+  swaps: z.array(runSwapSchema).default([]),
   steps: z.array(runStepStateSchema),
 });
 
@@ -348,6 +377,9 @@ export const runSchema = z.object({
    * execution state only. */
   dependencies: z.array(z.string()),
   prerequisites: z.array(z.string()),
+  /** From `run.json` — the panel needs it to tell a patch offer it already
+   * loaded from one still open. */
+  swaps: z.array(runSwapSchema),
   steps: z.array(runStepSchema),
 });
 
@@ -368,4 +400,85 @@ export const stepPatchSchema = z.object({
   automatedResult: automatedResultSchema.nullable().optional(),
   startedAt: z.string().nullable().optional(),
   finishedAt: z.string().nullable().optional(),
+});
+
+// ---- the agent channel: `agent/` in the data folder ---------------------
+//
+// The panel and a looping agent session (`/enloop:serve`) share nothing but
+// the data folder, so every request and reply below is a file, and state is
+// derived from file presence — the panel document does not survive a click
+// into the page under test, and the agent only exists for one tick at a
+// time. Layout: `agent/questions/<id>/` (question.json, answer.md,
+// answer.json) and `agent/commands/<id>/` (request.json, run.sh, pid,
+// status.json, output.log, exit-code, kill), plus `agent/heartbeat.json`.
+
+/** On-disk `agent/questions/<id>/question.json` — one question a tester
+ * asked from a run step. Carries enough context (run, version, step) for a
+ * session that has never seen this run to answer without asking back. */
+export const agentQuestionFileSchema = z.object({
+  id: z.string(),
+  testCaseId: z.string(),
+  runId: z.string(),
+  testCaseVersion: z.number().int().positive(),
+  stepId: z.string(),
+  stepTitle: z.string(),
+  /** What the tester had selected in the step when they asked — the "this"
+   * their question points at. Empty when nothing was selected. */
+  selection: z.string(),
+  question: z.string(),
+  environment: z.string(),
+  askedAt: z.string(),
+});
+
+/** On-disk `answer.json`, written by the agent after `answer.md` — its
+ * presence is the completion marker, so a half-written answer is never
+ * shown. */
+export const agentAnswerMetaSchema = z.object({
+  id: z.string(),
+  answeredAt: z.string(),
+  /** One line for collapsed views; the full answer is `answer.md`. */
+  summary: z.string(),
+  /** Version the agent landed as a candidate patch, null when the answer
+   * needed no case change. A claim, not a promise: the panel re-verifies
+   * compatibility itself before offering to load it. */
+  proposedVersion: z.number().int().positive().nullable(),
+});
+
+export const AGENT_COMMAND_SOURCE_FIELDS = [
+  "dependencies",
+  "prerequisites",
+  "instructions",
+  "note",
+] as const;
+/** Which part of the case the command was quoted from — `stepId` is null
+ * exactly when this is a run-level field. */
+export const agentCommandSourceFieldSchema = z.enum(AGENT_COMMAND_SOURCE_FIELDS);
+
+/** On-disk `agent/commands/<id>/request.json` — a case-authored shell
+ * command the tester asked the watching session to run. The agent refuses a
+ * command it cannot find verbatim in the case (provenance), so this is a
+ * pointer to authored text, not a way to run arbitrary strings. */
+export const agentCommandRequestSchema = z.object({
+  id: z.string(),
+  testCaseId: z.string(),
+  runId: z.string(),
+  stepId: z.string().nullable(),
+  sourceField: agentCommandSourceFieldSchema,
+  command: z.string(),
+  /** Hard cap on the process's life; 0 = uncapped, though the heartbeat
+   * still bounds it. */
+  timeoutSeconds: z.number().int().nonnegative(),
+  requestedAt: z.string(),
+});
+
+/** On-disk `status.json`, agent-written. For completion the wrapper-written
+ * `exit-code` file outranks it — the agent only ticks once a minute, so
+ * this can honestly say `running` after the process died. */
+export const agentCommandStatusSchema = z.object({
+  state: z.enum(["running", "exited", "killed", "refused"]),
+  pid: z.number().int().nullable(),
+  startedAt: z.string().nullable(),
+  exitCode: z.number().int().nullable(),
+  endedAt: z.string().nullable(),
+  reason: z.enum(["user", "heartbeat", "timeout", "provenance"]).nullable(),
 });

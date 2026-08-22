@@ -1,0 +1,5 @@
+interface:
+  display_name: "Enloop: serve the panel"
+  short_description: Answer mid-run questions and run case commands from the data folder.
+policy:
+  allow_implicit_invocation: false

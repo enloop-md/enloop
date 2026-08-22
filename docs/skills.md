@@ -18,8 +18,9 @@ To install and invoke them:
 | full | the app repo | the complete case, extending a quick one in place | `/enloop:full` | `$full` |
 | check | the app repo | fixes, and a verdict per failure | `/enloop:check` | `$check` |
 | instrument | the app repo | `data-testid` attributes | `/enloop:instrument` | `$instrument` |
+| serve | the app repo, on a loop | answers to mid-run questions, patch versions, command output | `/loop 1m /enloop:serve` | `$serve` |
 
-There is a fifth, `enloop-demo`, which lives in this repo's `.claude/skills/`
+There is also `enloop-demo`, which lives in this repo's `.claude/skills/`
 and produces demo cases exercising the grammar itself. It is intentionally
 **not** distributable and ships in neither plugin: it needs this repo's parser,
 its TypeScript build, and the extension build to verify what it produces.
@@ -250,6 +251,57 @@ fix.
 
 Nothing is rerun, and it won't claim otherwise: a fixed case and a patched
 bug both need another pass through the extension.
+
+## Serving the panel live
+
+Everything above happens before or after a run. `serve` happens **during**
+one: a session that loops over the data folder and does what the panel asks
+while the tester keeps testing.
+
+```
+/loop 1m /enloop:serve   # Claude Code — one pass a minute until you stop it
+$serve                   # Codex — one pass per mention; there is no loop
+```
+
+Two things ride the channel:
+
+- **Questions.** A tester unsure how to do a step asks from the step itself.
+  The serve pass answers from the app's source — the direct answer first,
+  the exact click-path after it — and, when the step text itself was the
+  problem, lands a patch as `versions/v<n+1>.md`: same step count, every
+  already-executed step byte-identical, `Change note:` naming the run. The
+  panel re-verifies that compatibility on its own and only then offers
+  "Load v<n+1>" — accepted with one click, the run keeps every recorded
+  status. An incompatible patch is still an ordinary next version for the
+  next run; nothing is lost, only the hot-swap declined.
+- **Commands.** A case's Dependencies often say things like
+  `node scripts/seed.js --org https://…`. The panel shows Run on such
+  commands; the serve pass executes them in the background from the app
+  repo's root, streams output into the panel, and honors its Stop button.
+  It refuses any command it cannot find verbatim in a stored case — the
+  channel runs what was authored, not arbitrary text. stdin is closed, so a
+  prompt-driven script runs to its timeout rather than to an answer.
+
+The wire is a directory the extension creates on first use (and gitignores
+in repo-hosted folders):
+
+```
+<data folder>/agent/
+├── heartbeat.json        touched by the open panel every 20 s
+├── questions/<id>/       question.json → answer.md + answer.json
+└── commands/<id>/        request.json → run.sh, pid, status.json,
+                          output.log, exit-code; a `kill` file is the
+                          Stop button
+```
+
+Lifetimes are enforced twice: every command gets a hard timeout (15 minutes
+by default), and when the heartbeat goes quiet for 5 minutes the serve pass
+kills every process it started — closing the panel is how you turn off the
+dev server you launched from it. `runs/**` stays read-only for the agent
+throughout; the panel alone decides what a live run loads.
+
+No session looping? Questions and commands simply wait, and the panel says
+so — nothing breaks, nothing times out except the scripts themselves.
 
 ## Adding selectors to the app
 

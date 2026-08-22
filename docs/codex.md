@@ -35,8 +35,12 @@ Mention a skill explicitly with `$`, or run `/skills` to list what is loaded:
 | Write the full case, edges and cleanup | `$full` |
 | Triage a finished run | `$check` |
 | Backfill test selectors | `$instrument` |
+| Serve the panel's live requests | `$serve` |
 
-All four set `allow_implicit_invocation: false` in their `agents/openai.yaml`
+`$serve` is one pass per mention — Codex has no `/loop`, so re-invoke it (or
+leave it to Claude Code) while a tester is mid-run.
+
+All of them set `allow_implicit_invocation: false` in their `agents/openai.yaml`
 — the counterpart of Claude Code's `disable-model-invocation: true`. They edit
 repos and write case files, so they run when you ask and not when Codex
 guesses that you meant them.

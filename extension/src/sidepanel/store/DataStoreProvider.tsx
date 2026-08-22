@@ -66,6 +66,12 @@ const DataStoreContext = createContext<DataStoreContextValue | null>(null);
 
 const DEFAULT_STORAGE_KEY = "enloop:default-storage";
 
+/** How often the open panel marks itself alive in each connected folder's
+ * `agent/heartbeat.json`. The serve skill treats 5 minutes of silence as
+ * "the extension was closed" — comfortably more than a panel remount, which
+ * happens on every click into the page under test. */
+const HEARTBEAT_INTERVAL_MS = 20_000;
+
 export function DataStoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<WorkspaceState>({ status: "loading" });
   const [storages, setStorages] = useState<StorageStatus[]>([]);
@@ -111,6 +117,19 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
     if (stores.size === 0) return null;
     return new WorkspaceStore(stores, setDegraded, defaultStorageId);
   }, [stores, defaultStorageId]);
+
+  // "The panel is open" is a fact only the panel can state, and the agent
+  // session watching a data folder kills the scripts it spawned once this
+  // goes quiet. Touched at panel level rather than per screen so a server
+  // started from a run survives the tester browsing the Library. Only
+  // folders that already have an `agent/` dir are touched (the store
+  // self-gates), so unused folders see no 20-second write churn.
+  useEffect(() => {
+    if (!store) return;
+    void store.touchHeartbeat();
+    const timer = setInterval(() => void store.touchHeartbeat(), HEARTBEAT_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [store]);
 
   const setDefaultStorageId = useCallback((id: string) => {
     localStorage.setItem(DEFAULT_STORAGE_KEY, id);
