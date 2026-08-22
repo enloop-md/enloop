@@ -27,10 +27,20 @@ export type InsertOutcome =
  * Returns a promise that settles when the tester clicks a field, presses
  * Escape, the panel cancels, or the arming times out — `executeScript`
  * awaits it, so one call covers the whole interaction.
+ *
+ * Armed in every frame (`allFrames`), because the field may live inside an
+ * iframe. That makes settlement a group affair: `executeScript` resolves
+ * only when *all* frames' promises settle, so the frame the tester clicked
+ * must release the others or the call would sit out the full timeout. A
+ * frame cannot reach a cross-origin sibling directly, so the release floods
+ * the frame tree via `postMessage`: the settling frame notifies its own
+ * children and the top frame, and every recipient re-notifies its children
+ * before settling itself.
  */
 function armValueInsertion(value: string, timeoutMs: number): Promise<InsertOutcome> {
   return new Promise((resolve) => {
     const FIELDS = "input, textarea, select, [contenteditable=''], [contenteditable='true']";
+    const SETTLED = "enloop:insert-settled";
 
     const style = document.createElement("style");
     // Show what is clickable while armed. Without this the tester is told to
@@ -39,6 +49,17 @@ function armValueInsertion(value: string, timeoutMs: number): Promise<InsertOutc
     document.head.appendChild(style);
 
     let settled = false;
+
+    const notifyChildren = () => {
+      for (let i = 0; i < window.frames.length; i++) {
+        try {
+          window.frames[i].postMessage({ type: SETTLED }, "*");
+        } catch {
+          // A frame that refuses the message was not armed anyway.
+        }
+      }
+    };
+
     const finish = (outcome: InsertOutcome) => {
       if (settled) return;
       settled = true;
@@ -46,8 +67,22 @@ function armValueInsertion(value: string, timeoutMs: number): Promise<InsertOutc
       document.removeEventListener("click", onClick, true);
       document.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("enloop:cancel-insert", onCancel);
+      window.removeEventListener("message", onMessage);
       style.remove();
+      notifyChildren();
+      if (window.top && window.top !== window) {
+        try {
+          window.top.postMessage({ type: SETTLED }, "*");
+        } catch {
+          // Top frame unreachable; its own timeout still bounds the wait.
+        }
+      }
       resolve(outcome);
+    };
+
+    const onMessage = (event: MessageEvent) => {
+      if ((event.data as { type?: string } | null)?.type !== SETTLED) return;
+      finish({ status: "cancelled" });
     };
 
     function setNativeValue(el: HTMLElement, next: string): void {
@@ -140,6 +175,7 @@ function armValueInsertion(value: string, timeoutMs: number): Promise<InsertOutc
     document.addEventListener("click", onClick, true);
     document.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("enloop:cancel-insert", onCancel);
+    window.addEventListener("message", onMessage);
   });
 }
 
@@ -160,13 +196,31 @@ export async function insertValueInActiveTab(
   if (access.status !== "ready") return { status: "blocked", access };
 
   try {
-    const [injection] = await chrome.scripting.executeScript({
-      target: { tabId: access.tabId },
+    const injections = await chrome.scripting.executeScript({
+      target: { tabId: access.tabId, allFrames: true },
       world: "MAIN",
       func: armValueInsertion,
       args: [value, timeoutMs],
     });
-    return injection?.result ?? { status: "unavailable" };
+    // Every frame reports; at most one holds the tester's action, the rest
+    // settled as `cancelled` when the flood released them. Rank so the acted
+    // frame's outcome wins over the bystanders'.
+    const rank: Record<InsertOutcome["status"], number> = {
+      inserted: 0,
+      "no-option": 1,
+      unsupported: 2,
+      cancelled: 3,
+      timeout: 4,
+      blocked: 5,
+      unavailable: 6,
+    };
+    let outcome: InsertOutcome | null = null;
+    for (const injection of injections) {
+      const result = injection?.result;
+      if (!result) continue;
+      if (outcome === null || rank[result.status] < rank[outcome.status]) outcome = result;
+    }
+    return outcome ?? { status: "unavailable" };
   } catch {
     return { status: "unavailable" };
   }
@@ -178,7 +232,7 @@ export async function cancelInsertInActiveTab(): Promise<void> {
   try {
     const tabId = await getActiveTabId();
     await chrome.scripting.executeScript({
-      target: { tabId },
+      target: { tabId, allFrames: true },
       world: "MAIN",
       func: cancelValueInsertion,
     });
