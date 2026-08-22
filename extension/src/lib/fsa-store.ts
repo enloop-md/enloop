@@ -983,7 +983,7 @@ export class FsaDataStore implements DataStore {
     }
     if (draft.pageHtml) await writeTextFile(qDir, QUESTION_PAGE_FILE, draft.pageHtml);
     await writeJson(qDir, QUESTION_FILE, question);
-    return { ...question, pickedUpAt: null, answer: null };
+    return { ...question, pickedUpAt: null, pickedUpBy: null, answer: null };
   }
 
   async listQuestions(testCaseId: string, runId: string): Promise<AgentQuestion[]> {
@@ -1005,6 +1005,7 @@ export class FsaDataStore implements DataStore {
       questions.push({
         ...question,
         pickedUpAt: ack?.pickedUpAt ?? null,
+        pickedUpBy: ack?.by?.kind ?? null,
         answer: markdown && meta ? { markdown: markdown.text, meta } : null,
       });
     }

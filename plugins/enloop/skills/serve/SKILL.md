@@ -59,6 +59,19 @@ report `serve: idle` and end the pass. Never create `agent/` yourself: the
 extension creates it on first use, and its absence is what says the channel
 is not in use here.
 
+When `agent/` does exist, announce this loop before anything else — write
+`agent/watchers/claude-code.json` (creating `watchers/` if needed):
+
+```json
+{ "id": "claude-code", "kind": "claude-code", "host": "<hostname>",
+  "lastSeenAt": "<iso now>" }
+```
+
+This is how a standalone answering daemon (`enloopd`) knows you are alive
+and defers to you — you hold the task's context, it reads the repo cold.
+You never defer to anyone and never back off a question you acked; the
+daemon does both. Never touch another watcher's file.
+
 ## 3. Answer questions
 
 A question directory holds `question.json`; your answer is `answer.md` plus
@@ -69,7 +82,8 @@ each one that is not:
    into the question's directory:
 
    ```json
-   { "id": "<question id>", "pickedUpAt": "<iso now>" }
+   { "id": "<question id>", "pickedUpAt": "<iso now>",
+     "by": { "id": "claude-code", "kind": "claude-code" } }
    ```
 
    The tester is watching a "waiting for an agent" line; this file is what
@@ -138,8 +152,11 @@ each one that is not:
      `quick`/`full`/`check` landing goes to `v4`. Take the landed id from
      the `landed v<id>` output line, never from your own count — a
      concurrent write shifts it.
-6. Write `answer.md`, then `answer.json` — **that order**; the panel treats
-   `answer.json` as the completion marker:
+6. Before writing, check the directory one more time: an `answer.json`
+   that appeared meanwhile means another server finished first — a complete
+   answer is terminal, never overwrite one. Otherwise write `answer.md`,
+   then `answer.json` — **that order**; the panel treats `answer.json` as
+   the completion marker:
 
    ```json
    { "id": "<question id>", "answeredAt": "<iso now>",
@@ -187,8 +204,11 @@ A command directory holds `request.json`; your side is `run.sh`,
 
    ```json
    { "state": "running", "pid": <from the pid file>, "startedAt": "<iso now>",
-     "exitCode": null, "endedAt": null, "reason": null }
+     "exitCode": null, "endedAt": null, "reason": null, "owner": "claude-code" }
    ```
+
+   Touch only commands you own (`owner` yours or absent): a pid another
+   watcher recorded is a process on a machine that may not be this one.
 
 **Running** (`status.json` says `running`), in this order per pass:
 

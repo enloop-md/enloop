@@ -122,6 +122,7 @@ no database, no account.
 | Write cases with **Claude Code** | [docs/claude-code.md](docs/claude-code.md) |
 | Write cases with **Codex** | [docs/codex.md](docs/codex.md) |
 | Understand what the skills do | [docs/skills.md](docs/skills.md) |
+| Answer testers without Claude Code | [docs/daemon.md](docs/daemon.md) |
 | Write or read a case by hand | [docs/case-format.md](docs/case-format.md) |
 | Share a case with someone | [the viewer](https://enloop-md.github.io/enloop/) |
 
@@ -139,6 +140,7 @@ run work rather than author one blind.
 ```
 extension/          Chrome extension (React + Vite, side panel)
 viewer/             the online viewer (static page, GitHub Pages)
+daemon/             enloopd — the standalone answering daemon (docs/daemon.md)
 shared/             parser, schemas, id/variable helpers — the grammar lives here
 docs/               the documentation this README links to
 plugins/enloop/     the distributable skill plugin (Claude Code + Codex)
