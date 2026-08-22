@@ -5,7 +5,8 @@
   "workspaces": [
     "shared",
     "extension",
-    "viewer"
+    "viewer",
+    "daemon"
   ],
   "scripts": {
     "dev": "npm run dev -w extension",
@@ -13,6 +14,7 @@
     "build": "npm run build -w extension",
     "build:viewer": "npm run build -w viewer",
     "build:plugin": "node scripts/build-plugin.mjs",
-    "typecheck": "npm run typecheck -w shared && npm run typecheck -w extension && npm run typecheck -w viewer"
+    "build:daemon": "npm run build -w daemon",
+    "typecheck": "npm run typecheck -w shared && npm run typecheck -w extension && npm run typecheck -w viewer && npm run typecheck -w daemon"
   }
 }

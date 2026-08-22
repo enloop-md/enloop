@@ -450,13 +450,32 @@ export const agentQuestionFileSchema = z.object({
   askedAt: z.string(),
 });
 
+/** Who a channel server is: an interactive Claude Code serve loop, or the
+ * standalone enloopd daemon. */
+export const agentWatcherKindSchema = z.enum(["claude-code", "daemon"]);
+
+/** On-disk `agent/watchers/<id>.json` — a server announcing itself once
+ * per pass/tick. Freshness is what arbitration reads: the daemon defers to
+ * a Claude Code loop that has been seen recently, because that session
+ * likely holds the context of the task being tested. Nobody deletes
+ * another watcher's file; stale ones are just ignored. */
+export const agentWatcherSchema = z.object({
+  id: z.string(),
+  kind: agentWatcherKindSchema,
+  host: z.string(),
+  lastSeenAt: z.string(),
+});
+
 /** On-disk `ack.json`, written by the agent the moment a pass sees the
  * question — before reading a single source file — so the panel can turn
  * "waiting for an agent" into "working on the answer" instead of leaving
- * the tester staring at the first for the whole think time. */
+ * the tester staring at the first for the whole think time. `by` says
+ * which server claimed it (absent in acks from older skill versions); on
+ * an ack race the daemon always yields to Claude Code. */
 export const agentQuestionAckSchema = z.object({
   id: z.string(),
   pickedUpAt: z.string(),
+  by: z.object({ id: z.string(), kind: agentWatcherKindSchema }).optional(),
 });
 
 /** On-disk `answer.json`, written by the agent after `answer.md` — its
@@ -509,5 +528,9 @@ export const agentCommandStatusSchema = z.object({
   startedAt: z.string().nullable(),
   exitCode: z.number().int().nullable(),
   endedAt: z.string().nullable(),
-  reason: z.enum(["user", "heartbeat", "timeout", "provenance"]).nullable(),
+  reason: z.enum(["user", "heartbeat", "timeout", "provenance", "orphaned"]).nullable(),
+  /** Watcher id of the server that spawned the process. The pid means
+   * nothing on any other machine, so only the owner kills, reaps, or
+   * heartbeat-sweeps it. Absent in statuses from older skill versions. */
+  owner: z.string().optional(),
 });

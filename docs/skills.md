@@ -297,6 +297,8 @@ in repo-hosted folders):
 ```
 <data folder>/agent/
 ├── heartbeat.json        touched by the open panel every 20 s
+├── watchers/<id>.json    each serving session/daemon announces itself —
+│                         how enloopd knows to defer to Claude Code
 ├── questions/<id>/       question.json (+ screenshot.png, page.html —
 │                         the tester's page as pixels and as greppable,
 │                         style-stripped structure) → ack.json ("working
@@ -313,7 +315,13 @@ dev server you launched from it. `runs/**` stays read-only for the agent
 throughout; the panel alone decides what a live run loads.
 
 No session looping? Questions and commands simply wait, and the panel says
-so — nothing breaks, nothing times out except the scripts themselves.
+so — nothing breaks, nothing times out except the scripts themselves. Or
+run **[enloopd](daemon.md)**, the standalone daemon that serves the same
+channel from a plain terminal — through the Claude API, or by driving an
+installed Claude Code or Codex headlessly. When a serve loop and the
+daemon watch the same folder, Claude Code wins: it holds the task's
+context, so the daemon defers while the loop is provably alive and takes
+over the moment it is not. The panel says which one is working.
 
 ## Adding selectors to the app
 

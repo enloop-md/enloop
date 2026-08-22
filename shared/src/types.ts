@@ -23,6 +23,8 @@ import type {
   runSwapSchema,
   agentQuestionFileSchema,
   agentQuestionAckSchema,
+  agentWatcherSchema,
+  agentWatcherKindSchema,
   agentAnswerMetaSchema,
   agentCommandSourceFieldSchema,
   agentCommandRequestSchema,
@@ -81,6 +83,10 @@ export type RunSwap = z.infer<typeof runSwapSchema>;
 export type AgentQuestionFile = z.infer<typeof agentQuestionFileSchema>;
 /** On-disk `ack.json` — a serve pass has the question and is working. */
 export type AgentQuestionAck = z.infer<typeof agentQuestionAckSchema>;
+/** A channel server's kind — Claude Code loop or the enloopd daemon. */
+export type AgentWatcherKind = z.infer<typeof agentWatcherKindSchema>;
+/** On-disk `agent/watchers/<id>.json` — server presence for arbitration. */
+export type AgentWatcher = z.infer<typeof agentWatcherSchema>;
 /** On-disk `answer.json` — presence marks the question answered. */
 export type AgentAnswerMeta = z.infer<typeof agentAnswerMetaSchema>;
 /** Which part of the case an agent command was quoted from. */
@@ -95,6 +101,9 @@ export type AgentCommandStatus = z.infer<typeof agentCommandStatusSchema>;
  * `pickedUpAt` set + `answer` null = an agent is working on it. */
 export interface AgentQuestion extends AgentQuestionFile {
   pickedUpAt: string | null;
+  /** Which kind of server claimed it — null while unclaimed, and for acks
+   * written by skill versions that predate `by`. */
+  pickedUpBy: AgentWatcherKind | null;
   answer: { markdown: string; meta: AgentAnswerMeta } | null;
 }
 

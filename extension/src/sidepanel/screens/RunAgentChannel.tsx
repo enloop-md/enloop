@@ -222,7 +222,11 @@ function QuestionCard({
         question.pickedUpAt !== null ? (
           <div className="text-[11px] text-emerald-600">
             <span className="mr-1 inline-block animate-pulse">●</span>
-            Agent is working on the answer…
+            {question.pickedUpBy === "claude-code"
+              ? "Claude Code is working on the answer…"
+              : question.pickedUpBy === "daemon"
+                ? "Enloop daemon is working on the answer…"
+                : "Agent is working on the answer…"}
           </div>
         ) : (
           <div className="text-[11px] text-slate-400">
