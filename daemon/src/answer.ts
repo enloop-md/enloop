@@ -14,6 +14,7 @@ import {
   isAnswered,
   listQuestions,
   readAck,
+  readCaseContext,
   readFrozenCase,
   readRunFile,
   runDir,
@@ -91,12 +92,33 @@ async function answerOne(
     canPatch,
   });
 
-  log(`question ${question.id}: answering via ${backend} (repo ${repo})`);
-  let result: BackendResult;
-  try {
-    result =
+  // The attempt chain: the authoring session first — context.json names
+  // the session that wrote the case, and resuming it (forked, so the real
+  // session stays clean) recovers exactly the context a looping serve
+  // session used to exist for — then the configured backend fresh.
+  const attempts: Array<{ label: string; run: () => Promise<BackendResult> }> = [];
+  const context = cfg.resumeAuthorSession ? readCaseContext(dataDir, question.testCaseId) : null;
+  if (context && context.host === cfg.host && binExists("claude")) {
+    attempts.push({
+      label: `resume ${context.sessionId.slice(0, 8)}…`,
+      run: () =>
+        answerViaCli({
+          kind: "claude-code",
+          brief,
+          repo: context.cwd || repo,
+          extraArgs: ["--resume", context.sessionId, "--fork-session", ...cfg.cliArgs.claude],
+          // The session lives in (and logs in from) its own config dir —
+          // essential when several isolated CLAUDE_CONFIG_DIRs share one
+          // machine and one daemon.
+          env: context.claudeConfigDir ? { CLAUDE_CONFIG_DIR: context.claudeConfigDir } : undefined,
+        }),
+    });
+  }
+  attempts.push({
+    label: backend,
+    run: () =>
       backend === "api"
-        ? await answerViaApi({
+        ? answerViaApi({
             brief,
             qDir: q.dir,
             repo,
@@ -105,16 +127,29 @@ async function answerOne(
             model: cfg.model,
             canPatch,
           })
-        : await answerViaCli({
+        : answerViaCli({
             kind: backend,
             brief,
             repo,
             extraArgs: backend === "claude-code" ? cfg.cliArgs.claude : cfg.cliArgs.codex,
-          });
-  } catch (e) {
-    warn(`question ${question.id}: ${backend} failed — ${e instanceof Error ? e.message : e}`);
-    return; // The ack stands; the next pass (or a serve loop) retries.
+            env:
+              backend === "claude-code" && cfg.claudeConfigDirs[dataDir]
+                ? { CLAUDE_CONFIG_DIR: cfg.claudeConfigDirs[dataDir] }
+                : undefined,
+          }),
+  });
+
+  let result: BackendResult | null = null;
+  for (const attempt of attempts) {
+    log(`question ${question.id}: answering via ${attempt.label} (repo ${repo})`);
+    try {
+      result = await attempt.run();
+      break;
+    } catch (e) {
+      warn(`question ${question.id}: ${attempt.label} failed — ${e instanceof Error ? e.message : e}`);
+    }
   }
+  if (result === null) return; // The ack stands; the next pass retries.
 
   // Terminality: a complete answer is never overwritten, and a stolen ack
   // means the thief is answering — discard ours.

@@ -37,17 +37,13 @@ Mention a skill explicitly with `$`, or run `/skills` to list what is loaded:
 | Backfill test selectors | `$instrument` |
 | Serve the panel's live requests | `$serve` |
 
-`$serve` is one pass per mention — Codex has no `/loop`. Mention it when the
-panel says a question is waiting, or keep passes coming from a shell while
-someone is testing:
-
-```bash
-while true; do codex exec '$serve'; sleep 60; done
-```
-
-Each pass answers pending questions, lands patch versions, and starts or
-reaps requested commands, exactly as under Claude Code — the channel is
-files in the data folder, and nothing in it assumes which agent is reading.
+`$serve` is one pass per mention — run it when the panel says a question is
+waiting and you are already in a session. For always-on serving use the
+**enloopd daemon** ([docs/daemon.md](daemon.md)) with `--backend codex`,
+which drives `codex exec` headlessly per question. Each pass answers
+pending questions, lands patch versions, and starts or reaps requested
+commands, exactly as under Claude Code — the channel is files in the data
+folder, and nothing in it assumes which agent is reading.
 One gap to know about: the `page.html` snapshot attached to a question is
 plain text and greps the same everywhere, but the `screenshot.png` is only
 as useful as your Codex setup's ability to look at an image — a pass that

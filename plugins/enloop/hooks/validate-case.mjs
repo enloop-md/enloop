@@ -23,14 +23,21 @@
  * written. A file that is deliberately not a case does not belong in a
  * `versions/` folder, and the message says so.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const CASE_FILE = /\/versions\/v\d+(?:\.\d+)?\.md$/;
 
 let filePath = "";
+let sessionId = "";
+let sessionCwd = "";
 try {
-  filePath = JSON.parse(readFileSync(0, "utf8"))?.tool_input?.file_path ?? "";
+  const input = JSON.parse(readFileSync(0, "utf8"));
+  filePath = input?.tool_input?.file_path ?? "";
+  sessionId = input?.session_id ?? "";
+  sessionCwd = input?.cwd ?? "";
 } catch {
   process.exit(0);
 }
@@ -84,5 +91,41 @@ if (result.errors.length > 0) {
         .map((f) => `  (rule ${f.rule})${f.at ? ` [${f.at}]` : ""} ${f.message}`)
         .join("\n"),
   );
+}
+
+// A valid version just landed — stamp the case's authoring provenance
+// beside it. The model cannot know its own session id, but this hook is
+// handed it, which makes here the one reliable place to record which
+// session (and which repo, on which machine) authored the latest version.
+// `enloopd` reads this to answer a tester's question by resuming that very
+// session headlessly (claude -p --resume <id> --fork-session) — the
+// context a looping serve session used to exist for, recovered on demand.
+// Best-effort by design: a failed stamp must never block a valid write.
+try {
+  if (sessionId) {
+    const caseDir = path.dirname(path.dirname(path.resolve(String(filePath))));
+    writeFileSync(
+      path.join(caseDir, "context.json"),
+      `${JSON.stringify(
+        {
+          sessionId,
+          cwd: sessionCwd,
+          host: hostname(),
+          // Login and session store both live in the config dir; recording
+          // it is what keeps three isolated per-project setups isolated
+          // when one daemon serves them all.
+          ...(process.env.CLAUDE_CONFIG_DIR
+            ? { claudeConfigDir: process.env.CLAUDE_CONFIG_DIR }
+            : {}),
+          updatedAt: new Date().toISOString(),
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+  }
+} catch {
+  // Read-only folder, odd layout — the case landed, that is what matters.
 }
 process.exit(0);

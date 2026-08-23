@@ -1,6 +1,6 @@
 ---
 name: serve
-description: Watch the Enloop data folder and serve the extension's live requests. A tester mid-run asks a question from a step ("how do I check this exactly?") — answer it from the app's source, and when the step itself was the problem, land a compatible patch version the panel offers to hot-swap in. A tester clicks Run on a case-authored setup command — execute it in the background, stream output back, and kill everything you started once the panel's heartbeat goes stale. Run it on a loop, "/loop 1m /enloop:serve" — one pass per invocation, a cheap no-op when idle. Not for triaging finished runs; that is /enloop:check.
+description: One manual pass over the Enloop data folder, serving whatever the extension asked. A tester mid-run asks a question from a step ("how do I check this exactly?") — answer it from the app's source, and when the step itself was the problem, land a compatible patch version the panel offers to hot-swap in. A tester clicks Run on a case-authored setup command — execute it in the background, stream output back. Run it when the panel says a question or command is waiting and you are already in a session; the always-on server is the enloopd daemon (docs/daemon.md), which resumes the case's authoring session by itself. Not for triaging finished runs; that is /enloop:check.
 disable-model-invocation: true
 allowed-tools: Read Grep Glob Write Edit Bash(git diff *) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(rg *) Bash(ls *) Bash(cat *) Bash(node *) Bash(mkdir -p *) Bash(printf *) Bash(setsid *) Bash(kill *) Bash(stat *) Bash(tail *) Bash(date *) Bash(bash *) Bash(cd *)
 ---
@@ -8,13 +8,13 @@ allowed-tools: Read Grep Glob Write Edit Bash(git diff *) Bash(git log *) Bash(g
 # Serve the panel
 
 The extension's side panel cannot spawn a process or answer a question — it
-can only write files into the connected data folder. This skill is the other
-end of that channel: one pass over `agent/` in the data folder, doing
-whatever the panel asked since the last pass. Run it on a loop:
-
-```
-/loop 1m /enloop:serve
-```
+can only write files into the connected data folder. This skill is one
+**manual pass** over `agent/` in that folder, doing whatever the panel asked:
+run it when the panel says a question or a command is waiting and you happen
+to be sitting in a session already. The always-on server is the **enloopd
+daemon** (docs/daemon.md) — it watches continuously and answers by resuming
+the very session that authored the case; do not loop this skill as a
+substitute for it.
 
 Every pass is stateless and idempotent. All state lives in the files; a pass
 that finds nothing to do says so in one line and ends. Never ask the user a

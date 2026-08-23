@@ -9,6 +9,7 @@ import {
 import path from "node:path";
 import {
   agentCommandRequestSchema,
+  caseContextSchema,
   agentCommandStatusSchema,
   agentQuestionAckSchema,
   agentQuestionFileSchema,
@@ -22,6 +23,7 @@ import {
   type AgentQuestionAck,
   type AgentQuestionFile,
   type AgentWatcher,
+  type CaseContext,
   type RunFile,
   type TestCaseVersion,
 } from "@tcm/shared";
@@ -259,6 +261,14 @@ export function listVersionIds(caseDir: string): string[] {
   } catch {
     return [];
   }
+}
+
+/** Authoring provenance the guard hook stamps beside a case's versions —
+ * which session landed the latest one, from which repo, on which machine. */
+export function readCaseContext(dataDir: string, testCaseId: string): CaseContext | null {
+  const caseDir = findCaseDir(dataDir, testCaseId);
+  if (!caseDir) return null;
+  return readJson(path.join(caseDir, "context.json"), caseContextSchema);
 }
 
 export function latestVersionFile(caseDir: string): { id: string; file: string } | null {

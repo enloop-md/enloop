@@ -4,6 +4,7 @@ import {
   agentCommandRequestSchema,
   agentCommandStatusSchema,
   agentQuestionFileSchema,
+  agentWatcherSchema,
   buildCaptureDigest,
   buildRunSource,
   checkRunCompat,
@@ -44,6 +45,7 @@ import {
   type AgentCommandSourceField,
   type AgentQuestion,
   type AgentQuestionFile,
+  type AgentWatcherKind,
   type CapturedEntry,
   type CaseBookkeeping,
   type CompatResult,
@@ -104,6 +106,10 @@ const CONSOLE_FILE = "console.md";
 const AGENT_DIR = "agent";
 const QUESTIONS_DIR = "questions";
 const COMMANDS_DIR = "commands";
+const WATCHERS_DIR = "watchers";
+/** A watcher file younger than this is a live server; mirrors the
+ * daemon's own freshness window. */
+const WATCHER_FRESH_MS = 180_000;
 /** Touched by the panel while it is open; the watching session reads the
  * mtime, so the body is informational. */
 const HEARTBEAT_FILE = "heartbeat.json";
@@ -1200,6 +1206,28 @@ export class FsaDataStore implements DataStore {
     await writeTextFile(runDir, CASE_FILE, substitutedMarkdown);
     await writeJson(runDir, RUN_FILE, updated);
     return composeRun(doc, updated);
+  }
+
+  async agentPresence(_testCaseId: string): Promise<AgentWatcherKind | null> {
+    const agentDir = await tryGetDir(this.root, AGENT_DIR);
+    const watchersDir = agentDir && (await tryGetDir(agentDir, WATCHERS_DIR));
+    if (!watchersDir) return null;
+    let present: AgentWatcherKind | null = null;
+    for await (const [name, handle] of watchersDir.entries()) {
+      if (handle.kind !== "file") continue;
+      const file = await tryReadTextFile(watchersDir, name);
+      if (!file || Date.now() - Date.parse(file.lastModified) > WATCHER_FRESH_MS) continue;
+      let kind: AgentWatcherKind;
+      try {
+        kind = agentWatcherSchema.parse(JSON.parse(file.text)).kind;
+      } catch {
+        continue;
+      }
+      // claude-code wins the label when both are fresh — it answers first.
+      if (kind === "claude-code") return kind;
+      present = kind;
+    }
+    return present;
   }
 
   async touchHeartbeat(): Promise<void> {

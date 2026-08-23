@@ -365,6 +365,14 @@ Tell the user:
   selector, values the tester must supply, steps you could not make binary.
   Be specific; this is the list that decides whether the case is trustworthy.
 - Whether the app map was built fresh or reused.
+- **Whether an agent is serving the folder.** Run
+  `node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" agent-status "$DATA_DIR"`.
+  If it prints `WATCHING`, say nothing — everything in the panel just
+  works. If it prints `NONE`, relay one line: authoring and running cases
+  need no agent, but the panel's **Ask the agent** and command **Run**
+  buttons will sit waiting until the enloopd daemon is started
+  (docs/daemon.md in the Enloop repo) or `/enloop:serve` is run manually
+  when something is pending.
 
 Do not claim the case was executed. It was parsed and linted, not run.
 

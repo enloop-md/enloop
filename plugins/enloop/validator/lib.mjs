@@ -3978,6 +3978,16 @@ objectType({
 	attachments: arrayType(stringType()).default([]),
 	askedAt: stringType()
 });
+objectType({
+	sessionId: stringType(),
+	cwd: stringType(),
+	host: stringType(),
+	/** The authoring session's CLAUDE_CONFIG_DIR, when it had one — login
+	* and session store both live there, so isolated per-project config
+	* dirs stay isolated: the daemon resumes with this exact dir set. */
+	claudeConfigDir: stringType().optional(),
+	updatedAt: stringType()
+});
 /** Who a channel server is: an interactive Claude Code serve loop, or the
 * standalone enloopd daemon. */
 var agentWatcherKindSchema = enumType(["claude-code", "daemon"]);

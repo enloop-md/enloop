@@ -5,6 +5,7 @@ import type {
   AgentCommand,
   AgentCommandSourceField,
   AgentQuestion,
+  AgentWatcherKind,
   FreeRun,
   FreeRunFile,
   Run,
@@ -188,6 +189,12 @@ export interface AgentChannelStore {
     toVersion: string,
     questionId: string | null,
   ): Promise<Run>;
+  /** Who, if anyone, is serving this case's folder right now: a fresh
+   * watcher file (seen within ~3 minutes) from a Claude Code pass or the
+   * enloopd daemon. `claude-code` wins the label when both are fresh —
+   * that is who answers questions first. Null = nobody is watching, and
+   * the panel should show how to connect a server. */
+  agentPresence(testCaseId: string): Promise<AgentWatcherKind | null>;
   /** Marks the panel alive in every connected folder that has an `agent/`
    * dir (never creates one). The watching session kills the scripts it
    * spawned once this goes stale. */

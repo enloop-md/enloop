@@ -92,8 +92,18 @@ export async function captureScreenshot(): Promise<Uint8Array | null> {
   }
 }
 
-/** The active page's URL, for a question sent without a snapshot. */
+/** The active page's URL, for a question sent without a snapshot. Unlike
+ * the captures, the URL needs no host grant — the `tabs` permission knows
+ * it even for a page the panel cannot script — so a question from an
+ * ungranted or restricted page still says where the tester was standing. */
 export async function activePageUrl(): Promise<string> {
   const access = await getPageAccess();
-  return access.status === "ready" ? access.url : "";
+  switch (access.status) {
+    case "ready":
+    case "needs-grant":
+    case "restricted":
+      return access.url;
+    default:
+      return "";
+  }
 }

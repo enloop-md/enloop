@@ -143,9 +143,11 @@ the **check** skill to read.
 
 ### Asking the agent mid-run
 
-When an agent session is watching your data folder (`/loop 1m /enloop:serve`
-in Claude Code — [the serve contract](skills.md#serving-the-panel-live)),
-two more things work during a run, without leaving the panel:
+When an agent is watching your data folder — the **[enloopd
+daemon](daemon.md)** (recommended: always on, no session to keep open), or
+a one-off `/enloop:serve` pass in Claude Code — two more things work
+during a run, without leaving the panel. The panel checks for a connected
+agent and shows setup instructions right where you'd otherwise wait:
 
 - **Ask the agent.** Select the confusing part of a step, press *Ask the
   agent*, and type the question — "how do I check this specifically?". By
