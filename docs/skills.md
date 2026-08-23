@@ -18,7 +18,7 @@ To install and invoke them:
 | full | the app repo | the complete case, extending a quick one in place | `/enloop:full` | `$full` |
 | check | the app repo | fixes, and a verdict per failure | `/enloop:check` | `$check` |
 | instrument | the app repo | `data-testid` attributes | `/enloop:instrument` | `$instrument` |
-| serve | the app repo, on a loop | answers to mid-run questions, patch versions, command output | `/loop 1m /enloop:serve` | `$serve` |
+| serve | the app repo, one manual pass | answers to mid-run questions, patch versions, command output | `/enloop:serve` | `$serve` |
 
 There is also `enloop-demo`, which lives in this repo's `.claude/skills/`
 and produces demo cases exercising the grammar itself. It is intentionally
@@ -254,13 +254,20 @@ bug both need another pass through the extension.
 
 ## Serving the panel live
 
-Everything above happens before or after a run. `serve` happens **during**
-one: a session that loops over the data folder and does what the panel asks
-while the tester keeps testing.
+Everything above happens before or after a run. Serving happens **during**
+one, and has two shapes. The always-on server is **[enloopd](daemon.md)**,
+the standalone daemon: it watches the folder continuously, and answers a
+question about a case by *resuming the session that authored it* — the
+plugin's guard hook stamps `context.json` (session id, repo, host, and
+the session's own `CLAUDE_CONFIG_DIR`) beside every landed version, and
+the daemon runs
+`claude -p --resume <that session> --fork-session`, so the authoring
+context serves the tester without any session staying open. The manual
+shape is one pass, for when you are already sitting in a session:
 
 ```
-/loop 1m /enloop:serve   # Claude Code — one pass a minute until you stop it
-$serve                   # Codex — one pass per mention; there is no loop
+/enloop:serve            # Claude Code — one pass, then it ends
+$serve                   # Codex — same
 ```
 
 Two things ride the channel:
@@ -315,14 +322,11 @@ dev server you launched from it. `runs/**` stays read-only for the agent
 throughout; the panel alone decides what a live run loads.
 
 No session looping? Questions and commands simply wait, and the panel says
-so — nothing breaks, nothing times out except the scripts themselves. Or
-run **[enloopd](daemon.md)**, the standalone daemon that serves the same
-channel without an active session — the answering is still an LLM's
-(the Claude API, or an installed Claude Code or Codex driven headlessly);
-what goes away is the open loop someone babysits. When a serve loop and the
-daemon watch the same folder, Claude Code wins: it holds the task's
-context, so the daemon defers while the loop is provably alive and takes
-over the moment it is not. The panel says which one is working.
+so — nothing breaks, nothing times out except the scripts themselves, and
+the panel shows how to connect a server (install the daemon, or run one
+manual pass). When a manual Claude Code pass and the daemon overlap on one
+folder, Claude Code wins: the daemon defers briefly after seeing a fresh
+pass and yields every race. The panel says which one is working.
 
 ## Adding selectors to the app
 

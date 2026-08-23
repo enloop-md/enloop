@@ -3,6 +3,7 @@ import type {
   AgentCommand,
   AgentCommandSourceField,
   AgentQuestion,
+  AgentWatcherKind,
   DataStore,
 } from "@tcm/shared";
 
@@ -47,15 +48,20 @@ export function useAgentChannel(
 ) {
   const [questions, setQuestions] = useState<AgentQuestion[]>([]);
   const [commands, setCommands] = useState<AgentCommand[]>([]);
+  // Who is serving this folder — null means nobody, and the ask/run UI
+  // shows how to connect a server instead of a wait that never ends.
+  const [watcher, setWatcher] = useState<AgentWatcherKind | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [qs, cs] = await Promise.all([
+      const [qs, cs, present] = await Promise.all([
         store.listQuestions(testCaseId, runId),
         store.listCommands(testCaseId, runId),
+        store.agentPresence(testCaseId),
       ]);
       setQuestions(qs);
       setCommands(cs);
+      setWatcher(present);
     } catch (e) {
       // A lapsed handle must not take the run screen down; the next
       // user-initiated store call will surface it properly.
@@ -100,5 +106,5 @@ export function useAgentChannel(
     [store, testCaseId, refresh],
   );
 
-  return { questions, commands, ask, runCommand, kill, refresh };
+  return { questions, commands, watcher, ask, runCommand, kill, refresh };
 }

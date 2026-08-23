@@ -16,6 +16,10 @@ export async function answerViaCli(opts: {
   brief: string;
   repo: string;
   extraArgs: string[];
+  /** Extra environment for the spawned CLI — most importantly
+   * CLAUDE_CONFIG_DIR, so a resume finds the authoring session in the
+   * config dir it actually lives in (and uses that dir's login). */
+  env?: Record<string, string>;
   timeoutMs?: number;
 }): Promise<BackendResult> {
   const [bin, args] =
@@ -24,6 +28,7 @@ export async function answerViaCli(opts: {
       : ["codex", ["exec", ...opts.extraArgs, opts.brief]];
   const { stdout } = await execFileP(bin, args, {
     cwd: opts.repo,
+    env: opts.env ? { ...process.env, ...opts.env } : process.env,
     timeout: opts.timeoutMs ?? 10 * 60 * 1000,
     maxBuffer: 8_000_000,
   });

@@ -40,7 +40,7 @@ async function main(): Promise<void> {
       `${backend === "api" ? ` (${cfg.model})` : ""}, ` +
       `${cfg.dataDirs.length} folder(s), poll ${cfg.pollSeconds}s, defer ${cfg.deferSeconds}s`,
   );
-  log(`a live Claude Code serve loop always wins questions; this daemon defers and yields`);
+  log(`a fresh Claude Code serve pass always wins questions; this daemon defers and yields`);
 
   let stopping = false;
   process.on("SIGINT", () => {

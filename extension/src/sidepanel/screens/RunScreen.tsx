@@ -12,6 +12,7 @@ import {
   type AgentCommand,
   type AgentCommandSourceField,
   type AgentQuestion,
+  type AgentWatcherKind,
   type RunCommentDraft,
   type CapturedEntry,
   type CommentAudience,
@@ -414,6 +415,7 @@ export function RunScreen({
             run={run}
             questions={agent.questions}
             commands={agent.commands.filter((c) => c.stepId === step.stepId)}
+            watcher={agent.watcher}
             onAsk={agent.ask}
             onSwapped={setRun}
             onRunCommand={(command, field) => void handleRunCommand(command, step.stepId, field)}
@@ -838,6 +840,7 @@ function StepRow({
   run,
   questions,
   commands,
+  watcher,
   onAsk,
   onSwapped,
   onRunCommand,
@@ -860,6 +863,7 @@ function StepRow({
   run: Run;
   questions: AgentQuestion[];
   commands: AgentCommand[];
+  watcher: AgentWatcherKind | null;
   onAsk: (draft: AskDraft) => Promise<void>;
   onSwapped: (run: Run) => void;
   onRunCommand: (command: string, field: "instructions" | "note") => void;
@@ -1141,6 +1145,7 @@ function StepRow({
               stepId={step.stepId}
               questions={questions}
               readOnly={readOnly}
+              watcher={watcher}
               onAsk={onAsk}
               onSwapped={onSwapped}
             />

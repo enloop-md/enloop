@@ -450,6 +450,23 @@ export const agentQuestionFileSchema = z.object({
   askedAt: z.string(),
 });
 
+/** On-disk `test-cases/<id>/context.json` — authoring provenance, stamped
+ * automatically by the plugin's guard hook every time a version lands:
+ * which session wrote it, from which repo, on which machine. The daemon
+ * answers questions about the case by resuming that session headlessly
+ * when the host matches; machine-local by nature, so the extension keeps
+ * it out of version control via the folder's .gitignore. */
+export const caseContextSchema = z.object({
+  sessionId: z.string(),
+  cwd: z.string(),
+  host: z.string(),
+  /** The authoring session's CLAUDE_CONFIG_DIR, when it had one — login
+   * and session store both live there, so isolated per-project config
+   * dirs stay isolated: the daemon resumes with this exact dir set. */
+  claudeConfigDir: z.string().optional(),
+  updatedAt: z.string(),
+});
+
 /** Who a channel server is: an interactive Claude Code serve loop, or the
  * standalone enloopd daemon. */
 export const agentWatcherKindSchema = z.enum(["claude-code", "daemon"]);

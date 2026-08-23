@@ -12,6 +12,7 @@
  *   node enloop-case.mjs write <case.md> --data-dir <folder>   validate, then land it
  *                        [--project <name>] [--case <id> [--patch]] [--suite <suiteId>]
  *   node enloop-case.mjs compat <old.md> <new.md>      can new replace old under a live run
+ *   node enloop-case.mjs agent-status <data folder>    is any server watching the channel
  *   node enloop-case.mjs brief [--example]             the floor: a clean minimal case + the rules
  *   node enloop-case.mjs data-folder [--want <path>]   where this repo's cases go
  *   node enloop-case.mjs verify <data folder> <caseId> did the case land right
@@ -646,6 +647,46 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
     break;
   }
 
+  /**
+   * Is any server — the enloopd daemon or a recent manual serve pass —
+   * watching this folder's agent channel? Deterministic: watcher files
+   * younger than 3 minutes count, matching both sides' freshness window.
+   * Exit 0 with WATCHING lines, exit 1 with NONE. The authoring skills run
+   * this after landing a case so the user hears, once, that the panel's
+   * Ask-the-agent and Run buttons need a server — before they find out by
+   * waiting.
+   */
+  case "agent-status": {
+    const dataDir = rest.find((a) => !a.startsWith("--"));
+    if (!dataDir) die("usage: enloop-case.mjs agent-status <data folder>");
+    const watchersDir = path.join(dataDir, "agent", "watchers");
+    const FRESH_MS = 180_000;
+    const fresh = [];
+    for (const name of entries(watchersDir)) {
+      try {
+        const file = path.join(watchersDir, name);
+        const age = Date.now() - statSync(file).mtimeMs;
+        if (age > FRESH_MS) continue;
+        const watcher = JSON.parse(readFileSync(file, "utf8"));
+        fresh.push(`WATCHING ${watcher.kind ?? "unknown"} (${watcher.id ?? name}, ${Math.round(age / 1000)}s ago)`);
+      } catch {
+        // Unreadable watcher file — not presence.
+      }
+    }
+    if (fresh.length > 0) {
+      for (const line of fresh) console.log(line);
+      process.exit(0);
+    }
+    console.log("NONE     no server is watching this folder's agent channel");
+    console.log(
+      "         The panel's Ask-the-agent and Run buttons will wait until the enloopd",
+    );
+    console.log(
+      "         daemon runs (docs/daemon.md) or /enloop:serve is invoked manually.",
+    );
+    process.exit(1);
+  }
+
   case "id": {
     const title = rest.join(" ").trim();
     if (!title) die('usage: enloop-case.mjs id "Project: Case title"');
@@ -663,6 +704,7 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
         "  enloop-case.mjs validate <case.md> [--project <name>] [--findings-only]\n" +
         "  enloop-case.mjs write <case.md> --data-dir <folder> [--project <name>] [--case <id> [--patch]] [--suite <suiteId>]\n" +
         "  enloop-case.mjs compat <old.md> <new.md>\n" +
+        "  enloop-case.mjs agent-status <data folder>\n" +
         "  enloop-case.mjs brief [--example]\n" +
         "  enloop-case.mjs data-folder [--want <path>]\n" +
         "  enloop-case.mjs verify <data folder> <caseId>\n" +

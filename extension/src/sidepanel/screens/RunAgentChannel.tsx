@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { compareVersionIds, type AgentCommand, type AgentQuestion, type CompatResult, type Run } from "@tcm/shared";
+import {
+  compareVersionIds,
+  type AgentCommand,
+  type AgentQuestion,
+  type AgentWatcherKind,
+  type CompatResult,
+  type Run,
+} from "@tcm/shared";
 import { Markdown } from "../../components/Markdown.js";
 import {
   activePageUrl,
@@ -19,14 +26,48 @@ import { commandPending, type AskDraft } from "../useAgentChannel.js";
  */
 
 /** How long a question sits unanswered before the panel explains that an
- * answer needs a watching session, not more patience. */
+ * answer needs a watching server, not more patience. */
 const UNWATCHED_HINT_MS = 60_000;
+
+/**
+ * Shown wherever the tester is about to wait on a server that is not
+ * there. The daemon is the recommended fix — always on, no session to
+ * babysit; a manual /enloop:serve pass is the there-right-now alternative
+ * for someone already sitting in Claude Code.
+ */
+function AgentSetupHint() {
+  return (
+    <div className="space-y-1 rounded border border-amber-200 bg-amber-50/60 p-2 text-[11px] text-slate-600">
+      <p className="font-medium text-amber-800">No agent is connected to this folder.</p>
+      <p>
+        Recommended: run the <span className="font-medium">enloopd</span> daemon — it answers and
+        runs commands with no session to keep open. From the Enloop repo:
+      </p>
+      <pre className="overflow-x-auto rounded bg-slate-100 px-1.5 py-1 text-[10px] text-slate-700">{`npm run build:daemon
+node daemon/dist/enloopd.mjs setup   # once
+node daemon/dist/enloopd.mjs         # leave running`}</pre>
+      <p>
+        <a
+          href="https://github.com/enloop-md/enloop/blob/master/docs/daemon.md"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sky-600 underline hover:text-sky-700"
+        >
+          Daemon setup guide
+        </a>{" "}
+        · Or answer this one manually: run{" "}
+        <code className="rounded bg-slate-100 px-1">/enloop:serve</code> once in Claude Code.
+      </p>
+    </div>
+  );
+}
 
 export function StepQuestions({
   run,
   stepId,
   questions,
   readOnly,
+  watcher,
   onAsk,
   onSwapped,
 }: {
@@ -34,6 +75,7 @@ export function StepQuestions({
   stepId: string;
   questions: AgentQuestion[];
   readOnly: boolean;
+  watcher: AgentWatcherKind | null;
   onAsk: (draft: AskDraft) => Promise<void>;
   onSwapped: (run: Run) => void;
 }) {
@@ -93,19 +135,27 @@ export function StepQuestions({
   return (
     <div ref={wrapRef} className="space-y-1.5">
       {mine.map((q) => (
-        <QuestionCard key={q.id} run={run} question={q} readOnly={readOnly} onSwapped={onSwapped} />
+        <QuestionCard
+          key={q.id}
+          run={run}
+          question={q}
+          readOnly={readOnly}
+          watcher={watcher}
+          onSwapped={onSwapped}
+        />
       ))}
       {!readOnly && !open && (
         <button
           onClick={openBox}
           className="rounded border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-medium text-violet-700 hover:bg-violet-100"
-          title="Ask the Claude Code session watching this folder — select text in the step first to quote it"
+          title="Ask the agent watching this folder — select text in the step first to quote it"
         >
           ✳ Ask the agent
         </button>
       )}
       {!readOnly && open && (
         <div className="space-y-1 rounded border border-violet-200 bg-violet-50/50 p-2">
+          {watcher === null && <AgentSetupHint />}
           {selection && (
             <p className="border-l-2 border-violet-300 pl-1.5 text-[11px] italic text-slate-500">
               “{selection}”
@@ -182,11 +232,13 @@ function QuestionCard({
   run,
   question,
   readOnly,
+  watcher,
   onSwapped,
 }: {
   run: Run;
   question: AgentQuestion;
   readOnly: boolean;
+  watcher: AgentWatcherKind | null;
   onSwapped: (run: Run) => void;
 }) {
   const waitedMs = Date.now() - Date.parse(question.askedAt);
@@ -229,16 +281,12 @@ function QuestionCard({
                 : "Agent is working on the answer…"}
           </div>
         ) : (
-          <div className="text-[11px] text-slate-400">
-            <span className="mr-1 inline-block animate-pulse">●</span>
-            Waiting for an agent session…
-            {waitedMs > UNWATCHED_HINT_MS && (
-              <p className="mt-0.5 text-slate-500">
-                No agent session picked this up yet — run{" "}
-                <code className="rounded bg-slate-100 px-1">/loop 1m /enloop:serve</code> in Claude
-                Code.
-              </p>
-            )}
+          <div className="space-y-1 text-[11px] text-slate-400">
+            <p>
+              <span className="mr-1 inline-block animate-pulse">●</span>
+              Waiting for an agent…
+            </p>
+            {(watcher === null || waitedMs > UNWATCHED_HINT_MS) && <AgentSetupHint />}
           </div>
         )
       ) : (
@@ -445,8 +493,8 @@ export function CommandCard({
       )}
       {command.display === "queued" && (
         <p className="text-[11px] text-slate-400">
-          Needs a watching session —{" "}
-          <code className="rounded bg-slate-100 px-1">/loop 1m /enloop:serve</code> in Claude Code.
+          Waiting for an agent — the enloopd daemon runs these; or one manual{" "}
+          <code className="rounded bg-slate-100 px-1">/enloop:serve</code> pass in Claude Code.
         </p>
       )}
       {command.logTail && (

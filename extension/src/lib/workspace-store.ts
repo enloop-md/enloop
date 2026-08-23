@@ -27,6 +27,7 @@ import {
   type AgentCommand,
   type AgentCommandSourceField,
   type AgentQuestion,
+  type AgentWatcherKind,
   type CapturedEntry,
   type CompatResult,
   type DataStore,
@@ -455,6 +456,11 @@ export class WorkspaceStore implements DataStore {
       storageId,
       await store.swapRunVersion(localId, splitId(runId).localId, toVersion, questionId),
     );
+  }
+
+  async agentPresence(testCaseId: string): Promise<AgentWatcherKind | null> {
+    const { store, localId } = this.route(testCaseId);
+    return store.agentPresence(localId);
   }
 
   async touchHeartbeat(): Promise<void> {

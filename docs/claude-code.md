@@ -51,19 +51,21 @@ Claude Code namespaces a plugin's skills, so each one is `/enloop:<skill>`:
 | Write the full case, edges and cleanup | `/enloop:full <ticket>` |
 | Triage a finished run | `/enloop:check` |
 | Backfill test selectors | `/enloop:instrument` |
-| Serve the panel's live requests | `/loop 1m /enloop:serve` |
+| Answer a waiting panel request, once | `/enloop:serve` |
 
 All of them carry `disable-model-invocation: true`: they edit repos and write
 case files, so they run when you ask rather than when Claude infers you might
 have wanted them.
 
-`serve` is the one meant to be left running: each pass sweeps the data
-folder's `agent/` directory for what the extension asked — a tester's
-mid-run question to answer (optionally landing a compatible patch version
-the panel offers to hot-swap), a case command to execute in the background —
-and `/loop` re-invokes it every minute. Stopping the loop stops the
-answering; the scripts it started die on their own timeouts, or five minutes
-after the panel closes, whichever comes first. The full contract is in
+`serve` is one manual pass: it sweeps the data folder's `agent/` directory
+for what the extension asked — a tester's mid-run question to answer
+(optionally landing a compatible patch version the panel offers to
+hot-swap), a case command to execute in the background — and ends. Run it
+when the panel says something is waiting and you are already in a session.
+The always-on server is **[enloopd](daemon.md)**: it watches continuously,
+and it answers by resuming the very session that authored the case (the
+guard hook stamps each case with its authoring session's id), so the
+context lives on without a session looping. The full contract is in
 [skills.md](skills.md#serving-the-panel-live).
 
 The authoring skills want a Sonnet-class model or better — a config pinned
@@ -74,7 +76,10 @@ to a smaller one for cost trades authoring quality for it; see
 
 The plugin installs two hooks. After every `Write` or `Edit` of a
 `versions/v<n>.md` file, the real parser checks the result, and any errors
-are fed straight back to the model that wrote it. And a bare
+are fed straight back to the model that wrote it; when the file is valid,
+the same hook stamps `context.json` beside the case — the authoring
+session's id, repo and host — which is how [enloopd](daemon.md) later
+answers testers' questions by resuming that very session. And a bare
 `/enloop:quick` or `/enloop:full` — Enter pressed on an autocomplete, no
 scope — injects a demand to derive the likeliest scope from git and ask a
 one-keystroke closed question before doing anything, so an empty

@@ -25,6 +25,7 @@ import type {
   agentQuestionAckSchema,
   agentWatcherSchema,
   agentWatcherKindSchema,
+  caseContextSchema,
   agentAnswerMetaSchema,
   agentCommandSourceFieldSchema,
   agentCommandRequestSchema,
@@ -85,6 +86,8 @@ export type AgentQuestionFile = z.infer<typeof agentQuestionFileSchema>;
 export type AgentQuestionAck = z.infer<typeof agentQuestionAckSchema>;
 /** A channel server's kind — Claude Code loop or the enloopd daemon. */
 export type AgentWatcherKind = z.infer<typeof agentWatcherKindSchema>;
+/** On-disk `test-cases/<id>/context.json` — authoring provenance. */
+export type CaseContext = z.infer<typeof caseContextSchema>;
 /** On-disk `agent/watchers/<id>.json` — server presence for arbitration. */
 export type AgentWatcher = z.infer<typeof agentWatcherSchema>;
 /** On-disk `answer.json` — presence marks the question answered. */

@@ -24,9 +24,18 @@ const configFileSchema = z.object({
   /** Off for synced/shared folders, where the panel heartbeat arrives late
    * and would kill healthy servers. */
   heartbeatKill: z.boolean().optional(),
+  /** Answer by resuming the authoring session recorded in the case's
+   * context.json (claude -p --resume --fork-session) when the host
+   * matches. The context a looping serve session used to exist for,
+   * recovered per question. */
+  resumeAuthorSession: z.boolean().optional(),
   /** Extra argv for the CLI backends, e.g. permission flags for
    * `claude -p`. */
   cliArgs: z.object({ claude: z.array(z.string()).optional(), codex: z.array(z.string()).optional() }).optional(),
+  /** Data folder → that project's CLAUDE_CONFIG_DIR, for fresh claude-code
+   * runs on cases without a context stamp. Resumes carry their own config
+   * dir from context.json and never need this. */
+  claudeConfigDirs: z.record(z.string(), z.string()).optional(),
 });
 
 export interface DaemonConfig {
@@ -40,8 +49,10 @@ export interface DaemonConfig {
   noCommands: boolean;
   noPatch: boolean;
   heartbeatKill: boolean;
+  resumeAuthorSession: boolean;
   once: boolean;
   cliArgs: { claude: string[]; codex: string[] };
+  claudeConfigDirs: Record<string, string>;
   /** This host's watcher identity — stable across restarts (see below). */
   watcherId: string;
   host: string;
@@ -69,6 +80,7 @@ export function loadConfig(argv: string[]): DaemonConfig {
   let noCommands = file.noCommands ?? false;
   let noPatch = file.noPatch ?? false;
   let heartbeatKill = file.heartbeatKill ?? true;
+  let resumeAuthorSession = file.resumeAuthorSession ?? true;
   let once = false;
 
   const take = (i: number): string => {
@@ -113,6 +125,9 @@ export function loadConfig(argv: string[]): DaemonConfig {
       case "--no-heartbeat-kill":
         heartbeatKill = false;
         break;
+      case "--no-resume":
+        resumeAuthorSession = false;
+        break;
       case "--once":
         once = true;
         break;
@@ -136,8 +151,12 @@ export function loadConfig(argv: string[]): DaemonConfig {
     noCommands,
     noPatch,
     heartbeatKill,
+    resumeAuthorSession,
     once,
     cliArgs: { claude: file.cliArgs?.claude ?? [], codex: file.cliArgs?.codex ?? [] },
+    claudeConfigDirs: Object.fromEntries(
+      Object.entries(file.claudeConfigDirs ?? {}).map(([k, v]) => [path.resolve(k), v]),
+    ),
     // Stable per host, deliberately not per process: command ownership must
     // survive a daemon restart (and `--once` under cron is nothing but
     // restarts), or nobody ever reaps what the previous run spawned.
@@ -149,9 +168,11 @@ export function loadConfig(argv: string[]): DaemonConfig {
 export const HELP = `enloopd — answers the Enloop extension's mid-run questions and runs its
 commands, with no active session to keep open. The answering is still an
 LLM's — the Claude API, or an installed Claude Code / Codex driven
-headlessly. The other end of the same channel is a Claude Code session
-looping /loop 1m /enloop:serve — and when both run, Claude Code wins (it
-holds the task's context; this daemon defers while it is alive).
+headlessly — and when a case carries authoring provenance (context.json,
+stamped by the plugin's guard hook), questions are answered by resuming
+the very session that wrote the case, forked so that session stays clean.
+A manual /enloop:serve pass in Claude Code still works alongside; while
+one is fresh this daemon defers to it.
 
 Usage:
   enloopd setup                      interactive backend + auth + config wizard
@@ -170,6 +191,8 @@ Flags:
   --no-commands            answer questions, never run commands
   --no-patch               answer, but never land patch versions
   --no-heartbeat-kill      for synced folders: never kill on a stale heartbeat
+  --no-resume              never resume the authoring session recorded in a
+                           case's context.json; always use the backend fresh
   --once                   one pass instead of a loop (cron-friendly)
 
 Config: enloopd.json in the working directory holds the same options
