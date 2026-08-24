@@ -1,11 +1,10 @@
 # The case format
 
 One Markdown file per case. This is the reference; the spec itself is the doc
-comment at the top of [`shared/src/markdown.ts`](../shared/src/markdown.ts).
+comment at the top of [`shared/src/markdown.ts`](../shared/src/markdown.ts) —
+that comment is the thing to read when writing cases by hand.
 
-A case is one Markdown file. The full grammar is the doc comment at the top of
-[`shared/src/markdown.ts`](../shared/src/markdown.ts) — that comment is the spec,
-and it is the thing to read when writing cases by hand.
+A complete case, end to end:
 
 ```markdown
 # Careerminds: Sync a contact from the CRM to the mailer
@@ -33,6 +32,15 @@ Default: qa.bot@example.com
 
 # Steps
 
+## Check the account picker
+Where: %BASE_URL%/admin/sync-console
+Selector: #account-tabs
+Read the tabs across the top of the console.
+
+### Expected
+- The account picker renders as tabs.
+- Each tab shows the account name with its sync purpose beneath it.
+
 ## Sync the contact
 Where: %BASE_URL%/admin/sync-console
 Selector: [data-testid="sync-crm-mailer"]
@@ -47,6 +55,9 @@ Click `Sync CRM → Mailer`.
 Regression check — this button used to stay disabled when the local column
 had no match, even though the sync creates the record.
 ```
+
+That file is what an agent writes, what the side panel executes step by step,
+and what you commit next to the code it tests.
 
 ## The fields
 

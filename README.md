@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="assets/enloop-banner-bw-web.png" alt="Enloop" width="620">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/enloop-dark.svg">
+    <img src="assets/enloop.svg" alt="Enloop" width="620">
+  </picture>
 </p>
 
 <p align="center"><em>Enloop — managing human attention</em></p>
@@ -25,71 +28,62 @@ A Chrome side-panel extension for running manual and automated test cases,
 plus the agent skills — for Claude Code and Codex — that write those cases
 for you.
 
-**A test case is one Markdown file.** This is the whole format:
+**A test case is one Markdown file**, committed next to the code it tests.
+An agent writes it, the side panel executes it step by step:
 
 ```markdown
-# Careerminds: Sync a contact from the CRM to the mailer
-@version 0.0.7
-@author Your Name
-@project Careerminds
-Tags: sync-console, integrations, manual
-
-Verifies the single-contact sync path added in PROJ-1234.
-
-# Variables
-
-## BASE_URL
-The deployment under test — whichever one you have open.
-Generator: page-origin
-Default: https://staging.example.test
-
-## TEST_CONTACT_EMAIL
-Email of a contact present in both the CRM and the mailer.
-Default: qa.bot@example.com
-
-# Prerequisites
-- Open %BASE_URL%/admin/sync-console
-- Logged in to the admin as a super-admin
-
-# Steps
-
-## Check the account picker
-Where: %BASE_URL%/admin/sync-console
-Selector: #account-tabs
-Read the tabs across the top of the console.
-
-### Expected
-- The account picker renders as tabs.
-- Each tab shows the account name with its sync purpose beneath it.
-
 ## Sync the contact
 Where: %BASE_URL%/admin/sync-console
-Selector: [data-testid="sync-crm-mailer"]
 Selector: #sync-crm-mailer-btn
 Click `Sync CRM → Mailer`.
 
 ### Expected
 - A spinner appears on that button only.
 - A toast reports synced / skipped / failed counts.
-
-### Note
-Regression check — this button used to stay disabled when the local column
-had no match, even though the sync creates the record.
 ```
 
-That file is what an agent writes, what the side panel executes step by step,
-and what you commit next to the code it tests. `Where:` is the screen to start
-on, `Selector:` is what the panel flashes for the tester, `"**quoted values**"`
-type themselves into fields, and a fenced code block in place of instructions
-makes the step automated. The full grammar is in
-[docs/case-format.md](docs/case-format.md).
+`Where:` is the screen to start on, `Selector:` is what the panel flashes for
+the tester, `"quoted values"` type themselves into fields, and a fenced code
+block in place of instructions makes the step automated. A complete worked
+example and the full grammar are in [docs/case-format.md](docs/case-format.md).
 
 Open source under the [MIT license](LICENSE) — the extension, the case parser,
 and the skills are all in this repo. Cases are plain Markdown in a folder you
 pick, read and written directly through the File System Access API: no server,
 no database, no account.
 
-## The three pieces
+## Get started
+
+**1. Run cases — the extension.**
+[Install it from the Chrome Web Store](https://chromewebstore.google.com/detail/enloopmd-managing-human-a/fnpjeaabeckcihomnmeoapclokikanod),
+connect a folder, and let the Library load its example case — it runs against
+a public practice site and exercises every control the panel has, so the first
+thing you do is watch a run work rather than author one blind.
+
+**2. Write cases — the skills.** One plugin, installed into the agent you use:
+
+*Claude Code* — add this repo as a marketplace and install:
+
+```
+/plugin marketplace add enloop-md/enloop
+/plugin install enloop@enloop
+```
+
+Then, from the repo of the app you're testing: `/enloop:setup` once, and
+`/enloop:quick <ticket>` to write a case. Details, team installs, and the
+guard hooks: [docs/claude-code.md](docs/claude-code.md).
+
+*Codex* — the same repo is a Codex marketplace:
+
+```bash
+codex plugin marketplace add enloop-md/enloop
+```
+
+Then `/plugins` to install **enloop**, start a new session, and mention the
+skills as `$setup`, `$quick <ticket>`. Details and Codex caveats:
+[docs/codex.md](docs/codex.md).
+
+## The pieces
 
 - **[The extension](docs/extension.md)** runs cases: step by step, marking
   pass/fail, executing automated steps in the page, capturing notes, and
@@ -125,13 +119,6 @@ no database, no account.
 | Answer questions with no session open (enloopd) | [docs/daemon.md](docs/daemon.md) |
 | Write or read a case by hand | [docs/case-format.md](docs/case-format.md) |
 | Share a case with someone | [the viewer](https://enloop-md.github.io/enloop/) |
-
-The quickest way in:
-[install the extension](https://chromewebstore.google.com/detail/enloopmd-managing-human-a/fnpjeaabeckcihomnmeoapclokikanod),
-connect a folder, and let the
-Library load its example case — it runs against a public practice site and
-exercises every control the panel has, so the first thing you do is watch a
-run work rather than author one blind.
 
 ---
 
