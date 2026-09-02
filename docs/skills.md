@@ -13,7 +13,7 @@ To install and invoke them:
 
 | Skill | Run it from | Writes | Claude Code | Codex |
 | --- | --- | --- | --- | --- |
-| setup | the app repo, once | project name + selector convention into the repo's agent instructions | `/enloop:setup` | `$setup` |
+| setup | the app repo, once | project name, the deployments cases run against (domains and environments), and the selector convention into the repo's agent instructions | `/enloop:setup` | `$setup` |
 | quick | the app repo | a happy-path case into your data folder | `/enloop:quick` | `$quick` |
 | full | the app repo | the complete case, extending a quick one in place | `/enloop:full` | `$full` |
 | check | the app repo | fixes, and a verdict per failure | `/enloop:check` | `$check` |
@@ -209,7 +209,7 @@ one.
 
 `/enloop:check case <id-or-title>` needs no run at all: it sweeps a stored
 case against current source and the current contract — stale selectors,
-bare-route addresses, a `BASE_URL` with no default, an unstated account —
+bare-route addresses, a domain with no default or `BASE_URL` still written as a variable, a value the tester would be asked for, an unstated account —
 and writes the fixes as `v<n+1>`, reporting the `cold run` line before and
 after. It is the cheap upgrade path for cases written before the
 cold-runner bar existed.
@@ -248,6 +248,15 @@ this project ever gets, and the authoring skills are told to obey it, which is
 how Enloop gets better at *your* app rather than in general. It is asked to be
 conservative, and to say when it considered something a rule and left it as a
 fix.
+
+**Stars** are the other half of that loop. A tester can rate any step, and
+the case as a whole, one to five in the panel — as test writing, not as a
+verdict on the feature. `enloop-case.mjs ratings` collects them per project
+across every run, with each rated step printed as it was frozen, and the
+authoring skills read it next to the rules: highly rated steps are the shape
+to write new ones in, poorly rated ones the shape to avoid. The **check**
+skill fixes a step rated one or two stars in the next version, and promotes
+a shape starred across several cases into the rules file.
 
 Nothing is rerun, and it won't claim otherwise: a fixed case and a patched
 bug both need another pass through the extension.

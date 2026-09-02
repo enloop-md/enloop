@@ -8,32 +8,39 @@ A complete case, end to end:
 
 ```markdown
 # Careerminds: Sync a contact from the CRM to the mailer
-@version 0.0.7
+@version 0.0.9
 @author Your Name
 @project Careerminds
 Tags: sync-console, integrations, manual
 
 Verifies the single-contact sync path added in PROJ-1234.
 
-# Variables
+# Domains
 
-## BASE_URL
-The deployment under test — whichever one you have open.
-Generator: page-origin
-Default: https://staging.example.test
+## APP
+The web app under test.
+Match: *.careerminds.test
+Default: https://staging.careerminds.test
+
+## MAILER
+The mailer's own admin, where the synced contact shows up.
+Match: mailer.*
+Default: https://mailer.staging.careerminds.test
+
+# Variables
 
 ## TEST_CONTACT_EMAIL
 Email of a contact present in both the CRM and the mailer.
 Default: qa.bot@example.com
 
 # Prerequisites
-- Open %BASE_URL%/admin/sync-console
+- Open %APP%/admin/sync-console
 - Logged in as a super-admin — password: vault item `staging admin`
 
 # Steps
 
 ## Check the account picker
-Where: %BASE_URL%/admin/sync-console
+Where: %APP%/admin/sync-console
 Selector: #account-tabs
 Read the tabs across the top of the console.
 
@@ -42,7 +49,7 @@ Read the tabs across the top of the console.
 - Each tab shows the account name with its sync purpose beneath it.
 
 ## Sync the contact
-Where: %BASE_URL%/admin/sync-console
+Where: %APP%/admin/sync-console
 Selector: [data-testid="sync-crm-mailer"]
 Selector: #sync-crm-mailer-btn
 Click `Sync CRM → Mailer`.
@@ -54,6 +61,14 @@ Click `Sync CRM → Mailer`.
 ### Note
 Regression check — this button used to stay disabled when the local column
 had no match, even though the sync creates the record.
+
+## Check the contact on the mailer side
+Where: %MAILER%/contacts
+Selector: [data-testid="contact-search"]
+Search for "**%TEST_CONTACT_EMAIL%**".
+
+### Expected
+- One contact is listed, with today's date as its last update.
 ```
 
 That file is what an agent writes, what the side panel executes step by step,
@@ -86,15 +101,15 @@ the one written first.
 
 ## `Where:` and the Go control
 
-A `Where:` that names an address — `%BASE_URL%/admin/sync`, an absolute URL,
-or a local address — gets a **Go** control in the run screen that navigates
-the tab the run is using — the same tab Highlight and automated steps act on,
-so opening the page leaves you where the next step expects. The
-`%BASE_URL%/…` form is the standard one: substituted before the run starts,
-it works from a blank tab and links in the viewer. A bare route
-(`/admin/sync`) resolves against whatever page is open and refuses when
-there is nothing to resolve against — the legacy form, kept working for
-older cases.
+A `Where:` that names an address — `%APP%/admin/sync`, an absolute URL, or
+a local address — gets a **Go** control in the run screen that navigates the
+tab the run is using — the same tab Highlight and automated steps act on, so
+opening the page leaves you where the next step expects. The `%APP%/…` form
+— a declared domain plus the route — is the standard one: substituted before
+the run starts, it works from a blank tab and links in the viewer, and it
+says which deployment the step is on. A bare route (`/admin/sync`) resolves
+against the case's main domain, or, for a case declaring none, against
+whatever page is open — the legacy form, kept working for older cases.
 
 The contract's wider rule is that **every place a case names carries its
 address** — never "navigate to the Reports page" with the path left to memory.
@@ -150,7 +165,53 @@ skipped ordinary steps land in `feedback.md` addressed to the test writer,
 because a step that arrives skipped run after run is telling you it should be
 `Kind: extra` or gone.
 
-## Prerequisites, project and variables
+## Groups
+
+A case that covers a broad change — an email refactoring, say — is really a
+handful of concerns: log in, restore a password, change the address. Writing
+it as one flat list of twenty verdicts hides that. A **group** is a
+`# Steps: <title>` section whose opening prose is the group's **goal** — what
+its steps prove together — followed by its `## ` steps:
+
+```markdown
+# Steps
+
+## Reset the fixture user
+...
+
+# Steps: Log in
+
+The login form accepts the migrated address and rejects the old one.
+
+## Log in with the new address
+...
+
+## Log in with the old address
+...
+
+# Steps: Restore password
+
+The reset mail reaches the migrated address and its link signs the user in.
+
+## Request a reset link
+...
+```
+
+Groups are headings over **one** list, not lists of their own: steps keep
+numbering through them, `Kind:` marks apply per step, and a quick run drops
+a group whose steps were all filtered out. A plain `# Steps` holds ungrouped
+steps and may sit before or between groups — shared setup, cleanup. The
+linter requires a goal under every group heading and refuses a group with
+no steps or a title used twice; a case whose every step is in the one group
+gets a warning, because that group is the case.
+
+The run screen heads each group's steps with its title, goal and a running
+tally; `report.md` and `feedback.md` open with a **By group** list — one
+line per group with its goal and how its steps ended — so a reader sees
+that *restore password* is broken while *log in* is fine before reading a
+single step.
+
+## Prerequisites, project, domains and variables
 
 `# Prerequisites` is where the run begins, who the tester is in the app, and
 which services they must start themselves — the address for the first; the
@@ -159,7 +220,7 @@ fixture, never a person to ask) for the second; the command for each of the
 rest. The entry point lives here rather than in a step, because a tester is
 usually already in the app and a step spent on arriving is a Pass/Fail on
 something that was already true. An address here is absolute or
-`%BASE_URL%`-built: unlike a step's `Where:`, this block has no open page to
+`%APP%`-built: unlike a step's `Where:`, this block has no open page to
 resolve a bare route against. The run screen renders Prerequisites and
 Dependencies together in a **"Before you start"** block, collapsed by default —
 most runs happen against an environment that is already up, so it stays out of
@@ -168,60 +229,95 @@ the way of the current step without being absent, which is what it was before.
 `@project` names the app under test. One connected folder usually holds cases
 from several repos, so the skills also prefix the title with it — that is what
 makes a case findable in the side panel, which lists cases **most recently
-updated first**.
+updated first**. It is also what scopes environments: a project's staging is
+offered to that project's cases.
 
-Variables declared under `# Variables` resolve when a run starts — from their
-generator, or their default — and every `%NAME%` placeholder in the document is
-substituted with the result: title, instructions, selectors, and scripts
-included. The case screen shows the resolved values under **Start run** and
-lets you override any of them first, but it never stops the run to ask. A
-variable that ends up with no value is left alone, so the step reads `%NAME%`
-rather than a blank where a value should have been.
-
-### Running against whichever deployment you have open
+### Domains: the deployments a case touches
 
 ```markdown
-## BASE_URL
-The deployment under test — whichever one you have open.
-Generator: page-origin
+# Domains
+
+## APP
+The web app under test.
+Match: app.*.example.test
 Default: https://staging.example.test
+
+## ADMIN
+The admin console.
+Match: admin.*.example.test
+Default: https://admin.staging.example.test
 ```
 
-`page-origin` resolves to the scheme, host and port of the tab you are on when
-the run starts. On `https://instance1.example.com` every `%BASE_URL%/admin/reports`
-in the case points at that instance; on `http://localhost:3000` it points at
-yours. The case names no environment, so it moves between them without being
-edited, and you start a run from wherever you already were.
+A domain is a host the case visits, named once and used as an address prefix
+everywhere else — `Where: %APP%/orders`, `- Open %ADMIN%/tenants`, a link in
+prose. A case may declare several, and a scenario walks between them: *place
+the order at `%APP%/orders`, then check the audit trail at `%ADMIN%/audit`*.
+The first declared domain is the **main** one; a bare route resolves against
+it.
 
-The `Default:` is the other half: with no page behind the generator — a run
-started from a blank tab, the online viewer, a downloaded page — the value
-falls back to it, so every address in the case keeps working for someone who
-has never opened the app. The authoring skills read it from the project's
-rules file (its `Base URL:` line), which the **setup** skill records once.
+A domain is not a variable. It has no generator, and its address is decided
+per run by the **environment** the tester picks on the case screen — local,
+staging, prod, or any custom set of addresses — recorded in the connected
+folder's `environments.json` (**Settings → Environments** in the panel, or
+`enloop-case.mjs environments` from a skill). Resolution, first hit wins:
 
-`Match:` pins a page generator to the pages it may read:
+1. a value typed on the case screen under **Start run**;
+2. the picked environment's address for that domain;
+3. with **no** environment picked, the open tab's origin — for the main
+   domain, or for any domain whose `Match:` glob accepts the tab's host;
+4. the `Default:`;
+5. nothing, in which case `%APP%` stays literal in the run.
+
+`Default:` is what a run from a blank tab, the online viewer and a
+downloaded page use, so every domain carries one — the address of the
+deployment the project normally tests against, which the skills copy from
+the default environment. `Match:` is what lets you start a run from
+whichever tab you have open without the panel taking the admin console's
+tab for the app: `*` matches any run of characters, case-insensitively; a
+pattern containing `/` is checked against the whole origin rather than the
+host. The run screen names the environment in its header, and the report
+lists the address each domain resolved to.
+
+### Variables: everything else, resolved by Enloop
+
+Variables declared under `# Variables` resolve when a run starts and every
+`%NAME%` placeholder in the document is substituted with the result: title,
+instructions, selectors, and scripts included. **Every variable is resolved
+before the run and never asked of the tester**: it carries a `Default:`, or a
+`Generator:`, or its name is one the project's environments provide — an
+environment carries variables as well as domains, so `%QA_EMAIL%` can differ
+between staging and prod. A variable with none of the three is a linter
+error, and the authoring skills read the value from the repo (a fixture, a
+seed, the project's rules) rather than asking anyone for it. The case screen
+shows the resolved values under **Start run** and lets you override any of
+them first, but it never stops the run to ask. A variable that ends up with
+no value is left alone, so the step reads `%NAME%` rather than a blank where
+a value should have been.
 
 ```markdown
-## BASE_URL
-The org under test — whichever one you have open.
-Generator: page-origin
-Match: *.example.test
-Default: https://staging.example.test
+## QA_EMAIL
+The QA account — provided per environment.
+Default: qa.bot@staging.example.test
+
+## RUN_TAG
+A fresh suffix so the run's records are telling apart.
+Generator: random-string 6
 ```
 
-Open the panel on an unrelated site and the generator yields nothing —
-resolution falls through to the default instead of leaking that site's
-address into the run. The run screen says which pattern refused the page and
-offers the refused value as a one-click override; a typed value always wins.
-`*` matches any run of characters; a pattern containing `/` is checked
-against the whole value rather than the page's host.
+Generators: `timestamp` (epoch ms, or ISO text with arg `iso`),
+`random-number` (arg `min-max`), `random-string` (arg = length), and the page
+generators `page-url`, `page-origin`, `page-domain`, which read the active tab
+when the run starts. `page-domain` (the bare host, no scheme and no port) is
+for a value that is *about* a host — a tenant name, an email suffix — not for
+an address; addresses are domains.
 
-The other page generators are `page-url` (the whole address, query string
-included) and `page-domain` (the bare host, no scheme and no port). `page-domain`
-is for a value that is *about* the domain — a tenant name, an email suffix — not
-for a `BASE_URL`: `example.com/admin` has nothing to open it with and loses the
-port, which is the half that matters on a dev server. The linter says so if a
-case does it.
+### Before domains existed
+
+A case written against an older format declares `BASE_URL` under
+`# Variables` with `Generator: page-origin` and a `Default:`. It still parses
+and still runs exactly as before; the linter asks for it to become the main
+domain, and the **check** skill's sweep rewrites it. In the panel, a legacy
+`BASE_URL` counts as the main domain for bare routes.
 
 ## Suites
 
@@ -239,10 +335,10 @@ The rules, in brief:
 
 1. One step is one action with one observable result. If it contains "then",
    split it.
-2. Every place is an address, written `%BASE_URL%/route` for the app under
-   test. The entry point is a `# Prerequisites` bullet, not a first step;
-   every step states where it starts via `Where:`; a place named in prose
-   carries a link.
+2. Every place is an address, written `%APP%/route` — a declared domain
+   plus the route, one domain per deployment the case touches. The entry
+   point is a `# Prerequisites` bullet, not a first step; every step states
+   where it starts via `Where:`; a place named in prose carries a link.
 3. Every UI step carries a `Selector:`, taken from source — never invented,
    never a structural path. Repeat the line for ordered fallbacks when the
    element can genuinely move (a modal, a portal, a handle not yet deployed),
@@ -250,9 +346,9 @@ The rules, in brief:
 4. `### Expected` holds binary, observable pass criteria as bullets. Nothing
    else.
 5. Rationale, regression history, and caveats go in `### Note`.
-6. Test data is resolved before the run. A variable gets a default, a
-   generator, or explicit instructions for obtaining it — never "find a company
-   that…" mid-run.
+6. Test data is resolved before the run, by Enloop. A variable gets a
+   default, a generator, or a value per environment — never "find a company
+   that…" mid-run, and never a question to the user at authoring time.
 7. No conditionals inside a step. A conditional becomes its own step, usually
    `Kind: extra` so it is skipped unless it applies.
 8. Cleanup is explicit. A case that can't be run twice will be run once.

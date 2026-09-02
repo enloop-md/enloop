@@ -20,6 +20,7 @@ import {
   runDir,
   writeAck,
   writeAnswer,
+  writeProgress,
   type QuestionDir,
 } from "./store.js";
 
@@ -67,6 +68,15 @@ async function answerOne(
     return;
   }
 
+  // From here until the answer lands the tester sees whatever was last
+  // written here. Each backend keeps it moving; this first line covers
+  // the seconds before one starts.
+  const onProgress = (text: string) => {
+    if (readAck(q.dir)?.by?.id !== cfg.watcherId) return; // not ours to narrate
+    writeProgress(q.dir, question.id, text);
+  };
+  onProgress("Reading the question, the case as run, and where the run stands");
+
   const runFile = readRunFile(dataDir, question.testCaseId, question.runId);
   const frozen = readFrozenCase(
     dataDir,
@@ -90,6 +100,9 @@ async function answerOne(
     doc: frozen?.doc ?? null,
     runFile,
     canPatch,
+    // The api backend hands the model a `progress` tool; a CLI backend's
+    // model has only its files, so it is told which file to write.
+    progress: backend === "api" ? "tool" : "file",
   });
 
   // The attempt chain: the authoring session first — context.json names
@@ -107,6 +120,7 @@ async function answerOne(
           brief,
           repo: context.cwd || repo,
           extraArgs: ["--resume", context.sessionId, "--fork-session", ...cfg.cliArgs.claude],
+          onProgress,
           // The session lives in (and logs in from) its own config dir —
           // essential when several isolated CLAUDE_CONFIG_DIRs share one
           // machine and one daemon.
@@ -126,12 +140,14 @@ async function answerOne(
             testCaseId: question.testCaseId,
             model: cfg.model,
             canPatch,
+            onProgress,
           })
         : answerViaCli({
             kind: backend,
             brief,
             repo,
             extraArgs: backend === "claude-code" ? cfg.cliArgs.claude : cfg.cliArgs.codex,
+            onProgress,
             env:
               backend === "claude-code" && cfg.claudeConfigDirs[dataDir]
                 ? { CLAUDE_CONFIG_DIR: cfg.claudeConfigDirs[dataDir] }
@@ -142,6 +158,7 @@ async function answerOne(
   let result: BackendResult | null = null;
   for (const attempt of attempts) {
     log(`question ${question.id}: answering via ${attempt.label} (repo ${repo})`);
+    onProgress("Looking through the app's source for the answer");
     try {
       result = await attempt.run();
       break;
@@ -162,6 +179,7 @@ async function answerOne(
     return;
   }
   const summary = result.markdown.split("\n")[0].slice(0, 200);
+  onProgress("Writing the answer");
   writeAnswer(q.dir, question.id, result.markdown, result.proposedVersion, summary);
   log(
     `question ${question.id}: answered` +

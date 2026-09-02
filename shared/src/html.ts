@@ -288,26 +288,28 @@ function caseKey(doc: TestCaseVersion): string {
 /** Values the page starts with: a declared literal default, and nothing
  * else. A generator's value is decided when a run starts, and inventing one
  * here would put a number on the page that no run will ever have used. */
-function initialValues(variables: TestCaseVariable[]): Record<string, string> {
+function initialValues(
+  entries: Array<Pick<TestCaseVariable, "name" | "defaultValue">>,
+): Record<string, string> {
   const values: Record<string, string> = {};
-  for (const variable of variables) {
-    if (variable.defaultValue?.trim()) values[variable.name] = variable.defaultValue.trim();
+  for (const entry of entries) {
+    if (entry.defaultValue?.trim()) values[entry.name] = entry.defaultValue.trim();
   }
   return values;
 }
 
 const ABSOLUTE_URL = /^https?:\/\//i;
 
-function renderWhere(where: string, values: Record<string, string>): string {
-  // A bare route is only half an address; the case's own BASE_URL is the
-  // other half. Joining them as a *template* — `%BASE_URL%/admin/x` in
-  // data-href — is what turns a legacy case's Where into a link, and keeps
-  // it live when the reader edits the value: `applyValues` re-resolves
-  // data-href, and a template it cannot see BASE_URL in is one it cannot
-  // keep current.
+function renderWhere(where: string, values: Record<string, string>, mainDomain: string): string {
+  // A bare route is only half an address; the case's main domain is the
+  // other half. Joining them as a *template* — `%APP%/admin/x` in
+  // data-href — is what turns a bare Where into a link, and keeps it live
+  // when the reader edits the value: `applyValues` re-resolves data-href,
+  // and a template it cannot see the domain in is one it cannot keep
+  // current.
   const template =
-    where.trim().startsWith("/") && (values.BASE_URL ?? "").trim()
-      ? `%BASE_URL%${where.trim()}`
+    where.trim().startsWith("/") && mainDomain && (values[mainDomain] ?? "").trim()
+      ? `%${mainDomain}%${where.trim()}`
       : where;
   const resolved = resolveText(template, values);
   const openable = ABSOLUTE_URL.test(resolved) && !/\s/.test(resolved);
@@ -321,6 +323,7 @@ function renderStep(
   step: Step,
   index: number,
   values: Record<string, string>,
+  mainDomain: string,
   opts: CasePageOptions,
 ): string {
   const parts: string[] = [];
@@ -343,7 +346,7 @@ function renderStep(
   parts.push("</div>");
 
   parts.push('<div class="step-body">');
-  if (step.where) parts.push(renderWhere(step.where, values));
+  if (step.where) parts.push(renderWhere(step.where, values, mainDomain));
   if (step.instructions?.trim()) {
     parts.push(`<div class="prose">${renderMarkdown(step.instructions.trim(), values)}</div>`);
   }
@@ -387,7 +390,8 @@ function renderStep(
  * injects and what `renderCasePage` wraps.
  */
 export function renderCaseBody(doc: TestCaseVersion, opts: CasePageOptions = {}): string {
-  const values = initialValues(doc.variables);
+  const values = initialValues([...doc.domains, ...doc.variables]);
+  const mainDomain = doc.domains[0]?.name ?? (doc.variables.some((v) => v.name === "BASE_URL") ? "BASE_URL" : "");
   const shown = opts.simplified ? doc.steps.filter((s) => s.type !== "automated") : doc.steps;
   const omitted = opts.simplified ? doc.steps.filter((s) => s.type === "automated") : [];
   const quickCount = doc.steps.filter((s) => s.quick).length;
@@ -437,7 +441,7 @@ export function renderCaseBody(doc: TestCaseVersion, opts: CasePageOptions = {})
     parts.push(`<section class="description prose">${renderMarkdown(doc.description.trim(), values)}</section>`);
   }
 
-  if (doc.variables.length > 0) {
+  if (doc.domains.length > 0 || doc.variables.length > 0) {
     parts.push('<section class="panel variables">');
     parts.push(
       `<h2>Values used in this case</h2>` +
@@ -445,6 +449,25 @@ export function renderCaseBody(doc: TestCaseVersion, opts: CasePageOptions = {})
         `Write down what you used, so a rerun means the same thing.</p>`,
     );
     parts.push('<div class="var-grid">');
+    // Domains first: the addresses decide which deployment every link
+    // below opens, so they are the values a reader changes first.
+    doc.domains.forEach((domain, index) => {
+      const value = values[domain.name] ?? "";
+      parts.push('<div class="var-row">');
+      parts.push(
+        `<label for="var-${escapeAttr(domain.name)}">%${escapeHtml(domain.name)}%` +
+          `<span class="hint"> — ${index === 0 ? "main domain" : "domain"}</span></label>`,
+      );
+      parts.push(
+        `<input id="var-${escapeAttr(domain.name)}" class="var-input" ` +
+          `data-var-input="${escapeAttr(domain.name)}" value="${escapeAttr(value)}" ` +
+          `placeholder="https://…">`,
+      );
+      if (domain.description.trim()) {
+        parts.push(`<p class="hint">${renderInline(domain.description.trim())}</p>`);
+      }
+      parts.push("</div>");
+    });
     for (const variable of doc.variables) {
       const value = values[variable.name] ?? "";
       parts.push('<div class="var-row">');
@@ -500,8 +523,26 @@ export function renderCaseBody(doc: TestCaseVersion, opts: CasePageOptions = {})
         "</p>",
     );
   } else {
-    parts.push('<ol class="steps">');
-    shown.forEach((step, index) => parts.push(renderStep(step, index, values, opts)));
+    // One list per stretch of steps sharing a group, each headed by the
+    // group's title and goal; numbering runs on through them. Steps outside
+    // any group get a bare list, so an ungrouped case looks as it always did.
+    let open: string | undefined | null = null;
+    shown.forEach((step, index) => {
+      if (open === null || step.group !== open) {
+        if (open !== null) parts.push("</ol>");
+        if (step.group) {
+          const goal = doc.groups.find((g) => g.title === step.group)?.goal.trim();
+          parts.push(
+            `<div class="group-head"><h3>${renderInline(step.group, values)}</h3>` +
+              (goal ? `<p class="goal">${renderInline(goal, values)}</p>` : "") +
+              "</div>",
+          );
+        }
+        parts.push('<ol class="steps">');
+        open = step.group;
+      }
+      parts.push(renderStep(step, index, values, mainDomain, opts));
+    });
     parts.push("</ol>");
   }
   parts.push("</section>");
@@ -594,6 +635,10 @@ button.ghost:hover { background: var(--bg); color: var(--ink); }
 .checklist label { display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
 .checklist input:checked + span { color: var(--faint); text-decoration: line-through; }
 .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.group-head { margin: 18px 0 8px; padding-left: 4px; border-left: 3px solid var(--amber); }
+.group-head h3 { margin: 0 0 2px; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.group-head .goal { margin: 0; font-size: 0.9rem; opacity: 0.8; }
+.steps + .group-head { margin-top: 22px; }
 .step { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
   padding: 12px 14px; }
 .step.is-quick { border-left: 3px solid var(--amber); }

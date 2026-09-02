@@ -59,6 +59,9 @@ export interface DaemonConfig {
 }
 
 export const CONFIG_FILE = "enloopd.json";
+/** Keep in step with daemon/package.json — baked in, since the bundle
+ * runs far from its package.json. */
+export const DAEMON_VERSION = "0.1.0";
 /** A claude-code watcher seen within this window is alive; see PLAN-DAEMON §3. */
 export const FRESH_WATCHER_SECONDS = 180;
 export const HEARTBEAT_STALE_SECONDS = 300;

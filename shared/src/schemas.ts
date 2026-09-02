@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ratingSchema } from "./rating.js";
 import { VERSION_ID_RE } from "./version-id.js";
 
 /**
@@ -52,7 +53,39 @@ export const testCaseVariableSchema = z.object({
   match: z.string().optional(),
 });
 
-/** A step as parsed from a case document's `## Steps` section (one `### `). */
+/** One entry from a case document's `# Domains` section — a deployment the
+ * case touches, referenced as `%NAME%/route`. The first declared domain is
+ * the **main** one: bare routes resolve against it. A domain has no
+ * generator; its value comes from the environment picked for the run, the
+ * open tab when no environment is picked, or its `Default:` — see
+ * `resolveDomainValues`. */
+export const testCaseDomainSchema = z.object({
+  name: z.string().min(1),
+  description: z.string(),
+  /** The origin a cold run uses — `https://staging.example.test`. */
+  defaultValue: z.string().optional(),
+  /** Glob an open tab's host must satisfy for the tab to count as this
+   * domain (`Match: admin.*.example.test`). With several domains it is what
+   * lets the panel tell which one the tester has open. */
+  match: z.string().optional(),
+});
+
+/**
+ * A group of steps that serve one goal — `# Steps: Test login` in the
+ * document, with the goal as the prose under the heading. Groups are how a
+ * case that covers a broad change ("the email refactoring") is read as a
+ * handful of concerns rather than a flat list of twenty verdicts: each group
+ * says what, in the big picture, its steps prove. Steps carry their group's
+ * title in `group`; a step under a plain `# Steps` belongs to none.
+ */
+export const stepGroupSchema = z.object({
+  title: z.string().min(1),
+  /** What the group's steps establish together, in a sentence or two. The
+   * linter requires it — a group without a goal is only a heading. */
+  goal: z.string(),
+});
+
+/** A step as parsed from a case document's `# Steps` section (one `## `). */
 export const stepSchema = z.object({
   id: z.string(),
   order: z.number().int().nonnegative(),
@@ -86,6 +119,10 @@ export const stepSchema = z.object({
    * pass/fail — rationale, regression history, caveats. Parsed from a
    * `### Note` subsection so `expected` can stay purely the pass criteria. */
   note: z.string().optional(),
+  /** Title of the `# Steps: <group>` section this step was written under,
+   * matching an entry in the document's `groups`. Absent for a step under a
+   * plain `# Steps`. */
+  group: z.string().optional(),
 });
 
 /**
@@ -111,9 +148,14 @@ export const testCaseVersionSchema = z.object({
   title: z.string().min(1),
   description: z.string(),
   tags: z.array(z.string()),
+  /** `# Domains`, in declaration order — the first is the main domain. */
+  domains: z.array(testCaseDomainSchema),
   variables: z.array(testCaseVariableSchema),
   dependencies: z.array(z.string()),
   prerequisites: z.array(z.string()),
+  /** `# Steps: <title>` sections in document order — empty for a case whose
+   * steps all sit under a plain `# Steps`. */
+  groups: z.array(stepGroupSchema),
   steps: z.array(stepSchema),
 });
 
@@ -266,6 +308,11 @@ export const runStepStateSchema = z
     /** Every request seen during this step, failures included — nonzero only
      * when the tester asked for the whole trace rather than the failures. */
     requests: z.number().int().nonnegative().default(0),
+    /** The tester's opinion of the step as a piece of test writing, one to
+     * five stars, null for the ordinary step nobody rated. Independent of
+     * the verdict: a step can fail and still be written excellently, and
+     * pass while being a chore. See `shared/src/rating.ts`. */
+    rating: ratingSchema.nullable().default(null),
   })
   .transform(({ comment, notes, tasks, comments, ...rest }) => {
     const migrated = [
@@ -337,6 +384,10 @@ export const runFileSchema = z.object({
    * `/enloop:check` sees the decision instead of re-making it. Defaulted for
    * runs written before capture existed. */
   consoleInReport: z.boolean().default(false),
+  /** The tester's opinion of the case as a whole, one to five stars, null
+   * when they gave none — which is the ordinary run. Feeds the per-project
+   * ratings the authoring skills read; see `shared/src/rating.ts`. */
+  rating: ratingSchema.nullable().default(null),
   startedAt: z.string(),
   finishedAt: z.string().nullable(),
   /** The resolved variable values this run was frozen with. `case.md` keeps
@@ -365,6 +416,7 @@ export const runStepSchema = stepSchema.omit({ id: true }).extend({
   consoleWarnings: z.number().int().nonnegative(),
   networkFailures: z.number().int().nonnegative(),
   requests: z.number().int().nonnegative(),
+  rating: ratingSchema.nullable(),
 });
 
 /** Composed, in-memory view of a run — case.md + run.json merged. This is
@@ -380,6 +432,7 @@ export const runSchema = z.object({
   tier: runTierSchema,
   environment: z.string(),
   consoleInReport: z.boolean(),
+  rating: ratingSchema.nullable(),
   startedAt: z.string(),
   finishedAt: z.string().nullable(),
   /** From the frozen `case.md`, so a tester can see what had to be true
@@ -388,6 +441,14 @@ export const runSchema = z.object({
    * execution state only. */
   dependencies: z.array(z.string()),
   prerequisites: z.array(z.string()),
+  /** The frozen `case.md`'s step groups, so the panel can head each group's
+   * steps with its goal. Composed, like the two lists above. */
+  groups: z.array(stepGroupSchema),
+  /** The address the run's main domain resolved to — what a bare-route
+   * `Where:` opens against. Composed from the frozen `case.md`'s first
+   * domain and `run.json`'s value snapshot; "" when the case declares no
+   * domain (a legacy `BASE_URL` variable counts as one). */
+  mainOrigin: z.string(),
   /** From `run.json` — the panel needs it to tell a patch offer it already
    * loaded from one still open. */
   swaps: z.array(runSwapSchema),
@@ -411,17 +472,26 @@ export const stepPatchSchema = z.object({
   automatedResult: automatedResultSchema.nullable().optional(),
   startedAt: z.string().nullable().optional(),
   finishedAt: z.string().nullable().optional(),
+  rating: ratingSchema.nullable().optional(),
 });
 
 // ---- the agent channel: `agent/` in the data folder ---------------------
+//
+// Three separately-shipped parts speak this protocol — the extension (Web
+// Store), the plugin's serve skill (marketplace), and the enloopd daemon
+// (repo build). Each declares AGENT_PROTOCOL_VERSION in the files it
+// writes (heartbeat for the extension, watcher files for servers), and
+// each warns when a counterpart disagrees. Bump ONLY on a change an older
+// counterpart would misread — additive optional fields never bump it.
 //
 // The panel and a looping agent session (`/enloop:serve`) share nothing but
 // the data folder, so every request and reply below is a file, and state is
 // derived from file presence — the panel document does not survive a click
 // into the page under test, and the agent only exists for one tick at a
-// time. Layout: `agent/questions/<id>/` (question.json, answer.md,
-// answer.json) and `agent/commands/<id>/` (request.json, run.sh, pid,
-// status.json, output.log, exit-code, kill), plus `agent/heartbeat.json`.
+// time. Layout: `agent/questions/<id>/` (question.json, ack.json,
+// progress.json, answer.md, answer.json) and `agent/commands/<id>/`
+// (request.json, run.sh, pid, status.json, output.log, exit-code, kill),
+// plus `agent/heartbeat.json`.
 
 /** On-disk `agent/questions/<id>/question.json` — one question a tester
  * asked from a run step. Carries enough context (run, version, step) for a
@@ -467,6 +537,20 @@ export const caseContextSchema = z.object({
   updatedAt: z.string(),
 });
 
+/** See the header note above: the wire version of `agent/`, declared by
+ * every participant, compared at every meeting point. */
+export const AGENT_PROTOCOL_VERSION = 1;
+
+/** On-disk `agent/heartbeat.json` — the panel's liveness signal. Servers
+ * read the mtime for staleness; the body says who the panel is, so a
+ * server can flag a protocol mismatch. Absent fields = a pre-versioning
+ * extension = protocol 1. */
+export const agentHeartbeatSchema = z.object({
+  touchedAt: z.string(),
+  protocol: z.number().int().optional(),
+  extension: z.string().optional(),
+});
+
 /** Who a channel server is: an interactive Claude Code serve loop, or the
  * standalone enloopd daemon. */
 export const agentWatcherKindSchema = z.enum(["claude-code", "daemon"]);
@@ -481,6 +565,10 @@ export const agentWatcherSchema = z.object({
   kind: agentWatcherKindSchema,
   host: z.string(),
   lastSeenAt: z.string(),
+  /** Wire version this server speaks; absent = pre-versioning = 1. */
+  protocol: z.number().int().optional(),
+  /** The server's own release, for humans in mismatch messages. */
+  serverVersion: z.string().optional(),
 });
 
 /** On-disk `ack.json`, written by the agent the moment a pass sees the
@@ -493,6 +581,21 @@ export const agentQuestionAckSchema = z.object({
   id: z.string(),
   pickedUpAt: z.string(),
   by: z.object({ id: z.string(), kind: agentWatcherKindSchema }).optional(),
+});
+
+/** On-disk `progress.json`, rewritten by the server while it works on an
+ * acked question: one short line, in the server's own words, saying what
+ * it is doing right now — "Reading the reset form in ResetForm.tsx",
+ * "Found the field — writing the answer". Optional and additive (protocol
+ * 1): an old server never writes it and the panel falls back to the
+ * generic "working on the answer". It exists because the think time on a
+ * real question is a minute or more, and a line that has not changed in a
+ * minute reads as a server that died. `at` is when the line was written,
+ * so the panel can say how long ago that was. */
+export const agentQuestionProgressSchema = z.object({
+  id: z.string(),
+  at: z.string(),
+  text: z.string(),
 });
 
 /** On-disk `answer.json`, written by the agent after `answer.md` — its

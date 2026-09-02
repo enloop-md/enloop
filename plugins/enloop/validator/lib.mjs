@@ -3543,6 +3543,33 @@ ZodOptional.create;
 ZodNullable.create;
 ZodEffects.createWithPreprocess;
 ZodPipeline.create;
+var ratingSchema = numberType().int().min(1).max(5);
+/** One word per star count, for the places a row of stars does not fit. */
+var RATING_WORDS = {
+	1: "bad",
+	2: "poor",
+	3: "fair",
+	4: "good",
+	5: "excellent"
+};
+/** `★★★★☆` — the same five glyphs everywhere a rating is printed. */
+function ratingStars(rating) {
+	const filled = Math.max(0, Math.min(5, Math.round(rating)));
+	return "★".repeat(filled) + "☆".repeat(5 - filled);
+}
+/** `★★★★☆ 4/5 (good)` — for reports and feedback files. */
+function describeRating(rating) {
+	const word = RATING_WORDS[rating];
+	return `${ratingStars(rating)} ${rating}/5${word ? ` (${word})` : ""}`;
+}
+/** Four and five stars: the step is one to write the next ones like. */
+function isExemplaryRating(rating) {
+	return rating >= 4;
+}
+/** One and two stars: the step is one to rewrite and not to repeat. */
+function isPoorRating(rating) {
+	return rating <= 2;
+}
 //#endregion
 //#region shared/src/version-id.ts
 /**
@@ -3638,7 +3665,37 @@ var testCaseVariableSchema = objectType({
 	* whole value. Meaningless without a page-* generator. */
 	match: stringType().optional()
 });
-/** A step as parsed from a case document's `## Steps` section (one `### `). */
+/** One entry from a case document's `# Domains` section — a deployment the
+* case touches, referenced as `%NAME%/route`. The first declared domain is
+* the **main** one: bare routes resolve against it. A domain has no
+* generator; its value comes from the environment picked for the run, the
+* open tab when no environment is picked, or its `Default:` — see
+* `resolveDomainValues`. */
+var testCaseDomainSchema = objectType({
+	name: stringType().min(1),
+	description: stringType(),
+	/** The origin a cold run uses — `https://staging.example.test`. */
+	defaultValue: stringType().optional(),
+	/** Glob an open tab's host must satisfy for the tab to count as this
+	* domain (`Match: admin.*.example.test`). With several domains it is what
+	* lets the panel tell which one the tester has open. */
+	match: stringType().optional()
+});
+/**
+* A group of steps that serve one goal — `# Steps: Test login` in the
+* document, with the goal as the prose under the heading. Groups are how a
+* case that covers a broad change ("the email refactoring") is read as a
+* handful of concerns rather than a flat list of twenty verdicts: each group
+* says what, in the big picture, its steps prove. Steps carry their group's
+* title in `group`; a step under a plain `# Steps` belongs to none.
+*/
+var stepGroupSchema = objectType({
+	title: stringType().min(1),
+	/** What the group's steps establish together, in a sentence or two. The
+	* linter requires it — a group without a goal is only a heading. */
+	goal: stringType()
+});
+/** A step as parsed from a case document's `# Steps` section (one `## `). */
 var stepSchema = objectType({
 	id: stringType(),
 	order: numberType().int().nonnegative(),
@@ -3671,7 +3728,11 @@ var stepSchema = objectType({
 	/** Background a tester may want but must not have to read to judge
 	* pass/fail — rationale, regression history, caveats. Parsed from a
 	* `### Note` subsection so `expected` can stay purely the pass criteria. */
-	note: stringType().optional()
+	note: stringType().optional(),
+	/** Title of the `# Steps: <group>` section this step was written under,
+	* matching an entry in the document's `groups`. Absent for a step under a
+	* plain `# Steps`. */
+	group: stringType().optional()
 });
 objectType({
 	version: caseVersionIdSchema,
@@ -3690,9 +3751,14 @@ objectType({
 	title: stringType().min(1),
 	description: stringType(),
 	tags: arrayType(stringType()),
+	/** `# Domains`, in declaration order — the first is the main domain. */
+	domains: arrayType(testCaseDomainSchema),
 	variables: arrayType(testCaseVariableSchema),
 	dependencies: arrayType(stringType()),
 	prerequisites: arrayType(stringType()),
+	/** `# Steps: <title>` sections in document order — empty for a case whose
+	* steps all sit under a plain `# Steps`. */
+	groups: arrayType(stepGroupSchema),
 	steps: arrayType(stepSchema)
 });
 objectType({ archived: booleanType() });
@@ -3819,7 +3885,12 @@ var runStepStateSchema = objectType({
 	networkFailures: numberType().int().nonnegative().default(0),
 	/** Every request seen during this step, failures included — nonzero only
 	* when the tester asked for the whole trace rather than the failures. */
-	requests: numberType().int().nonnegative().default(0)
+	requests: numberType().int().nonnegative().default(0),
+	/** The tester's opinion of the step as a piece of test writing, one to
+	* five stars, null for the ordinary step nobody rated. Independent of
+	* the verdict: a step can fail and still be written excellently, and
+	* pass while being a chore. See `shared/src/rating.ts`. */
+	rating: ratingSchema.nullable().default(null)
 }).transform(({ comment, notes, tasks, comments, ...rest }) => {
 	const migrated = [
 		...comment?.trim() ? [{
@@ -3865,7 +3936,10 @@ var runStatusSchema = enumType([
 * marked `Kind: quick`; `full` executes all of them. Recorded on the run
 * because "it passed" means different things for each. */
 var runTierSchema = enumType(["quick", "full"]);
-objectType({
+/** On-disk shape of `run.json` — run-level status plus per-step state only.
+* `testCaseTitle` is a denormalized convenience copy for cheap listing;
+* `case.md` next to it remains the source of truth for step definitions. */
+var runFileSchema = objectType({
 	id: stringType(),
 	testCaseId: stringType(),
 	testCaseVersion: caseVersionIdSchema,
@@ -3890,6 +3964,10 @@ objectType({
 	* `/enloop:check` sees the decision instead of re-making it. Defaulted for
 	* runs written before capture existed. */
 	consoleInReport: booleanType().default(false),
+	/** The tester's opinion of the case as a whole, one to five stars, null
+	* when they gave none — which is the ordinary run. Feeds the per-project
+	* ratings the authoring skills read; see `shared/src/rating.ts`. */
+	rating: ratingSchema.nullable().default(null),
 	startedAt: stringType(),
 	finishedAt: stringType().nullable(),
 	/** The resolved variable values this run was frozen with. `case.md` keeps
@@ -3916,7 +3994,8 @@ var runStepSchema = stepSchema.omit({ id: true }).extend({
 	consoleErrors: numberType().int().nonnegative(),
 	consoleWarnings: numberType().int().nonnegative(),
 	networkFailures: numberType().int().nonnegative(),
-	requests: numberType().int().nonnegative()
+	requests: numberType().int().nonnegative(),
+	rating: ratingSchema.nullable()
 });
 objectType({
 	id: stringType(),
@@ -3928,6 +4007,7 @@ objectType({
 	tier: runTierSchema,
 	environment: stringType(),
 	consoleInReport: booleanType(),
+	rating: ratingSchema.nullable(),
 	startedAt: stringType(),
 	finishedAt: stringType().nullable(),
 	/** From the frozen `case.md`, so a tester can see what had to be true
@@ -3936,6 +4016,14 @@ objectType({
 	* execution state only. */
 	dependencies: arrayType(stringType()),
 	prerequisites: arrayType(stringType()),
+	/** The frozen `case.md`'s step groups, so the panel can head each group's
+	* steps with its goal. Composed, like the two lists above. */
+	groups: arrayType(stepGroupSchema),
+	/** The address the run's main domain resolved to — what a bare-route
+	* `Where:` opens against. Composed from the frozen `case.md`'s first
+	* domain and `run.json`'s value snapshot; "" when the case declares no
+	* domain (a legacy `BASE_URL` variable counts as one). */
+	mainOrigin: stringType(),
 	/** From `run.json` — the panel needs it to tell a patch offer it already
 	* loaded from one still open. */
 	swaps: arrayType(runSwapSchema),
@@ -3953,7 +4041,8 @@ objectType({
 	draft: runCommentDraftSchema.nullable().optional(),
 	automatedResult: automatedResultSchema.nullable().optional(),
 	startedAt: stringType().nullable().optional(),
-	finishedAt: stringType().nullable().optional()
+	finishedAt: stringType().nullable().optional(),
+	rating: ratingSchema.nullable().optional()
 });
 objectType({
 	id: stringType(),
@@ -3988,6 +4077,14 @@ objectType({
 	claudeConfigDir: stringType().optional(),
 	updatedAt: stringType()
 });
+/** See the header note above: the wire version of `agent/`, declared by
+* every participant, compared at every meeting point. */
+var AGENT_PROTOCOL_VERSION = 1;
+objectType({
+	touchedAt: stringType(),
+	protocol: numberType().int().optional(),
+	extension: stringType().optional()
+});
 /** Who a channel server is: an interactive Claude Code serve loop, or the
 * standalone enloopd daemon. */
 var agentWatcherKindSchema = enumType(["claude-code", "daemon"]);
@@ -3995,7 +4092,11 @@ objectType({
 	id: stringType(),
 	kind: agentWatcherKindSchema,
 	host: stringType(),
-	lastSeenAt: stringType()
+	lastSeenAt: stringType(),
+	/** Wire version this server speaks; absent = pre-versioning = 1. */
+	protocol: numberType().int().optional(),
+	/** The server's own release, for humans in mismatch messages. */
+	serverVersion: stringType().optional()
 });
 objectType({
 	id: stringType(),
@@ -4004,6 +4105,11 @@ objectType({
 		id: stringType(),
 		kind: agentWatcherKindSchema
 	}).optional()
+});
+objectType({
+	id: stringType(),
+	at: stringType(),
+	text: stringType()
 });
 objectType({
 	id: stringType(),
@@ -4088,7 +4194,7 @@ function stripViewerComment(markdown) {
 * v1.md/v2.md version history, which tracks edits to a case's *content*
 * under this same grammar.
 */
-var CURRENT_FORMAT_VERSION = "0.0.7";
+var CURRENT_FORMAT_VERSION = "0.0.9";
 /**
 * Grammar. There is no separate spec by design: this comment is it, sitting
 * against the parser that implements it, and `scripts/build-plugin.mjs`
@@ -4113,73 +4219,91 @@ var CURRENT_FORMAT_VERSION = "0.0.7";
 *
 *   Free text description.
 *
+*   # Domains                                   (optional)
+*
+*   ## APP
+*   The web app under test.                      (free text description)
+*   Default: https://staging.example.test        (the origin a cold run
+*                                                 uses — required in
+*                                                 practice, see below)
+*   Match: app.*.example.test                    (optional glob — which
+*                                                 open tabs count as this
+*                                                 domain)
+*
+*   ## ADMIN
+*   The admin console, a separate deployment.
+*   Default: https://admin.staging.example.test
+*
+*   A domain is a deployment the case touches, named once here and used
+*   as an address prefix everywhere else: `Where: %APP%/admin/reports`,
+*   `- Open %ADMIN%/tenants`, a link in prose. A case may declare several
+*   — the app and its admin console, a marketing site and the app it
+*   signs into, two tenants of one product — and a scenario walks between
+*   them: "do X at %APP%/orders, then check Y at %ADMIN%/audit". The
+*   **first** declared domain is the *main* domain: a bare route
+*   (`Where: /admin/reports`) resolves against it.
+*
+*   A domain is not a variable. It has no generator, and its value is
+*   decided per run by the **environment** the tester picks — local,
+*   staging, prod, or a custom set of addresses — which the extension
+*   keeps in `environments.json` beside the cases, one value per declared
+*   domain per environment. Resolution, first hit wins: a value typed on
+*   the case screen; the picked environment's value; when no environment
+*   is picked, the open tab's origin — for the main domain, or for any
+*   domain whose `Match:` glob accepts the tab's host; the `Default:`;
+*   nothing, in which case `%APP%` stays literal. `Default:` is what a
+*   run from a blank tab, the online viewer and a downloaded page use, so
+*   every domain should carry one — the address of the deployment the
+*   project normally tests against. `Match:` is what lets a tester start
+*   from whichever tab they have open without the panel guessing the
+*   admin console's tab is the app: `*` matches any run of characters,
+*   case-insensitively; a pattern containing `/` is checked against the
+*   whole origin instead of the host.
+*
 *   # Variables                                 (optional)
 *
 *   ## USERNAME
 *   Login username to register with.            (free text description,
-*                                                 like a step's instructions)
-*   Generator: random-string 8                   (optional — see below;
-*                                                 omit for a plain manual
-*                                                 field)
+*                                                like a step's instructions)
+*   Generator: random-string 8                   (see below)
 *
 *   ## PRODUCT_ID
 *   Product to add to cart.
-*   Default: sku-12345                          (optional literal default)
+*   Default: sku-12345                          (literal default)
+*
+*   A variable is a value the run needs that is not an address: an
+*   account, a record id, a fresh string. **Every variable is resolved
+*   before the run starts, by Enloop, and never asked of the tester**: it
+*   carries a `Default:`, or a `Generator:`, or its name is one the
+*   project's environments provide (the same `environments.json` — an
+*   environment supplies variables as well as domains, so `%QA_EMAIL%` can
+*   differ between staging and prod). A variable with none of the three is
+*   a linter error, not a question the panel asks.
 *
 *   Generators, given as `Generator: <name> [arg]`: `timestamp` (epoch ms,
-*   or ISO text with arg `iso`), `page-url`, `page-origin`, `page-domain`
-*   (all three read the active tab when the run starts), `random-number`
-*   (arg `min-max`, default `0-999999`), `random-string` (arg = length,
-*   default 8).
+*   or ISO text with arg `iso`), `random-number` (arg `min-max`, default
+*   `0-999999`), `random-string` (arg = length, default 8), and the page
+*   generators `page-url`, `page-origin`, `page-domain`, which read the
+*   active tab when the run starts. The page generators predate `# Domains`:
+*   a `## BASE_URL` variable with `Generator: page-origin` is the legacy way
+*   to say "the deployment I have open", still parsed and still resolved,
+*   and the linter asks for it to become the main domain instead.
+*   `page-domain` (host only, no scheme, no port) remains right for a
+*   value that is *about* a host — a tenant name, an email suffix — never
+*   for an address prefix. `Match:` on a page generator works as it does
+*   on a domain: a tab the glob refuses yields nothing and resolution
+*   falls through to the `Default:`.
 *
-*   `page-origin` is the one a `BASE_URL` wants:
-*
-*     ## BASE_URL
-*     The deployment under test — whichever one you have open.
-*     Generator: page-origin
-*     Default: https://staging.example.test
-*
-*   With the tester on `https://instance1.example.com`, every
-*   `%BASE_URL%/admin/reports` in the case resolves against that instance;
-*   on `http://localhost:3000` it resolves against theirs. The case names no
-*   environment, so it moves between them without being edited, and a run
-*   starts wherever the tester already was. It yields scheme + host + port,
-*   because the value is used as a prefix and a bare host is not something a
-*   browser can open. The `Default:` is the environment the project
-*   usually tests against: with no page behind the generator — a run
-*   started from a blank tab, the shared viewer page — the value falls
-*   back to it, and the case's addresses keep working cold.
-*   `page-domain` is the bare host, for a value that is
-*   *about* the domain — a tenant name, an email suffix — rather than an
-*   address; using it as a `BASE_URL` produces `example.com/admin`, which
-*   gets no Go control and drops the port.
-*
-*   `Match:` says which pages a page generator may read:
-*
-*     ## BASE_URL
-*     The org under test — whichever one you have open.
-*     Generator: page-origin
-*     Match: *.example.test
-*     Default: https://staging.example.test
-*
-*   A tab whose host does not fit the glob (`*` matches any run of
-*   characters, case-insensitively; a pattern containing `/` is checked
-*   against the whole value instead of the host) yields nothing, so
-*   opening the panel on an unrelated site cannot leak that site's
-*   address into a run — resolution falls through to the default
-*   instead. The run screen says which pattern refused the page and
-*   offers the refused value as a one-click override; a typed value
-*   always overrides everything.
-*
-*   Starting a run
-*   resolves every declared variable — the value typed before the run
-*   starts, else its generator when the generator yields something (a
-*   `page-*` generator with no page behind it yields nothing), else the
-*   declared default, else empty — and replaces every
-*   `%NAME%` placeholder anywhere in the rest of the document (title,
-*   description, step instructions, selectors, scripts) with the resolved
-*   value. A variable that resolves to nothing is not substituted at all:
-*   the step keeps the literal `%NAME%`. See `substituteVariables`.
+*   Domains and variables share one namespace — `%NAME%` is looked up in
+*   both — so a name may not be declared in both sections. Starting a run
+*   resolves every declared domain and variable (a value typed on the case
+*   screen wins; then the environment; then the tab, for what may read it;
+*   then the generator, for a variable that has one; then the `Default:`;
+*   else empty) and replaces every `%NAME%` placeholder anywhere in the rest
+*   of the document (title, description, step instructions, selectors,
+*   scripts) with the resolved value. A name that resolves to nothing is
+*   not substituted at all: the step keeps the literal `%NAME%`. See
+*   `substituteVariables`.
 *
 *   # Dependencies                              (optional, bullet list)
 *   - Seeded test user
@@ -4201,7 +4325,7 @@ var CURRENT_FORMAT_VERSION = "0.0.7";
 *   earns a bullet here rather than a first step that spends a verdict on
 *   arriving. This block is rendered Markdown with no page behind it,
 *   unlike a step's `Where:`, so an address in it is absolute or built from
-*   a variable (`%BASE_URL%/admin/reports`) — a bare route has no origin to
+*   a domain (`%APP%/admin/reports`) — a bare route has no origin to
 *   resolve against here. Dependencies is for what must
 *   already be true and is not the tester's to arrange: a deployed branch,
 *   a migration, an access level. The run screen renders both in one
@@ -4263,13 +4387,14 @@ var CURRENT_FORMAT_VERSION = "0.0.7";
 *
 *   A `Where:` that is a route (`/admin/x`), an absolute URL, or a local
 *   address (`localhost:3000/admin`) gets a Go control in the run screen
-*   that navigates the tab the run is using. A bare route resolves against
-*   whatever page is open, which is right when the tester is already in
-*   the app and refuses to guess when they are not — so a case that has to
-*   be certain declares a `BASE_URL` variable and writes
-*   `Where: %BASE_URL%/admin/x`, which substitutes to an absolute URL
-*   before the run starts. Prose (`the CRM's web console → Contacts`) is
-*   left alone; it names a place, not an address.
+*   that navigates the tab the run is using. The standard form is
+*   `Where: %APP%/admin/x` — a declared domain plus the route — which
+*   substitutes to an absolute URL before the run starts and so works from
+*   a blank tab, in the viewer and in a downloaded copy. A bare route
+*   resolves against the main domain when the case declares one, and
+*   otherwise against whatever page is open — refusing to guess when there
+*   is none. Prose (`the CRM's web console → Contacts`) is left alone; it
+*   names a place, not an address.
 *
 *   A single `Selector:` line is always one selector, even when it contains
 *   commas — `a, b` is a CSS selector *group*, and `querySelector` returns
@@ -4317,6 +4442,31 @@ var CURRENT_FORMAT_VERSION = "0.0.7";
 *                                                  -> automated step; runs
 *                                                  in the page's own MAIN
 *                                                  world with DOM access)
+*
+*   # Steps: Restore password                  (optional — a group. The
+*                                                 title after the colon
+*                                                 names it)
+*   The reset mail reaches the migrated          (the group's goal: what
+*   address and its link signs the user in.       its steps prove together,
+*                                                 in a sentence or two —
+*                                                 required by the linter)
+*
+*   ## Request a reset link
+*   ...
+*
+*   A case covering a broad change — "the email refactoring" — is a
+*   handful of concerns, not a flat list of twenty verdicts: log in,
+*   restore a password, change the address. Each concern is a group: a
+*   `# Steps: <title>` section whose prose is the goal and whose `## `
+*   steps are the steps that prove it. Groups are headings over one list,
+*   not lists of their own: steps keep numbering through them, `Kind:`
+*   marks apply per step, and a quick run drops a group whose steps are
+*   all filtered out. A plain `# Steps` holds ungrouped steps and may sit
+*   before or between groups (shared setup, cleanup). The run screen heads
+*   each group's steps with its goal, and the report and feedback file
+*   sum each group up — which is what lets a reader see that "restore
+*   password" is broken while "log in" is fine, without reading every
+*   step.
 *
 * `version`/`createdAt` are not part of the text — callers supply them
 * (derived from the filename and file mtime) via `fallback`. `@version`
@@ -4377,16 +4527,28 @@ function parseCaseDocument(raw, fallback, opts = {}) {
 	}
 	const { preamble, sections: topSections } = splitTopSections(lines.slice(i).join("\n"), 1);
 	const description = preamble.trim();
+	let domains = [];
 	let variables = [];
 	let dependencies = [];
 	let prerequisites = [];
-	let steps = [];
+	const groups = [];
+	const steps = [];
 	for (const section of topSections) {
 		const name = section.heading.trim().toLowerCase();
-		if (name === "variables") variables = parseVariables(section.content);
+		const stepsHeading = STEPS_HEADING_RE.exec(section.heading.trim());
+		if (name === "domains") domains = parseDomains(section.content);
+		else if (name === "variables") variables = parseVariables(section.content);
 		else if (name === "dependencies") dependencies = parseBulletList(section.content);
 		else if (name === "prerequisites" || name === "prerequirements") prerequisites = parseBulletList(section.content);
-		else if (name === "steps") steps = parseSteps(section.content);
+		else if (stepsHeading) {
+			const groupTitle = (stepsHeading[1] ?? "").trim() || void 0;
+			const { preamble, sections } = splitTopSections(section.content, 2);
+			if (groupTitle && !groups.some((g) => g.title === groupTitle)) groups.push({
+				title: groupTitle,
+				goal: preamble.trim()
+			});
+			for (const s of sections) steps.push(parseOneStep(s.heading, s.content, steps.length, groupTitle));
+		}
 	}
 	if (requireSteps && steps.length === 0) throw new Error("No steps found — add a \"# Steps\" section with \"## \" step headings.");
 	return {
@@ -4399,12 +4561,17 @@ function parseCaseDocument(raw, fallback, opts = {}) {
 		title,
 		description,
 		tags,
+		domains,
 		variables,
 		dependencies,
 		prerequisites,
+		groups,
 		steps
 	};
 }
+/** `# Steps`, or `# Steps: <group title>` — the heading of a section that
+* holds steps. Group 1 is the title, absent on the plain form. */
+var STEPS_HEADING_RE = /^Steps(?::\s*(.*))?$/i;
 function splitTopSections(text, level) {
 	const marker = "#".repeat(level) + " ";
 	const lines = text.split("\n");
@@ -4426,6 +4593,22 @@ function splitTopSections(text, level) {
 			heading: s.heading,
 			content: s.content.join("\n").trim()
 		}))
+	};
+}
+function parseDomains(sectionBody) {
+	const { sections } = splitTopSections(sectionBody, 2);
+	return sections.map((s) => parseOneDomain(s.heading, s.content));
+}
+/** A domain's body is a description plus `Default:` and `Match:` lines —
+* the variable grammar minus `Generator:`. Parsed by the variable reader
+* and narrowed, so the two line syntaxes cannot drift apart. */
+function parseOneDomain(name, body) {
+	const v = parseOneVariable(name, body);
+	return {
+		name: v.name,
+		description: v.description,
+		defaultValue: v.defaultValue,
+		match: v.match
 	};
 }
 function parseVariables(sectionBody) {
@@ -4508,10 +4691,6 @@ function parseBulletList(text) {
 	}
 	return items;
 }
-function parseSteps(stepsSectionBody) {
-	const { sections } = splitTopSections(stepsSectionBody, 2);
-	return sections.map((s, index) => parseOneStep(s.heading, s.content, index));
-}
 var FENCE_RE = /```([^\n]*)\n([\s\S]*?)```/;
 var SUBSECTION_RE = /^###\s+(Expected|Note)\s*$/i;
 var SELECTOR_RE = /^Selector:\s*(.*)$/i;
@@ -4546,7 +4725,7 @@ function splitStepSubsections(text) {
 		note: sawNote ? note.join("\n").trim() || void 0 : void 0
 	};
 }
-function parseOneStep(title, body, index) {
+function parseOneStep(title, body, index, group) {
 	const lines = body.split("\n");
 	let i = 0;
 	while (i < lines.length && lines[i].trim() === "") i++;
@@ -4590,7 +4769,8 @@ function parseOneStep(title, body, index) {
 		where,
 		quick,
 		extra,
-		note
+		note,
+		group
 	};
 }
 /**
@@ -4621,19 +4801,6 @@ function stepNumberLabels(steps) {
 		minor = 0;
 		return `${major}`;
 	});
-}
-/** Start/end offsets of a top-level section's content — from right after
-* its heading line to right before the next top-level (`# `) heading, or
-* end of string. `null` if the heading isn't present. */
-function sectionRange(markdown, headingName) {
-	const match = new RegExp(`^# ${headingName}[ \\t]*\\r?\\n`, "im").exec(markdown);
-	if (!match) return null;
-	const start = match.index + match[0].length;
-	const nextHeading = /^# /m.exec(markdown.slice(start));
-	return {
-		start,
-		end: nextHeading ? start + nextHeading.index : markdown.length
-	};
 }
 /** True when a step body's header block carries `Kind: quick`. Reads only
 * the header — the same lines `parseOneStep` reads — so a `Kind:` line in
@@ -4668,10 +4835,47 @@ function stepBodyIsQuick(body) {
 */
 function filterToQuickSteps(markdown) {
 	const normalized = stripViewerComment(markdown).replace(/\r\n/g, "\n");
-	const range = sectionRange(normalized, "Steps");
-	if (!range) return normalized;
-	const kept = splitTopSections(normalized.slice(range.start, range.end), 2).sections.filter((s) => stepBodyIsQuick(s.content)).map((s) => `## ${s.heading}\n${s.content}`.trim());
-	return normalized.slice(0, range.start) + kept.join("\n\n") + "\n\n" + normalized.slice(range.end);
+	const ranges = stepsSections(normalized);
+	if (ranges.length === 0) return normalized;
+	let result = normalized;
+	for (const range of [...ranges].reverse()) {
+		const { preamble, sections } = splitTopSections(normalized.slice(range.start, range.end), 2);
+		const kept = sections.filter((s) => stepBodyIsQuick(s.content)).map((s) => `## ${s.heading}\n${s.content}`.trim());
+		if (kept.length === 0 && range.group) {
+			result = result.slice(0, range.headingStart) + result.slice(range.end);
+			continue;
+		}
+		const goal = range.group && preamble.trim() ? preamble.trim() + "\n\n" : "";
+		result = result.slice(0, range.start) + goal + kept.join("\n\n") + "\n\n" + result.slice(range.end);
+	}
+	return result;
+}
+/**
+* Every section that holds steps — `# Steps` and each `# Steps: <group>` —
+* in document order. `headingStart` is the offset of the heading line
+* itself, `start`/`end` bracket the content under it (as `sectionRange`),
+* and `group` is the title after the colon, or `null` for the plain form.
+* Text surgery on steps goes through this rather than `sectionRange`,
+* which finds one section by exact name and so would see only the plain
+* `# Steps` of a grouped case.
+*/
+function stepsSections(markdown) {
+	const out = [];
+	const headingRe = /^# Steps(?::[ \t]*([^\r\n]*?))?[ \t]*(?:\r?\n|$)/gim;
+	let match;
+	while ((match = headingRe.exec(markdown)) !== null) {
+		const start = match.index + match[0].length;
+		const nextHeading = /^# /m.exec(markdown.slice(start));
+		const end = nextHeading ? start + nextHeading.index : markdown.length;
+		out.push({
+			group: (match[1] ?? "").trim() || null,
+			headingStart: match.index,
+			start,
+			end
+		});
+		if (match[0].length === 0) headingRe.lastIndex++;
+	}
+	return out;
 }
 //#endregion
 //#region shared/src/variables.ts
@@ -4772,8 +4976,73 @@ function resolveVariableValues(variables, provided, context = {}) {
 	for (const variable of variables) resolved[variable.name] = provided[variable.name] ?? ((variable.generator ? generateVariableValue(variable, context) : "") || variable.defaultValue || "");
 	return resolved;
 }
+/** The origin of the open tab when a domain may read it: the main domain
+* (the first declared) takes any tab its `Match:` does not refuse; every
+* other domain takes the tab only when its `Match:` positively accepts
+* it — without a pattern there is nothing to tell the admin console's tab
+* from the app's, and a wrong address that reads fine is the worst
+* outcome. */
+function tabOriginFor(domain, isMain, pageUrl) {
+	if (!pageUrl) return "";
+	let origin = "";
+	try {
+		origin = new URL(pageUrl).origin;
+	} catch {
+		return "";
+	}
+	if (!origin || origin === "null") return "";
+	const pattern = domain.match?.trim() ?? "";
+	if (pattern) return matchesPagePattern(pattern, origin) ? origin : "";
+	return isMain ? origin : "";
+}
+/** Resolves every declared domain to the address a run will use — first
+* hit wins: a value the tester typed; the picked environment's address for
+* that domain; with **no** environment picked, the open tab's origin where
+* the domain may read it (see `tabOriginFor`); the declared `Default:`;
+* else empty. An environment that is picked but has no address for a
+* domain deliberately does *not* fall through to the tab: the tester said
+* which deployment they mean, and the tab is not evidence about it. */
+function resolveDomainValues(domains, provided, context = {}) {
+	const resolved = {};
+	domains.forEach((domain, index) => {
+		const typed = provided[domain.name];
+		if (typed !== void 0) {
+			resolved[domain.name] = typed;
+			return;
+		}
+		const fromEnvironment = context.environment?.domains[domain.name]?.trim() ?? "";
+		const fromTab = context.environment ? "" : tabOriginFor(domain, index === 0, context.pageUrl);
+		resolved[domain.name] = fromEnvironment || fromTab || domain.defaultValue?.trim() || "";
+	});
+	return resolved;
+}
+/** One map for the whole run: domains and variables resolved together, in
+* the shared `%NAME%` namespace `substituteVariables` reads. For a variable
+* the picked environment's value ranks just below a typed one and above
+* the generator — an environment saying `QA_EMAIL` is what "run this on
+* staging" means for that name. */
+function resolveRunValues(doc, provided, context = {}) {
+	const envValues = context.environment?.values ?? {};
+	const merged = {};
+	for (const variable of doc.variables) {
+		const fromEnvironment = envValues[variable.name]?.trim() ?? "";
+		if (provided[variable.name] === void 0 && fromEnvironment) merged[variable.name] = fromEnvironment;
+	}
+	return {
+		...resolveDomainValues(doc.domains, provided, context),
+		...resolveVariableValues(doc.variables, {
+			...merged,
+			...provided
+		}, context)
+	};
+}
 //#endregion
 //#region shared/src/lint.ts
+/** An origin a domain's `Default:` may be: scheme + host, optional port,
+* nothing after. `localhost:3000` is accepted scheme-less because that is
+* how everyone writes it and the Go control adds `http://`. */
+var ORIGIN = /^(https?:\/\/[^\s/]+|localhost(:\d+)?|127\.0\.0\.1(:\d+)?|\[::1\](:\d+)?)\/?$/i;
+var ORIGIN_WITH_PATH = /^(https?:\/\/[^\s/]+|localhost(:\d+)?|127\.0\.0\.1(:\d+)?)\/\S+$/i;
 /** An address a Go control can use, or a placeholder that becomes one before
 * the run starts. Deliberately the same shape the run screen's
 * `looksNavigable` accepts, minus the page it would resolve against. */
@@ -4810,11 +5079,13 @@ function lintCase(raw, options = {}) {
 	const errors = [];
 	const warnings = [];
 	const createdAt = (/* @__PURE__ */ new Date()).toISOString();
+	const environmentNames = new Set(options.environmentNames ?? []);
+	const environmentsKnown = options.environmentNames !== void 0;
 	const declared = parseCaseDocument(raw, {
 		version: "1",
 		createdAt
 	});
-	const values = resolveVariableValues(declared.variables, {});
+	const values = resolveRunValues(declared, {});
 	const substituted = substituteVariables(raw, values);
 	const doc = parseCaseDocument(substituted, {
 		version: "1",
@@ -4826,7 +5097,7 @@ function lintCase(raw, options = {}) {
 	});
 	if (doc.steps.length === 0) errors.push({
 		rule: "1",
-		message: "No steps parsed. Check that `# Steps` is a top-level heading and each step is `## `."
+		message: "No steps parsed. Check that `# Steps` (or `# Steps: <group>`) is a top-level heading and each step is `## `."
 	});
 	if (!doc.project.trim()) errors.push({
 		rule: "reject",
@@ -4840,7 +5111,7 @@ function lintCase(raw, options = {}) {
 		rule: "reject",
 		message: `@project is "${doc.project}", expected "${options.expectProject}".`
 	});
-	const declaredNames = new Set(declared.variables.map((v) => v.name));
+	const declaredNames = /* @__PURE__ */ new Set([...declared.domains.map((d) => d.name), ...declared.variables.map((v) => v.name)]);
 	const everyField = [
 		doc.title,
 		doc.description,
@@ -4858,23 +5129,54 @@ function lintCase(raw, options = {}) {
 	const undeclared = new Set([...everyField.matchAll(/%([A-Za-z_][A-Za-z0-9_]*)%/g)].map((m) => m[1]).filter((name) => !declaredNames.has(name)));
 	for (const name of undeclared) errors.push({
 		rule: "6",
-		message: `%${name}% is used but never declared under \`# Variables\`, so it stays literal in the run — a typo, or a missing declaration.`
+		message: `%${name}% is used but never declared under \`# Domains\` or \`# Variables\`, so it stays literal in the run — a typo, or a missing declaration.`
 	});
-	if (doc.formatVersion && doc.formatVersion !== "0.0.7") warnings.push({
+	const domainNames = new Set(declared.domains.map((d) => d.name));
+	for (const variable of declared.variables) if (domainNames.has(variable.name)) errors.push({
+		rule: "2b",
+		at: variable.name,
+		message: `\`${variable.name}\` is declared under both \`# Domains\` and \`# Variables\`. An address is a domain; keep the one declaration.`
+	});
+	for (const domain of declared.domains) {
+		const def = domain.defaultValue?.trim() ?? "";
+		if (!def) warnings.push({
+			rule: "2b",
+			at: domain.name,
+			message: `Domain \`${domain.name}\` has no \`Default:\`, so a run from a blank tab, the shared viewer and a downloaded copy have no address for it. Default it to the deployment the project normally tests against — the default environment's address.`
+		});
+		else if (ORIGIN_WITH_PATH.test(def)) warnings.push({
+			rule: "2b",
+			at: domain.name,
+			message: `Domain \`${domain.name}\` defaults to \`${def}\`, which carries a path. A domain is an origin — scheme, host, port — and routes go on the \`%${domain.name}%/…\` references instead.`
+		});
+		else if (!ORIGIN.test(def)) errors.push({
+			rule: "2b",
+			at: domain.name,
+			message: `Domain \`${domain.name}\` defaults to \`${def}\`, which is not an origin a browser can open. Write \`https://host\`, \`http://host:port\` or \`localhost:port\`.`
+		});
+	}
+	if (declared.domains.length > 1) {
+		const unmatched = declared.domains.filter((d) => !d.match?.trim()).map((d) => d.name);
+		if (unmatched.length > 0) warnings.push({
+			rule: "2b",
+			at: "Domains",
+			message: `Several domains, and ${unmatched.map((n) => `\`${n}\``).join(", ")} ${unmatched.length === 1 ? "carries" : "carry"} no \`Match:\`. With a pattern per domain the panel can tell which deployment the open tab is; without one, only the main domain follows the tab, and a run started from the wrong tab starts on the wrong address.`
+		});
+	}
+	if (doc.formatVersion && doc.formatVersion !== "0.0.9") warnings.push({
 		rule: "7",
 		message: `@version is ${doc.formatVersion}; this parser implements ${CURRENT_FORMAT_VERSION}. Re-read the grammar before trusting anything below.`
 	});
 	for (const variable of declared.variables) {
-		const described = variable.description.trim().length > 0;
-		if (!variable.defaultValue && !variable.generator && !described) errors.push({
+		if (!variable.defaultValue?.trim() && !variable.generator && !environmentNames.has(variable.name)) errors.push({
 			rule: "6",
 			at: variable.name,
-			message: "No `Default:`, no `Generator:`, and no description saying how to obtain the value."
+			message: "No `Default:`, no `Generator:`, and no environment provides it — the run would have to ask. Give it a default (a fixture from the repo, a value from the rules file), a generator, or record it per environment: `enloop-case.mjs environments <data folder> \"<project>\" --variable NAME --env <name> --set NAME=value`." + (environmentsKnown ? "" : " (Pass --data-dir so environments.json is consulted.)")
 		});
-		else if (!variable.defaultValue && !variable.generator) warnings.push({
-			rule: "6",
+		if (variable.name === "BASE_URL" || variable.generator === "page-origin" && everyField.includes(`%${variable.name}%/`)) warnings.push({
+			rule: "2b",
 			at: variable.name,
-			message: "No `Default:` and no `Generator:` — the description must say exactly where to get the value, before the run starts."
+			message: `\`${variable.name}\` is an address written as a variable — the pre-domains form. Declare it under \`# Domains\` (first entry = main domain; \`Default:\` and \`Match:\` carry over, drop \`Generator:\`) so environments can set it and the panel treats it as an address.`
 		});
 		if (variable.match && !variable.generator?.startsWith("page-")) warnings.push({
 			rule: "6",
@@ -4887,17 +5189,12 @@ function lintCase(raw, options = {}) {
 			message: `\`Generator: page-domain\` is the bare host, but %${variable.name}% is used as an address prefix — that resolves to \`example.com/path\`, with no scheme and no port. Use \`Generator: page-origin\`.`
 		});
 	}
-	if ((declared.steps.some((s) => ADDRESS.test(s.where?.trim() ?? "")) || declared.prerequisites.some((p) => OPENS_SOMEWHERE.test(p))) && !declaredNames.has("BASE_URL")) warnings.push({
+	if ((declared.steps.some((s) => ADDRESS.test(s.where?.trim() ?? "")) || declared.prerequisites.some((p) => OPENS_SOMEWHERE.test(p))) && declared.domains.length === 0 && !declaredNames.has("BASE_URL")) warnings.push({
 		rule: "2b",
-		at: "Variables",
-		message: "The case names addresses but declares no `BASE_URL`. Declare it (`Generator: page-origin` plus a `Default:`) and build app addresses as `%BASE_URL%/…` — a literal absolute URL is right only for another system's pages."
+		at: "Domains",
+		message: "The case names addresses but declares no `# Domains`. Declare the deployment(s) it touches — `## APP` with a `Default:` origin — and build app addresses as `%APP%/…`; a literal absolute URL is right only for a page of a system the case does not otherwise name."
 	});
-	const baseUrl = declared.variables.find((v) => v.name === "BASE_URL");
-	if (baseUrl && !baseUrl.defaultValue?.trim()) warnings.push({
-		rule: "2b",
-		at: "BASE_URL",
-		message: "`BASE_URL` has no `Default:`, so a run from a blank tab and the shared viewer have no address to fall back to. Default it to the environment this project normally tests against."
-	});
+	const mainDomain = declared.domains[0]?.name ?? (declaredNames.has("BASE_URL") ? "BASE_URL" : "APP");
 	if (!(doc.prerequisites.some((p) => LOGIN_HINT.test(p)) || declared.variables.some((v) => LOGIN_HINT.test(`${v.name} ${v.description}`)) || doc.steps.some((s) => LOGIN_HINT.test(`${s.title} ${s.instructions ?? ""}`))) && doc.steps.some((s) => s.type === "manual")) warnings.push({
 		rule: "2d",
 		at: "Prerequisites",
@@ -4911,7 +5208,7 @@ function lintCase(raw, options = {}) {
 	for (const item of doc.prerequisites) if (BARE_ROUTE_IN_PROSE.test(stripCode(item))) errors.push({
 		rule: "2a",
 		at: "Prerequisites",
-		message: `Bare route in a prerequisite: "${item.trim()}". This block has no open page to resolve against — use an absolute URL or %BASE_URL%/….`
+		message: `Bare route in a prerequisite: "${item.trim()}". This block has no open page to resolve against — use an absolute URL or %${mainDomain}%/….`
 	});
 	const firstStep = doc.steps[0];
 	if (firstStep && !firstStep.expected?.trim() && OPENS_SOMEWHERE.test(firstStep.title)) warnings.push({
@@ -4936,7 +5233,7 @@ function lintCase(raw, options = {}) {
 		else if (where.startsWith("/")) warnings.push({
 			rule: "2b",
 			at: step.title,
-			message: `\`Where: ${where}\` is a bare route — one click only when the run's tab is already on the app. \`%BASE_URL%${where}\` works from anywhere.`
+			message: `\`Where: ${where}\` is a bare route — it resolves against the main domain in the panel and nowhere else. \`%${mainDomain}%${where}\` works from anywhere, and says which domain.`
 		});
 		const instructions = step.instructions?.trim() ?? "";
 		if (RESTATES_NAVIGATION.test(instructions)) warnings.push({
@@ -5007,6 +5304,29 @@ function lintCase(raw, options = {}) {
 			}
 		}
 	}
+	for (const group of doc.groups) {
+		if (!group.goal.trim()) errors.push({
+			rule: "9",
+			at: group.title,
+			message: `\`# Steps: ${group.title}\` has no goal. Under the heading, before the first step, say what its steps prove together.`
+		});
+		if (!doc.steps.some((s) => s.group === group.title)) errors.push({
+			rule: "9",
+			at: group.title,
+			message: "The group has no steps under it."
+		});
+	}
+	const groupHeadings = [...substituted.matchAll(/^# Steps:[ \t]*(.+?)[ \t]*$/gim)].map((m) => m[1]);
+	for (const title of new Set(groupHeadings.filter((t, i) => groupHeadings.indexOf(t) !== i))) errors.push({
+		rule: "9",
+		at: title,
+		message: "This group heading appears twice. A group's steps sit together under one heading; merge them or name the second group differently."
+	});
+	if (doc.groups.length === 1 && doc.steps.every((s) => s.group)) warnings.push({
+		rule: "9",
+		at: doc.groups[0].title,
+		message: "Every step is in the one group, so the group is the case. Groups earn their headings when a case has several concerns; otherwise use a plain `# Steps` and let the description carry the goal."
+	});
 	let quickParses = true;
 	if (quickMarked > 0) try {
 		const quickDoc = parseCaseDocument(filterToQuickSteps(substituted), {
@@ -5043,8 +5363,9 @@ function lintCase(raw, options = {}) {
 		const w = s.where?.trim() ?? "";
 		return COLD_OPENABLE.test(w) && !/\s/.test(w);
 	}).length;
-	const asks = declared.variables.filter((v) => !v.defaultValue?.trim() && !v.generator).map((v) => v.name);
-	const unresolved = declared.variables.filter((v) => v.generator && !(values[v.name] ?? "").trim()).map((v) => v.name);
+	const fromEnvironment = [...declared.domains, ...declared.variables].filter((v) => environmentNames.has(v.name)).map((v) => v.name);
+	const asks = declared.variables.filter((v) => !v.defaultValue?.trim() && !v.generator && !environmentNames.has(v.name)).map((v) => v.name);
+	const unresolved = [...declared.domains.filter((d) => !(values[d.name] ?? "").trim() && !environmentNames.has(d.name)), ...declared.variables.filter((v) => v.generator && !(values[v.name] ?? "").trim())].map((v) => v.name);
 	return {
 		ok: errors.length === 0,
 		errors,
@@ -5059,7 +5380,8 @@ function lintCase(raw, options = {}) {
 			navigableSteps,
 			uiSteps: uiSteps.length,
 			unresolved,
-			asks
+			asks,
+			fromEnvironment
 		}
 	};
 }
@@ -5075,4 +5397,104 @@ function newTestCaseId(title) {
 	return `${slugify(title) || "test-case"}-${shortId()}`;
 }
 //#endregion
-export { CURRENT_FORMAT_VERSION, compareVersionIds, lintCase, newTestCaseId, nextMajorId, nextMinorId, stepNumberLabels, versionIdFromFileName };
+//#region shared/src/environments.ts
+/**
+* Environments: the same case run against different deployments.
+*
+* A project is deployed in several places — local, staging, production,
+* a per-customer instance — and a case should be runnable against any of
+* them without being rewritten. A case names the deployments it touches
+* as **domains** (`# Domains` in the grammar: `APP`, `ADMIN`, …) and uses
+* them as address prefixes; an environment is a named set of addresses
+* for those domains, plus values for any **variables** that differ between
+* deployments (a QA account, an API key name, a tenant id). Picking an
+* environment before a run fills every domain and every such variable at
+* once — nothing is asked of the tester.
+*
+* The domain and variable *names* belong to the project, not to each
+* environment (`domains` / `variables` below). That is the schema
+* discipline from PLAN-BACKEND §17: a bag of ad-hoc keys per environment
+* rots — someone adds `ADMIN` to staging, nobody adds it to local, and the
+* failure surfaces at run time on the tester. With one shared name list,
+* every environment has the same shape by construction, and a hole is
+* visible in the editor grid, which is the cheap moment.
+*
+* Selecting an environment before a run *pre-fills* the run's values; it
+* never locks them. A tester can always run with no environment and let
+* the main domain follow the open tab, or type an address by hand — that
+* is also the answer for per-PR deployments whose domain a service like
+* Shipyard generates. (Decided 2026-08-16; value templates were considered
+* and cut.)
+*
+* On disk this is `environments.json` at the data folder root, one file
+* per connected folder. A folder usually holds several projects' cases, so
+* an environment may carry the `project` it belongs to; the picker shows a
+* case the environments of its own `@project` plus any unscoped ones. The
+* authoring skills write this file too — `enloop-case.mjs environments` —
+* which is how the deployments a repo already knows about (its
+* `.env.example`, deploy config, README) become environments without
+* anyone typing them into a form. The backend keeps the same shape
+* server-side when it lands (branch `backend`), so `enloop export`
+* round-trips it.
+*/
+var environmentSchema = objectType({
+	/** Stable key, generated once — survives renames. */
+	id: stringType(),
+	/** What the picker shows: 'Local', 'Staging', 'Prod'. */
+	name: stringType(),
+	/** `@project` this environment belongs to; empty or absent = every
+	* project in the folder. */
+	project: stringType().optional(),
+	/** The environment a run pre-selects when none was remembered, and the
+	* one the authoring skills copy into each domain's `Default:` — the
+	* deployment the project normally tests against. At most one per
+	* project is meaningful; the first flagged one wins. */
+	default: booleanType().optional(),
+	/** Domain name → origin (`https://staging.example.test`). Only names in
+	* the file's `domains` are shown or edited, but unknown keys survive
+	* read→write untouched. Defaulted so files written before domains were
+	* split out of `values` still parse. */
+	domains: recordType(stringType()).default({}),
+	/** Variable name → value. Same rules as `domains`. */
+	values: recordType(stringType())
+});
+var environmentsFileSchema = objectType({
+	/** The project's deployments contract: which domain names every
+	* environment provides, in display order. Defaulted for files written
+	* before domains existed. */
+	domains: arrayType(stringType()).default([]),
+	/** The project's contract: which variable names environments provide,
+	* in display order. */
+	variables: arrayType(stringType()).default([]),
+	environments: arrayType(environmentSchema).default([])
+});
+function emptyEnvironments() {
+	return {
+		domains: [],
+		variables: [],
+		environments: []
+	};
+}
+/** An environment is complete when every declared domain and variable has
+* a non-empty value. Incomplete ones stay selectable — the missing values
+* just fall through to the case's own defaults/generators — but the editor
+* and the picker flag them, so the hole is seen before it costs a run. */
+function missingEnvironmentValues(file, env) {
+	return [...file.domains.filter((name) => !(env.domains[name] ?? "").trim()), ...file.variables.filter((name) => !(env.values[name] ?? "").trim())];
+}
+/** Whether an environment applies to a case of `project`: unscoped
+* environments apply everywhere; scoped ones to their project only,
+* compared case-insensitively since `@project` is typed by hand. */
+function environmentAppliesTo(env, project) {
+	const scope = (env.project ?? "").trim().toLowerCase();
+	return !scope || scope === project.trim().toLowerCase();
+}
+/** The environments the picker offers a case of `project`, in file order. */
+function environmentsForProject(file, project) {
+	return file.environments.filter((env) => environmentAppliesTo(env, project));
+}
+function newEnvironmentId() {
+	return `env-${crypto.randomUUID().slice(0, 8)}`;
+}
+//#endregion
+export { AGENT_PROTOCOL_VERSION, CURRENT_FORMAT_VERSION, compareVersionIds, describeRating, emptyEnvironments, environmentsFileSchema, environmentsForProject, isExemplaryRating, isPoorRating, lintCase, missingEnvironmentValues, newEnvironmentId, newTestCaseId, nextMajorId, nextMinorId, parseCaseDocument, ratingStars, runFileSchema, stepNumberLabels, versionIdFromFileName };

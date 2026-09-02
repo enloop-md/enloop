@@ -87,6 +87,21 @@ or the resume fails → it falls through to the configured backend below.
 `--no-resume` (or `"resumeAuthorSession": false`) turns the whole
 mechanism off.
 
+## What the tester sees while it thinks
+
+A real question takes a minute or more to answer, and for that minute the
+tester is looking at one line under their question. The daemon keeps that
+line moving: every file the model opens and every search it runs becomes a
+status — *Reading ResetForm.tsx*, *Searching for "Send link"* — and the
+model is asked to say, in its own words, what it is doing whenever that
+changes: *Found it — the step names a button that was renamed*, *Writing
+the answer*. The `api` backend gets a `progress` tool for this; Claude Code
+is run with streamed output so its tool calls are read as they happen,
+and its narration between them is passed on. The panel shows the latest
+line with how long ago it changed. It is `progress.json` in the question's
+folder, rewritten as it goes — a server that never writes it is shown as
+"working on the answer" as before.
+
 ## Backends and their auth
 
 Answering is always an LLM's work — `--backend` picks whose:
@@ -277,6 +292,29 @@ one party backs off in every contest), and **terminal artifacts**
 (`answer.json`, `exit-code` — once they exist, further work is
 discard-your-own). Start and stop any participant whenever; the files
 arbitrate.
+
+## Version compatibility
+
+Three parts ship separately — the extension (Web Store), the plugin
+(marketplace), the daemon (repo build) — so each declares the channel's
+**wire protocol version** in the files it already writes, and each checks
+its counterparts where they naturally meet:
+
+- the extension stamps `protocol` (and its own version) into
+  `heartbeat.json`; watchers stamp theirs into `agent/watchers/<id>.json`;
+- the **panel** warns in the ask box when a fresh watcher speaks a
+  different protocol; the **daemon** warns per folder when the heartbeat
+  disagrees; the **skills** surface the same via
+  `enloop-case.mjs agent-status` (and `… version` prints the plugin's
+  protocol);
+- files written before versioning count as protocol 1, and additive
+  optional fields never bump the number — a bump means an older
+  counterpart would genuinely misread the files, and every warning says
+  which side to update.
+
+The case *grammar* has its own version (`@version`, checked by the
+validator on every parse) — that one guards case files, this one guards
+the live channel.
 
 ## Limits worth knowing
 

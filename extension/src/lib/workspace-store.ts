@@ -26,8 +26,8 @@ import {
   splitId,
   type AgentCommand,
   type AgentCommandSourceField,
+  type AgentPresence,
   type AgentQuestion,
-  type AgentWatcherKind,
   type CapturedEntry,
   type CompatResult,
   type DataStore,
@@ -329,6 +329,11 @@ export class WorkspaceStore implements DataStore {
     return this.tagRun(storageId, await store.getRun(localId, splitId(runId).localId));
   }
 
+  async getRunFeedback(testCaseId: string, runId: string): Promise<string | null> {
+    const { store, localId } = this.route(testCaseId);
+    return store.getRunFeedback(localId, splitId(runId).localId);
+  }
+
   /** A run is written to the storage its case came from, which routing makes
    * automatic — a case and its history stay together, including inside a repo
    * where `runs/` is gitignored. */
@@ -363,7 +368,7 @@ export class WorkspaceStore implements DataStore {
   async updateRun(
     testCaseId: string,
     runId: string,
-    patch: { comment?: string; consoleInReport?: boolean },
+    patch: { comment?: string; consoleInReport?: boolean; rating?: number | null },
   ): Promise<Run> {
     const { store, storageId, localId } = this.route(testCaseId);
     return this.tagRun(storageId, await store.updateRun(localId, splitId(runId).localId, patch));
@@ -458,7 +463,7 @@ export class WorkspaceStore implements DataStore {
     );
   }
 
-  async agentPresence(testCaseId: string): Promise<AgentWatcherKind | null> {
+  async agentPresence(testCaseId: string): Promise<AgentPresence | null> {
     const { store, localId } = this.route(testCaseId);
     return store.agentPresence(localId);
   }

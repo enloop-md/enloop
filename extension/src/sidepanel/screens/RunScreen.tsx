@@ -6,16 +6,20 @@ import {
   describeCounts,
   hasCaptureSignal,
   newCommentId,
+  QUICK_COMMENTS,
   renderBulletList,
   stepComments,
   stepNumberLabels,
   type AgentCommand,
   type AgentCommandSourceField,
   type AgentQuestion,
-  type AgentWatcherKind,
+  type AgentPresence,
   type RunCommentDraft,
   type CapturedEntry,
   type CommentAudience,
+  RATING_MAX,
+  RATING_WORDS,
+  ratingStars,
   type Run,
   type RunStep,
   type RunStepStatus,
@@ -33,6 +37,7 @@ import { getPageAccess, type PageAccess } from "../../lib/page-access.js";
 import { looksNavigable } from "../../lib/navigate.js";
 import { NavigateButton } from "../../components/NavigateButton.js";
 import { runCaptureKey } from "../../lib/capture.js";
+import { downloadTextFile, fileSlug } from "../../lib/download.js";
 import { useCaptureRecorder } from "../useCapture.js";
 import { commandPending, useAgentChannel, type AskDraft } from "../useAgentChannel.js";
 import { CommandList, StepQuestions } from "./RunAgentChannel.js";
@@ -212,6 +217,15 @@ export function RunScreen({
     }
   }
 
+  async function saveRating(rating: number | null) {
+    if (!run || rating === run.rating) return;
+    try {
+      setRun(await store.updateRun(run.testCaseId, run.id, { rating }));
+    } catch (e) {
+      setError(e);
+    }
+  }
+
   async function handleRunCommand(
     command: string,
     stepId: string | null,
@@ -294,6 +308,7 @@ export function RunScreen({
   // worse than no banner.
   const hasFeedbackSignal =
     run.comment.trim().length > 0 ||
+    run.rating != null ||
     run.steps.some(
       (s) =>
         s.status === "failed" ||
@@ -301,7 +316,8 @@ export function RunScreen({
         (s.status === "skipped" && !s.extra) ||
         stepComments(s).some((c) => c.text.trim().length > 0) ||
         !!s.automatedResult?.error ||
-        s.consoleErrors > 0,
+        s.consoleErrors > 0 ||
+        s.rating != null,
     );
 
   return (
@@ -367,7 +383,8 @@ export function RunScreen({
       {!readOnly && <CaptureNotice wrapper={capture.wrapper} className="mx-3 mt-2" />}
       {readOnly && hasFeedbackSignal && (
         <p className="border-b border-violet-100 bg-violet-50 px-3 py-2 text-xs text-violet-700">
-          Feedback saved to feedback.md in this run's folder — point Claude Code at it.
+          Feedback saved to feedback.md in this run's folder — point Claude Code
+          at it, or copy and download it from the bottom of this screen.
         </p>
       )}
 
@@ -392,36 +409,50 @@ export function RunScreen({
           </div>
         )}
         {run.steps.map((step, index) => (
-          <StepRow
-            key={step.stepId}
-            numberLabel={numberLabels[index]}
-            step={step}
-            expanded={expandedIds.has(step.stepId)}
-            isCurrent={step.stepId === currentStepId}
-            isPast={currentIndex >= 0 && index < currentIndex}
-            busy={busyStepId === step.stepId}
-            readOnly={readOnly}
-            onToggle={() =>
-              setExpandedIds((ids) => {
-                const next = new Set(ids);
-                if (!next.delete(step.stepId)) next.add(step.stepId);
-                return next;
-              })
-            }
-            onMark={(status) => handleMark(step, status)}
-            onRunAutomated={() => handleRunAutomated(step)}
-            onUpdateFields={(patch) => updateStepFields(step, patch)}
-            onDraftChange={(draft) => pendingDrafts.current.set(step.stepId, draft)}
-            run={run}
-            questions={agent.questions}
-            commands={agent.commands.filter((c) => c.stepId === step.stepId)}
-            watcher={agent.watcher}
-            onAsk={agent.ask}
-            onSwapped={setRun}
-            onRunCommand={(command, field) => void handleRunCommand(command, step.stepId, field)}
-            onKillCommand={handleKillCommand}
-            onRunAgain={handleRunAgain}
-          />
+          <div key={step.stepId}>
+            {step.group && run.steps[index - 1]?.group !== step.group && (
+              <GroupHeader
+                title={step.group}
+                goal={
+                  run.groups.find((g) => g.title === step.group)?.goal ?? ""
+                }
+                steps={run.steps.filter((s) => s.group === step.group)}
+              />
+            )}
+            <StepRow
+              numberLabel={numberLabels[index]}
+              step={step}
+              expanded={expandedIds.has(step.stepId)}
+              isCurrent={step.stepId === currentStepId}
+              isPast={currentIndex >= 0 && index < currentIndex}
+              busy={busyStepId === step.stepId}
+              readOnly={readOnly}
+              onToggle={() =>
+                setExpandedIds((ids) => {
+                  const next = new Set(ids);
+                  if (!next.delete(step.stepId)) next.add(step.stepId);
+                  return next;
+                })
+              }
+              onMark={(status) => handleMark(step, status)}
+              onRunAutomated={() => handleRunAutomated(step)}
+              onUpdateFields={(patch) => updateStepFields(step, patch)}
+              onDraftChange={(draft) =>
+                pendingDrafts.current.set(step.stepId, draft)
+              }
+              run={run}
+              questions={agent.questions}
+              commands={agent.commands.filter((c) => c.stepId === step.stepId)}
+              watcher={agent.watcher}
+              onAsk={agent.ask}
+              onSwapped={setRun}
+              onRunCommand={(command, field) =>
+                void handleRunCommand(command, step.stepId, field)
+              }
+              onKillCommand={handleKillCommand}
+              onRunAgain={handleRunAgain}
+            />
+          </div>
         ))}
       </div>
 
@@ -435,6 +466,20 @@ export function RunScreen({
             placeholder="Comment on the whole run (optional) — anything that isn't about one step"
             className="w-full resize-y rounded border border-slate-300 px-2 py-1.5 text-xs"
           />
+          {/* The case as a piece of test writing, not the feature under test:
+              a run can fail on a five-star case. Most runs leave this empty;
+              it is here for the case worth pointing the next author at, and
+              the one that should not be repeated. */}
+          <div className="flex items-center justify-between text-[11px] text-slate-500">
+            <span title="How well written is this case? Feeds the ratings the authoring skills read for this project.">
+              Rate this test case
+            </span>
+            <StarRating
+              value={run.rating}
+              onChange={(rating) => void saveRating(rating)}
+              label="Rate this test case"
+            />
+          </div>
           {/* Capturing is one decision; handing the log to a model is a second
               one, made here because this is the moment the tester knows whether
               the run was interesting and the log exists to be looked at rather
@@ -479,13 +524,198 @@ export function RunScreen({
         </div>
       )}
 
-      {readOnly && run.comment.trim() && (
-        <div className="border-t border-slate-200 p-3">
-          <h2 className="mb-1 text-xs font-semibold uppercase text-slate-400">
-            Comment on this run
-          </h2>
-          <Markdown text={run.comment} className="text-xs text-slate-600" />
+      {readOnly &&
+        (run.comment.trim() || run.rating != null || hasFeedbackSignal) && (
+          <div className="space-y-2 border-t border-slate-200 p-3">
+            {run.rating != null && (
+              <p className="text-xs text-slate-600">
+                <span className="text-amber-500">
+                  {ratingStars(run.rating)}
+                </span>{" "}
+                The tester rated this case {RATING_WORDS[run.rating]}.
+              </p>
+            )}
+            {run.comment.trim() && (
+              <div>
+                <h2 className="mb-1 text-xs font-semibold uppercase text-slate-400">
+                  Comment on this run
+                </h2>
+                <Markdown
+                  text={run.comment}
+                  className="text-xs text-slate-600"
+                />
+              </div>
+            )}
+            {hasFeedbackSignal && (
+              <FeedbackHandoff
+                store={store}
+                testCaseId={testCaseId}
+                runId={runId}
+                title={run.testCaseTitle}
+              />
+            )}
+          </div>
+        )}
+    </div>
+  );
+}
+
+/**
+ * The finished run's `feedback.md` — every comment, rating and failure,
+ * grouped by who it is addressed to — shown in the panel with a copy button
+ * and a download button. On a machine with Claude Code the file in the run's
+ * folder is enough; this is for the tester who has no agent watching, and
+ * needs to hand the same text to someone who does. Loaded on first open, not
+ * on mount: a finished run is opened far more often to look at than to hand
+ * on, and the file is already on disk.
+ */
+function FeedbackHandoff({
+  store,
+  testCaseId,
+  runId,
+  title,
+}: {
+  store: {
+    getRunFeedback(testCaseId: string, runId: string): Promise<string | null>;
+  };
+  testCaseId: string;
+  runId: string;
+  title: string;
+}) {
+  const [open, setOpen] = useState(false);
+  // `undefined` = not loaded yet; `null` = the run had nothing to hand on.
+  const [text, setText] = useState<string | null | undefined>(undefined);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+
+  useEffect(() => {
+    if (!open || text !== undefined) return;
+    let cancelled = false;
+    store
+      .getRunFeedback(testCaseId, runId)
+      .then((t) => !cancelled && setText(t))
+      .catch((e) => !cancelled && setError(e));
+    return () => {
+      cancelled = true;
+    };
+  }, [open, text, store, testCaseId, runId]);
+
+  async function copy() {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (e) {
+      setError(e);
+    }
+  }
+
+  function download() {
+    if (!text) return;
+    downloadTextFile(`${fileSlug(title)}-${runId}-feedback.md`, text);
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="text-xs text-violet-700 hover:underline"
+      >
+        {open ? "▾" : "▸"} Comments for all steps
+      </button>
+      {open && (
+        <div className="mt-1.5 space-y-1.5">
+          {text === undefined && !error && (
+            <p className="text-[11px] text-slate-400">Loading…</p>
+          )}
+          <ErrorNotice error={error} />
+          {text === null && (
+            <p className="text-[11px] text-slate-500">
+              Nothing to hand on: no comments, ratings or failures were recorded
+              for this run.
+            </p>
+          )}
+          {text && (
+            <>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void download()}
+                  className="rounded bg-violet-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-violet-500"
+                >
+                  Download .md
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void copy()}
+                  title="Copy to clipboard"
+                  aria-label="Copy to clipboard"
+                  className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                >
+                  {copied ? "✓ Copied" : "⧉ Copy"}
+                </button>
+                <span className="text-[11px] text-slate-400">
+                  Same text as feedback.md in the run's folder.
+                </span>
+              </div>
+              <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-200 bg-slate-50 p-2 font-mono text-[11px] leading-snug text-slate-700">
+                {text}
+              </pre>
+            </>
+          )}
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The heading over a group's steps: its title, its goal, and how the steps
+ * under it stand so far. The goal is the sentence a tester reads to know
+ * what the next few verdicts are for — which is the whole reason groups
+ * exist — so it is shown in full rather than behind a toggle.
+ */
+function GroupHeader({
+  title,
+  goal,
+  steps,
+}: {
+  title: string;
+  goal: string;
+  steps: Array<{ status: RunStep["status"] }>;
+}) {
+  const failed = steps.filter((s) => s.status === "failed").length;
+  const warning = steps.filter((s) => s.status === "warning").length;
+  const passed = steps.filter((s) => s.status === "success").length;
+  const tone =
+    failed > 0
+      ? "text-red-600"
+      : warning > 0
+        ? "text-amber-600"
+        : "text-emerald-600";
+  const tally = [
+    passed > 0 && `${passed} passed`,
+    warning > 0 && `${warning} warn`,
+    failed > 0 && `${failed} failed`,
+  ].filter((t): t is string => !!t);
+  return (
+    <div className="border-b border-slate-200 bg-slate-50 px-3 pb-2 pt-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+          {title}
+        </h2>
+        <span className="text-[10px] text-slate-400">
+          {steps.length} {steps.length === 1 ? "step" : "steps"}
+          {tally.length > 0 && (
+            <span className={tone}> · {tally.join(", ")}</span>
+          )}
+        </span>
+      </div>
+      {goal.trim() && (
+        <Markdown text={goal} className="mt-0.5 text-xs text-slate-600" />
       )}
     </div>
   );
@@ -615,6 +845,60 @@ function VerdictButton({
   );
 }
 
+/**
+ * Five stars, none lit until the tester says so. One tap sets, a tap on the
+ * lit star clears — there is no "zero stars" rating, only the absence of one,
+ * and most steps stay that way. The stars are the whole control: no label
+ * under them, no confirm, because the rating is an aside made in passing,
+ * not a form to fill in.
+ */
+function StarRating({
+  value,
+  onChange,
+  disabled,
+  label,
+}: {
+  value: number | null;
+  onChange: (rating: number | null) => void;
+  disabled?: boolean;
+  label: string;
+}) {
+  return (
+    <span
+      role="radiogroup"
+      aria-label={label}
+      className="inline-flex items-center gap-px"
+      title={
+        value == null
+          ? label
+          : `${value}/${RATING_MAX} — ${RATING_WORDS[value]}`
+      }
+    >
+      {Array.from({ length: RATING_MAX }, (_, i) => i + 1).map((star) => {
+        const lit = value != null && star <= value;
+        return (
+          <button
+            key={star}
+            type="button"
+            role="radio"
+            aria-checked={value === star}
+            aria-label={`${star} of ${RATING_MAX} — ${RATING_WORDS[star]}`}
+            disabled={disabled}
+            onClick={() => onChange(value === star ? null : star)}
+            className={`px-px text-base leading-none transition-colors disabled:opacity-50 ${
+              lit
+                ? "text-amber-500 hover:text-amber-400"
+                : "text-slate-300 hover:text-amber-300"
+            }`}
+          >
+            {lit ? "★" : "☆"}
+          </button>
+        );
+      })}
+    </span>
+  );
+}
+
 /** How many comments a collapsed step will list before it stops and counts. */
 const COLLAPSED_COMMENT_LIMIT = 2;
 
@@ -657,6 +941,28 @@ function CollapsedFindings({ step, hidden }: { step: RunStep; hidden: boolean })
   );
 }
 
+/** Where the audience-legend switch is remembered. `localStorage` is the
+ * panel's own, so this never touches the data folder. Wrapped because a
+ * side panel can run where storage throws, and a lost preference is nothing
+ * next to a step that will not render. */
+const LEGEND_PREFERENCE_KEY = "enloop.audienceLegend";
+
+function readLegendPreference(): boolean {
+  try {
+    return localStorage.getItem(LEGEND_PREFERENCE_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+function writeLegendPreference(on: boolean): void {
+  try {
+    localStorage.setItem(LEGEND_PREFERENCE_KEY, on ? "on" : "off");
+  } catch {
+    // Nothing to do: the switch still works for this render.
+  }
+}
+
 const AUDIENCE_STYLES: Record<CommentAudience, string> = {
   developer: "bg-red-100 text-red-700",
   product: "bg-violet-100 text-violet-700",
@@ -683,11 +989,15 @@ const AUDIENCE_STYLES: Record<CommentAudience, string> = {
  */
 function StepComments({
   step,
+  hasPreviousStep,
   readOnly,
   onUpdateFields,
   onDraftChange,
 }: {
   step: RunStep;
+  /** False on the first step of the run, which hides the shortcuts that
+   * talk about a previous one. */
+  hasPreviousStep: boolean;
   readOnly: boolean;
   onUpdateFields: (patch: Partial<RunStep>) => void;
   /** Reported on every keystroke so the run can be finished without waiting
@@ -711,6 +1021,18 @@ function StepComments({
     return () => clearTimeout(timer);
   }, [draft, audiences, readOnly, step.draft]);
 
+  // Whether the audience row shows what each name means. Off by default:
+  // five hints under five checkboxes is a paragraph on every step, and after
+  // the first run nobody reads it. Remembered across steps and runs, so
+  // switching it on is done once, not once per step.
+  const [showLegend, setShowLegend] = useState(() => readLegendPreference());
+
+  function toggleLegend() {
+    const next = !showLegend;
+    setShowLegend(next);
+    writeLegendPreference(next);
+  }
+
   function add() {
     if (!draft.trim()) return;
     onUpdateFields({
@@ -720,10 +1042,36 @@ function StepComments({
       ],
       draft: null,
     });
-    // The box empties, the ticks do not: a tester writing three things for the
-    // developer should not have to re-tick Developer three times.
+    // Box and ticks both empty: the next comment starts from nothing, so a
+    // tick left over from the last one cannot address it to the wrong reader
+    // unnoticed.
     setDraft("");
+    setAudiences([]);
   }
+
+  /** The one-tap comments: the same shape as `add`, with the words and the
+   * audience supplied. Added outright rather than put in the box — the
+   * tester chose the button because the sentence is already right. */
+  function addQuick(quick: (typeof QUICK_COMMENTS)[number]) {
+    onUpdateFields({
+      comments: [
+        ...step.comments,
+        {
+          id: newCommentId(),
+          text: quick.text,
+          audiences: [...quick.audiences],
+        },
+      ],
+    });
+  }
+
+  const quickComments = QUICK_COMMENTS.filter(
+    (quick) =>
+      (!quick.needsPreviousStep || hasPreviousStep) &&
+      // Once it is on the step, the button has done its job; the × next to
+      // the comment is the way to take it back.
+      !step.comments.some((c) => c.text === quick.text),
+  );
 
   return (
     <div className="space-y-1.5">
@@ -764,6 +1112,26 @@ function StepComments({
 
       {!readOnly && (
         <>
+          {/* Above the box, not below the Add button: these are the things
+              a tester says instead of typing, so they belong where typing
+              would otherwise start. */}
+          {quickComments.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {quickComments.map((quick) => (
+                <button
+                  key={quick.id}
+                  type="button"
+                  onClick={() => addQuick(quick)}
+                  title={`Adds the comment "${quick.text}" for the ${quick.audiences
+                    .map((a) => AUDIENCE_LABELS[a].toLowerCase())
+                    .join(", ")}`}
+                  className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-800 hover:bg-emerald-100"
+                >
+                  + {quick.label}
+                </button>
+              ))}
+            </div>
+          )}
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -772,41 +1140,77 @@ function StepComments({
             className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
           />
           <div className="space-y-0.5">
-            <p className="text-[10px] text-slate-400">This comment is for:</p>
-            {COMMENT_AUDIENCES.map((audience) => (
-              <label
-                key={audience}
-                title={AUDIENCE_HINTS[audience]}
-                className="flex items-start gap-1.5 text-[11px]"
+            <div className="flex items-center justify-between text-[10px] text-slate-400">
+              <span>This comment is for:</span>
+              <button
+                type="button"
+                onClick={toggleLegend}
+                aria-pressed={showLegend}
+                className="hover:text-slate-600 hover:underline"
               >
-                <input
-                  type="checkbox"
-                  checked={audiences.includes(audience)}
-                  onChange={(e) =>
-                    setAudiences((prev) =>
-                      e.target.checked
-                        ? [...prev, audience]
-                        : prev.filter((a) => a !== audience),
-                    )
-                  }
-                  className="mt-0.5"
-                />
-                {/* Label and hint in one span so a hint that wraps stays
-                    aligned under the label rather than under the checkbox. */}
-                <span className="text-slate-700">
-                  {AUDIENCE_LABELS[audience]}{" "}
-                  <span className="text-slate-400">— {AUDIENCE_HINTS[audience]}</span>
-                </span>
-              </label>
-            ))}
-            <p className="pl-5 text-[10px] text-slate-400">
-              Tick none and it is context: kept with the run, addressed to nobody.
-            </p>
+                {showLegend ? "Hide hints" : "What do these mean?"}
+              </button>
+            </div>
+            {/* Condensed: names in a row, each still carrying its hint as a
+                tooltip. Expanded: one per line with the hint spelled out —
+                the view a first-time tester needs and a tenth-time tester
+                scrolls past. */}
+            <div
+              className={
+                showLegend ? "space-y-0.5" : "flex flex-wrap gap-x-3 gap-y-0.5"
+              }
+            >
+              {COMMENT_AUDIENCES.map((audience) => (
+                <label
+                  key={audience}
+                  title={AUDIENCE_HINTS[audience]}
+                  className="flex items-start gap-1.5 text-[11px]"
+                >
+                  <input
+                    type="checkbox"
+                    checked={audiences.includes(audience)}
+                    onChange={(e) =>
+                      setAudiences((prev) =>
+                        e.target.checked
+                          ? [...prev, audience]
+                          : prev.filter((a) => a !== audience),
+                      )
+                    }
+                    className="mt-0.5"
+                  />
+                  {/* Label and hint in one span so a hint that wraps stays
+                      aligned under the label rather than under the checkbox. */}
+                  <span className="text-slate-700">
+                    {AUDIENCE_LABELS[audience]}
+                    {showLegend && (
+                      <span className="text-slate-400">
+                        {" "}
+                        — {AUDIENCE_HINTS[audience]}
+                      </span>
+                    )}
+                  </span>
+                </label>
+              ))}
+            </div>
+            {showLegend && (
+              <p className="pl-5 text-[10px] text-slate-400">
+                Tick none and it is context: kept with the run, addressed to
+                nobody.
+              </p>
+            )}
           </div>
+          {/* Pale while the box is empty, filled the moment it is not: the
+              button's colour is the one cue that something is waiting to be
+              added, on a panel where the box itself looks the same either
+              way. */}
           <button
             onClick={add}
             disabled={!draft.trim()}
-            className="w-full rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-40"
+            className={`w-full rounded px-2 py-1.5 text-xs font-medium transition-colors ${
+              draft.trim()
+                ? "border border-transparent bg-sky-600 text-white shadow-sm hover:bg-sky-500"
+                : "border border-slate-200 text-slate-400"
+            }`}
           >
             Add comment
           </button>
@@ -863,7 +1267,7 @@ function StepRow({
   run: Run;
   questions: AgentQuestion[];
   commands: AgentCommand[];
-  watcher: AgentWatcherKind | null;
+  watcher: AgentPresence | null;
   onAsk: (draft: AskDraft) => Promise<void>;
   onSwapped: (run: Run) => void;
   onRunCommand: (command: string, field: "instructions" | "note") => void;
@@ -985,6 +1389,14 @@ function StepRow({
             extra
           </span>
         )}
+        {step.rating != null && (
+          <span
+            className="text-[11px] text-amber-500"
+            title={`Rated ${step.rating}/${RATING_MAX} — ${RATING_WORDS[step.rating]}`}
+          >
+            ★{step.rating}
+          </span>
+        )}
         <StepStatusBadge status={step.status} />
       </button>
 
@@ -1011,7 +1423,12 @@ function StepRow({
               <div className="flex flex-wrap items-baseline gap-1.5 text-xs">
                 <span className="font-medium text-slate-500">Where:</span>
                 <code className="text-slate-600">{step.where}</code>
-                {looksNavigable(step.where) && <NavigateButton where={step.where} />}
+                {looksNavigable(step.where) && (
+                  <NavigateButton
+                    where={step.where}
+                    mainOrigin={run.mainOrigin}
+                  />
+                )}
               </div>
             )}
             {step.selectors.length > 0 && (
@@ -1152,6 +1569,7 @@ function StepRow({
 
             <StepComments
               step={step}
+              hasPreviousStep={run.steps[0]?.stepId !== step.stepId}
               readOnly={readOnly}
               onUpdateFields={onUpdateFields}
               onDraftChange={onDraftChange}
@@ -1195,22 +1613,43 @@ function StepRow({
                     onMark={onMark}
                   />
                 </div>
-                {/* A link, not a fourth button: skipping is declining to
-                    judge, and giving it a button's weight would put it on
-                    equal footing with the three verdicts. Skips land in
-                    feedback.md for the test writer — a step skipped run
-                    after run is one the case may not need. Hidden once the
-                    step is skipped: the buttons above are the way back. */}
-                {step.status !== "skipped" && (
-                  <button
-                    onClick={() => onMark("skipped")}
+                {/* Two asides on one line, pushed to opposite ends so neither
+                    reads as belonging to the other. Left: skipping — a link,
+                    not a fourth button, because declining to judge should
+                    not have a verdict's weight. Skips land in feedback.md for
+                    the test writer; a step skipped run after run is one the
+                    case may not need. Hidden once the step is skipped: the
+                    buttons above are the way back. Right: the stars — an
+                    opinion of the step as test writing, nothing to do with
+                    whether the app passed it. */}
+                <div className="flex items-center justify-between pt-0.5">
+                  {step.status !== "skipped" ? (
+                    <button
+                      onClick={() => onMark("skipped")}
+                      disabled={busy}
+                      className="text-[11px] text-slate-400 hover:text-slate-600 hover:underline disabled:opacity-50"
+                    >
+                      {step.extra ? "Back to skipped" : "Skip this step"}
+                    </button>
+                  ) : (
+                    <span />
+                  )}
+                  <StarRating
+                    value={step.rating}
+                    onChange={(rating) => onUpdateFields({ rating })}
                     disabled={busy}
-                    className="mx-auto block pt-0.5 text-[11px] text-slate-400 hover:text-slate-600 hover:underline disabled:opacity-50"
-                  >
-                    {step.extra ? "Back to skipped" : "Skip this step"}
-                  </button>
-                )}
+                    label="Rate how well this step is written"
+                  />
+                </div>
               </div>
+            )}
+            {readOnly && step.rating != null && (
+              <p className="text-[11px] text-slate-500">
+                <span className="text-amber-500">
+                  {ratingStars(step.rating)}
+                </span>{" "}
+                The tester rated this step {RATING_WORDS[step.rating]}.
+              </p>
             )}
           </div>
         </div>

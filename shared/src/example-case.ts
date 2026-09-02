@@ -17,9 +17,9 @@ import { CURRENT_FORMAT_VERSION } from "./markdown.js";
  * It runs against a public practice site rather than a page bundled here,
  * because the thing being demonstrated is the panel acting on a real page in
  * a real tab — a local fixture would demonstrate a different product.
- * `%BASE_URL%` is a variable so that a tester who cannot reach that site (or
+ * `%SITE%` is a domain so that a tester who cannot reach that site (or
  * would rather not) can point the whole case somewhere else from the case
- * screen without editing it.
+ * screen — or from an environment — without editing it.
  */
 export const EXAMPLE_CASE_TITLE = "Enloop example: log in and out of a demo app";
 
@@ -38,13 +38,15 @@ It runs against the-internet.herokuapp.com, a public practice site — no
 account of yours is involved, and the last step logs out again, so you can
 run it as many times as you like.
 
-# Variables
+# Domains
 
-## BASE_URL
-The site this case runs against. Every %BASE_URL% in the case is replaced
-with this value when the run starts, so pointing it elsewhere moves the
-whole case.
+## SITE
+The site this case runs against. Every %SITE% in the case is replaced with
+this address when the run starts, so pointing it elsewhere — here, or by
+picking an environment — moves the whole case.
 Default: https://the-internet.herokuapp.com
+
+# Variables
 
 ## RUN_TAG
 A fresh value every run, to show what a generator does. It has no default:
@@ -61,7 +63,7 @@ Generator: random-string 6
 # Steps
 
 ## Open the login page
-Where: %BASE_URL%/login
+Where: %SITE%/login
 Selector: #username
 Kind: quick
 Click **Go** next to *Where* above. It navigates the tab you are looking at
@@ -73,12 +75,12 @@ front of you.
 - **✨ Highlight** scrolls to the Username field and flashes it amber.
 
 ### Note
-\`Where:\` here is \`%BASE_URL%/login\` rather than a bare \`/login\`. The
-variable is substituted before the run starts, so Go knows the whole address
+\`Where:\` here is \`%SITE%/login\` rather than a bare \`/login\`. The
+domain is substituted before the run starts, so Go knows the whole address
 instead of having to guess an origin from whatever tab happens to be open.
 
 ## Type the username
-Where: %BASE_URL%/login
+Where: %SITE%/login
 Selector: #username
 Kind: quick
 Put "**tomsmith**" in the Username field.
@@ -103,7 +105,7 @@ Backticks mean the opposite: something to *find* on screen, like
 prose.
 
 ## Type the password
-Where: %BASE_URL%/login
+Where: %SITE%/login
 Selector: #password
 Selector: form input[type="password"]
 Kind: quick
@@ -121,13 +123,13 @@ which one matched. The link above is the other way to write a Highlight —
 mid-sentence.
 
 ## Log in
-Where: %BASE_URL%/login
+Where: %SITE%/login
 Selector: button[type="submit"]
 Kind: quick
 Click the \`Login\` button.
 
 ### Expected
-- The page moves to %BASE_URL%/secure.
+- The page moves to %SITE%/secure.
 - A green flash message reports a successful login.
 
 ## Check the flash message
@@ -150,7 +152,7 @@ fails the step. Nothing else about the step changes — it still has a title,
 and you can still override its result by hand.
 
 ## Read the secure area
-Where: %BASE_URL%/secure
+Where: %SITE%/secure
 Selector: #content h2
 Read the heading of the page you landed on.
 
@@ -164,7 +166,7 @@ case is written once, in full, and the marks pick out the core path worth
 running during development.
 
 ## Check the footer credit
-Where: %BASE_URL%/secure
+Where: %SITE%/secure
 Selector: #page-footer a
 Kind: extra
 Scroll to the bottom of the page and read the footer.
@@ -212,7 +214,7 @@ always follow, and writes the standing ones into the project's rules file.
 An untagged comment stays in the report for a human.
 
 ## Log out
-Where: %BASE_URL%/secure
+Where: %SITE%/secure
 Selector: a[href="/logout"]
 Kind: quick
 Click **Logout**.

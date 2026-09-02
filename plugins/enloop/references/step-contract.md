@@ -30,10 +30,10 @@ Bad — seven actions, one verdict:
 Good — the arrival is a prerequisite, and each action gets its own verdict:
 
 > # Prerequisites
-> - Open %BASE_URL%/admin/integrations
+> - Open %APP%/admin/integrations
 >
 > ## Open the new-connection form
-> Where: %BASE_URL%/admin/integrations
+> Where: %APP%/admin/integrations
 > Selector: button[data-testid="add-connection"]
 > Click `Add connection`.
 >
@@ -42,7 +42,7 @@ Good — the arrival is a prerequisite, and each action gets its own verdict:
 >   `Client Secret` and `Endpoint URL` fields.
 >
 > ## Save the new connection
-> Where: %BASE_URL%/admin/integrations
+> Where: %APP%/admin/integrations
 > Selector: button[data-testid="save-connection"]
 > Click `Save`.
 >
@@ -61,27 +61,53 @@ numbered list of more than about three keystroke-level actions, split it.
 A tester should never have to know where something lives. *Navigate to the
 Reports page* makes them recall a menu path or hunt for it; an address
 makes them click. **Every place a case names carries its address** — in a
-`Where:` line, in a prerequisite, or as a link — and for the app under
-test, the address is always written in one form:
+`Where:` line, in a prerequisite, or as a link — and every address is a
+declared **domain** plus a route:
 
-    %BASE_URL%/admin/reports
+    %APP%/admin/reports
 
-with `BASE_URL` declared in every case:
+with the domains the case touches declared under `# Domains`, the first
+being the main one:
 
-    ## BASE_URL
-    The deployment under test — whichever one you have open.
-    Generator: page-origin
+    # Domains
+
+    ## APP
+    The web app under test.
+    Match: app.*.example.test
     Default: https://staging.example.test
 
-One form, three readers. A tester already in the app gets their own tab's
-origin — the generator. A blank tab, the shared viewer page and a
-downloaded file get the project's usual environment — the default. And the
-steps themselves name no environment, so the case moves between
-deployments without being edited. Another system's page keeps its own
-literal absolute URL or a per-run variable (`%CONTACT_URL%`). A bare
-route — `Where: /admin/reports` — is the legacy form: it resolves only
-against a tab already on the app, and the linter says so. Prose alone is
-for places that genuinely have no address.
+    ## ADMIN
+    The admin console.
+    Match: admin.*.example.test
+    Default: https://admin.staging.example.test
+
+One form, three readers. A tester who picked an **environment** before the
+run — local, staging, prod, a customer's instance, recorded once in the
+folder's `environments.json` — gets that environment's address for every
+domain. A tester who picked none gets their own open tab for the domain
+whose `Match:` fits it. A blank tab, the shared viewer page and a
+downloaded file get the `Default:` — the project's usual deployment. And
+the steps themselves name no deployment, so the case moves between them
+without being edited.
+
+A scenario may cross domains — *place the order at `%APP%/orders`, then
+check the audit trail at `%ADMIN%/audit`* — and each step's `Where:` says
+which. Declare every deployment the case touches, one entry each: a second
+domain is never "the same app, different subdomain" written as a literal.
+Take the names and default addresses from the project's environments
+(`enloop-case.mjs environments <folder> "<project>"`); when the project has
+none recorded, derive them from the repo — `.env.example`, deploy config,
+the README — and record them there with the same command, so the next case
+finds them. Never ask the user for an address.
+
+A page of a system the case does not otherwise name — a third-party
+console, a mailbox — keeps its literal absolute URL. A bare route —
+`Where: /admin/reports` — is the legacy form: the panel resolves it against
+the main domain and nothing else can, and the linter says so. Prose alone
+is for places that genuinely have no address. `BASE_URL` declared as a
+variable with `Generator: page-origin` is the pre-domains spelling: still
+parsed, flagged by the linter, and rewritten as the main domain by the
+next sweep.
 
 ### 2a. The entry point is a prerequisite, not a step
 
@@ -91,7 +117,7 @@ its first Pass/Fail on something that was true before the run began. Put it
 where "what had to be true before step 1" already lives:
 
     # Prerequisites
-    - Open %BASE_URL%/admin/reports
+    - Open %APP%/admin/reports
 
 Step 1 is then the first thing the case actually verifies, and its `Where:`
 still names the route — so a tester who wasn't there after all gets the Go
@@ -101,7 +127,7 @@ control anyway, one line down.
 rendered Markdown with no page behind it, so a bare `/admin/reports` has no
 origin to resolve against: it points at the side panel itself, and at the
 repo host when the file is read on GitHub. The standard
-`%BASE_URL%/admin/reports` substitutes to an absolute URL before anything
+`%APP%/admin/reports` substitutes to an absolute URL before anything
 renders; a literal absolute URL is for another system's page.
 
 Keep navigation as a step only when arriving at the page *is* what is under
@@ -115,7 +141,7 @@ them infer location from prose, and never let a step begin somewhere the
 previous step didn't leave them.
 
     ## Sync the customer's events
-    Where: %BASE_URL%/admin/sync-console
+    Where: %APP%/admin/sync-console
     Selector: #sync-events-btn
 
 **Write it as an address whenever the place has one.** A `Where:` that
@@ -124,7 +150,7 @@ substitutes to an absolute URL, or a local address like
 the tab the run is using — one click instead of retyping a path. Prose
 gets nothing.
 
-For the app under test that address is `Where: %BASE_URL%/admin/sync` —
+For the app under test that address is `Where: %APP%/admin/sync` —
 rule 2's one form, substituted before the run starts, so Go works from a
 blank tab and the viewer has a real URL to link. A bare `/admin/sync`
 resolves only against whatever page the tester already has open, and
@@ -155,7 +181,7 @@ When prose names a *second* place, link it:
     Open [the contact record](%CONTACT_URL%) in a second tab.
     Confirm the job cleared in [the worker dashboard](https://jobs.example.com/queues).
 
-`%BASE_URL%`-built or literal absolute, for the same reason as 2a. And a
+`%APP%`-built or literal absolute, for the same reason as 2a. And a
 fragment href is not a page link: `[the Sync button](#sync-btn)` is a
 Highlight control, per rule 3.
 
@@ -167,7 +193,7 @@ login, a prerequisite names the account, its role in the app's own words,
 and where the credential lives:
 
     # Prerequisites
-    - Logged in at %BASE_URL%/login as %QA_EMAIL% (role `Administrator`) —
+    - Logged in at %APP%/login as %QA_EMAIL% (role `Administrator`) —
       password: vault item `staging QA bot`
 
 **The credential's location is a place, not a person.** A vault item, a
@@ -247,7 +273,7 @@ anyone writing a second case.
 Mark a step when a failure there means the feature does not work at all:
 
     ## Sync the contact
-    Where: %BASE_URL%/admin/sync-console
+    Where: %APP%/admin/sync-console
     Kind: quick
     Selector: #sync-crm-mailer-btn
     Click `Sync CRM → Mailer`.
@@ -276,7 +302,7 @@ minor increment under the ordinary step before it (2.1, 2.2), and starts the
 run already marked skipped — the tester opts in by giving it a verdict.
 
     ## Create account
-    Where: %BASE_URL%/accounts
+    Where: %APP%/accounts
     Selector: [data-testid="create-account"]
     ...
 
@@ -332,14 +358,27 @@ not. Where a duration matters, give a number.
 check exists, what bug it guards, a caveat about flaky data. It is
 rendered dimmed and is explicitly skippable.
 
-## 6. Test data is resolved before the run, never during it
+## 6. Test data is resolved before the run, never during it — and by Enloop, never by asking
 
 Every variable in `# Variables` gets one of:
 
 - a `Default:` literal, or
 - a `Generator:` line, or
-- a description saying **exactly how to obtain the value**, including
-  where to look.
+- a value in the project's environments — its name recorded in
+  `environments.json` with a value per deployment, because a QA account
+  on staging is not the QA account on prod.
+
+Nothing else passes. A description telling the tester where to look is a
+question with extra steps; a variable left for the user to fill in at
+authoring time is a question asked earlier. **You resolve it**: read the
+fixture, the seed, the `.env.example`, the rules file's *Accounts and
+data* section, and write what you found. When a value genuinely differs
+per deployment, record it per environment
+(`enloop-case.mjs environments <folder> "<project>" --variable NAME --env
+staging --set NAME=value`) and say in the report which environments still
+have it empty. When a value cannot be known from the repo at all, the case
+still gets a `Default:` — the best candidate you found, marked in the
+report as an assumption — never a blank.
 
 Bad:
 
@@ -347,12 +386,11 @@ Bad:
 > Name or domain of a company that exists in the CRM but has no matching
 > local Organization record yet.
 
-That is a research task, mid-run. Good:
+That is a research task, mid-run — and the linter rejects it. Good:
 
 > ## TEST_COMPANY_QUERY
-> Name or domain of a CRM company with no matching local Organization.
-> To find one: Sync Console → search `Company` → pick any result whose
-> local column reads `(not found)`. Record it here before starting the run.
+> A CRM company with no matching local Organization — seeded by
+> `fixtures/crm.yml` as the one company without an `organization_id`.
 > Default: Acme Corp
 
 ### Every literal a tester types is quoted and bolded
@@ -411,6 +449,46 @@ that can't be run twice in a row is a case that will be run once.
 
 ---
 
+## 9. Group steps that prove one thing together
+
+A case that covers a broad change — "the email refactoring" — is a set of
+concerns, not one list: log in, restore a password, change the address.
+Write each concern as a **group**: a `# Steps: <title>` section that opens
+with its **goal**, one or two sentences on what the steps under it prove
+together, before the first `## ` step.
+
+```markdown
+# Steps: Restore password
+
+The reset mail reaches the migrated address and its link signs the user in.
+
+## Request a reset link
+Where: %APP%/forgot
+...
+```
+
+- The goal is required — a heading with no goal is a label, and the
+  linter refuses it. It says what the group establishes in the big
+  picture, not what the steps do; the steps already say that.
+- Group titles name the concern (`Log in`, `Restore password`), not the
+  ticket or the screen. One heading per group: a title used twice is an
+  error, since a group's steps sit together.
+- Groups are headings over one list. Steps keep numbering through them,
+  every step still meets rules 1–8, `Kind: quick` and `Kind: extra` are
+  still per step, and a quick run drops a group with no quick step in it.
+- A plain `# Steps` holds what belongs to no concern — shared setup before
+  the first group, cleanup after the last. Use it rather than forcing a
+  fixture reset into "Log in".
+- Do not group a case with one concern. Every step in the one group means
+  the group is the case; the linter warns, and the description already
+  carries the goal.
+
+The reports lean on this: the run screen heads each group with its goal
+and tally, and `report.md` / `feedback.md` open with a **By group** list.
+That list is what tells a reader "restore password is broken, log in is
+fine" — and it can only say that if the groups were drawn around real
+concerns.
+
 ## Checking a finished case
 
 Two lists, and the split is what makes this cheap. **The validator checks the
@@ -418,14 +496,17 @@ mechanical half** — run it, read what it says, and do not re-walk those items
 by hand:
 
 > missing or prose `Where:` · a bare-route `Where:` · addresses with no
-> `BASE_URL` declared, or `BASE_URL` without a default · missing
+> `# Domains` declared, a domain without a `Default:`, a default that is
+> not an origin, a name declared as both domain and variable, `BASE_URL`
+> still written as a variable · missing
 > `Selector:` · structural selectors ·
 > "then" in instructions · instructions restating the navigation · a step 1
 > spent on arriving · no entry point in `# Prerequisites` · nothing says
 > who the tester is in the app · a bare route in a
 > prerequisite · `### Expected` missing, prose rather than bullets, carrying
-> rationale, or using an unmeasurable adjective · a variable with no way to
-> get its value · an undeclared `%NAME%` · a missing `@project` or title
+> rationale, or using an unmeasurable adjective · a variable with no
+> `Default:`, no `Generator:` and no environment providing it · an
+> undeclared `%NAME%` · a missing `@project` or title
 > prefix · `@version` drift · a `Kind: quick` subset that does not parse to
 > the marked steps
 
@@ -438,7 +519,9 @@ a judgement about the case. Check every step against them:
 - [ ] A screen, record or external page is named in prose with no address
       beside it, where one exists
 - [ ] An address in a Markdown link is a bare route rather than an absolute
-      URL or `%BASE_URL%/…`
+      URL or `%APP%/…`
+- [ ] A step points at a second deployment (an admin console, another
+      tenant) through a literal URL instead of a declared domain
 - [ ] A value the tester must type is not written as `"**value**"`
 - [ ] A visible label is marked up as a value, or a typed value is in
       backticks
@@ -451,6 +534,8 @@ a judgement about the case. Check every step against them:
       or is listed without the command that starts it
 - [ ] A prerequisite names an account whose credential lives with a person
       to ask, not in a place to look
+- [ ] A variable's value was asked of the user, or left for the tester,
+      rather than read from the repo, the rules file or the environments
 - [ ] A step lists fallback `Selector:` lines that are near-duplicates of
       each other, or puts the loosest one first
 - [ ] The run leaves state behind with no cleanup step and no `### Note`

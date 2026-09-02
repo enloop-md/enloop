@@ -1,10 +1,12 @@
 import {
   agentAnswerMetaSchema,
   agentQuestionAckSchema,
+  agentQuestionProgressSchema,
   agentCommandRequestSchema,
   agentCommandStatusSchema,
   agentQuestionFileSchema,
   agentWatcherSchema,
+  AGENT_PROTOCOL_VERSION,
   buildCaptureDigest,
   buildRunSource,
   checkRunCompat,
@@ -29,7 +31,8 @@ import {
   renderFreeRunFeedback,
   renderRunFeedback,
   renderRunReport,
-  resolveVariableValues,
+  resolveRunValues,
+  mainDomainName,
   runFileSchema,
   stepComments,
   stepNumberLabels,
@@ -44,8 +47,8 @@ import {
   type AgentCommandRequest,
   type AgentCommandSourceField,
   type AgentQuestion,
+  type AgentPresence,
   type AgentQuestionFile,
-  type AgentWatcherKind,
   type CapturedEntry,
   type CaseBookkeeping,
   type CompatResult,
@@ -118,6 +121,7 @@ const QUESTION_SCREENSHOT_FILE = "screenshot.png";
 const QUESTION_PAGE_FILE = "page.html";
 /** Agent-written the moment a pass sees the question — "working on it". */
 const QUESTION_ACK_FILE = "ack.json";
+const QUESTION_PROGRESS_FILE = "progress.json";
 const ANSWER_FILE = "answer.md";
 const ANSWER_META_FILE = "answer.json";
 const COMMAND_REQUEST_FILE = "request.json";
@@ -236,18 +240,15 @@ function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
       startedAt: null,
       finishedAt: null,
       ...ZERO_CAPTURE_COUNTS,
+      rating: null,
     };
+    // The definition is spread rather than copied field by field: `where`
+    // and `note` are optional on the schema, so a list that forgot them
+    // typechecked and the panel silently lost the address and the note.
+    const { id: _id, ...definition } = step;
     return {
+      ...definition,
       stepId: step.id,
-      order: step.order,
-      title: step.title,
-      type: step.type,
-      instructions: step.instructions,
-      expected: step.expected,
-      script: step.script,
-      selectors: step.selectors,
-      quick: step.quick,
-      extra: step.extra,
       status: state.status,
       comments: state.comments,
       draft: state.draft,
@@ -258,6 +259,7 @@ function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
       consoleWarnings: state.consoleWarnings,
       networkFailures: state.networkFailures,
       requests: state.requests,
+      rating: state.rating,
     };
   });
   return {
@@ -270,10 +272,13 @@ function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
     tier: runFile.tier,
     environment: runFile.environment,
     consoleInReport: runFile.consoleInReport,
+    rating: runFile.rating,
     startedAt: runFile.startedAt,
     finishedAt: runFile.finishedAt,
     dependencies: doc.dependencies,
     prerequisites: doc.prerequisites,
+    groups: doc.groups,
+    mainOrigin: runFile.variables[mainDomainName(doc) ?? "BASE_URL"] ?? "",
     swaps: runFile.swaps,
     steps,
   };
@@ -650,7 +655,7 @@ export class FsaDataStore implements DataStore {
   }> {
     const rawMarkdown = await this.getRunSource(testCaseId, version, tier);
     const declared = parseCaseDocument(rawMarkdown, { version, createdAt: nowIso() });
-    const resolvedValues = resolveVariableValues(declared.variables, variableValues);
+    const resolvedValues = resolveRunValues(declared, variableValues);
     const substitutedMarkdown = substituteVariables(rawMarkdown, resolvedValues);
     const doc = parseCaseDocument(substitutedMarkdown, { version, createdAt: nowIso() });
     return { substitutedMarkdown, doc, declared, resolvedValues };
@@ -690,6 +695,7 @@ export class FsaDataStore implements DataStore {
       tier,
       environment,
       consoleInReport: false,
+      rating: null,
       startedAt: now,
       finishedAt: null,
       variables: resolvedValues,
@@ -706,6 +712,7 @@ export class FsaDataStore implements DataStore {
         startedAt: null,
         finishedAt: null,
         ...ZERO_CAPTURE_COUNTS,
+        rating: null,
       })),
     };
     await writeJson(runDir, RUN_FILE, runFile);
@@ -739,7 +746,7 @@ export class FsaDataStore implements DataStore {
   async updateRun(
     testCaseId: string,
     runId: string,
-    patch: { comment?: string; consoleInReport?: boolean },
+    patch: { comment?: string; consoleInReport?: boolean; rating?: number | null },
   ): Promise<Run> {
     const runDir = await this.getRunDir(testCaseId, runId);
     const [{ text: rawMarkdown }, runFile] = await Promise.all([
@@ -750,6 +757,8 @@ export class FsaDataStore implements DataStore {
       ...runFile,
       comment: patch.comment ?? runFile.comment,
       consoleInReport: patch.consoleInReport ?? runFile.consoleInReport,
+      // `null` is a value here — clearing the stars — so `??` would be wrong.
+      rating: patch.rating === undefined ? runFile.rating : patch.rating,
     };
     await writeJson(runDir, RUN_FILE, updated);
 
@@ -835,6 +844,18 @@ export class FsaDataStore implements DataStore {
     if (feedback) await writeTextFile(runDir, FEEDBACK_FILE, feedback);
 
     return composeRun(doc, updated);
+  }
+
+  async getRunFeedback(testCaseId: string, runId: string): Promise<string | null> {
+    const runDir = await this.getRunDir(testCaseId, runId);
+    try {
+      return (await readTextFile(runDir, FEEDBACK_FILE)).text;
+    } catch (e) {
+      // finishRun writes the file only when there is something in it, so a
+      // missing file is the ordinary "clean pass" case, not an error.
+      if (e instanceof NotFoundError) return null;
+      throw e;
+    }
   }
 
   private async getRunDir(
@@ -989,7 +1010,7 @@ export class FsaDataStore implements DataStore {
     }
     if (draft.pageHtml) await writeTextFile(qDir, QUESTION_PAGE_FILE, draft.pageHtml);
     await writeJson(qDir, QUESTION_FILE, question);
-    return { ...question, pickedUpAt: null, pickedUpBy: null, answer: null };
+    return { ...question, pickedUpAt: null, pickedUpBy: null, progress: null, answer: null };
   }
 
   async listQuestions(testCaseId: string, runId: string): Promise<AgentQuestion[]> {
@@ -1003,8 +1024,9 @@ export class FsaDataStore implements DataStore {
       if (!question || question.testCaseId !== testCaseId || question.runId !== runId) continue;
       // The agent writes answer.md first and answer.json second; only the
       // pair counts as answered, so a half-written answer is never shown.
-      const [ack, markdown, meta] = await Promise.all([
+      const [ack, progress, markdown, meta] = await Promise.all([
         tryReadJson(qDir, QUESTION_ACK_FILE, agentQuestionAckSchema),
+        tryReadJson(qDir, QUESTION_PROGRESS_FILE, agentQuestionProgressSchema),
         tryReadTextFile(qDir, ANSWER_FILE),
         tryReadJson(qDir, ANSWER_META_FILE, agentAnswerMetaSchema),
       ]);
@@ -1012,6 +1034,7 @@ export class FsaDataStore implements DataStore {
         ...question,
         pickedUpAt: ack?.pickedUpAt ?? null,
         pickedUpBy: ack?.by?.kind ?? null,
+        progress: progress?.text.trim() ? { text: progress.text.trim(), at: progress.at } : null,
         answer: markdown && meta ? { markdown: markdown.text, meta } : null,
       });
     }
@@ -1142,7 +1165,7 @@ export class FsaDataStore implements DataStore {
     // A run recorded before variable snapshots existed cannot prove the
     // candidate composes to the same values its case.md was frozen with.
     const verdict: CompatResult =
-      declared.variables.length > 0 && Object.keys(runFile.variables).length === 0
+      declared.variables.length + declared.domains.length > 0 && Object.keys(runFile.variables).length === 0
         ? {
             ok: false,
             reasons: ["this run predates variable snapshots, so a candidate cannot be composed identically"],
@@ -1208,24 +1231,26 @@ export class FsaDataStore implements DataStore {
     return composeRun(doc, updated);
   }
 
-  async agentPresence(_testCaseId: string): Promise<AgentWatcherKind | null> {
+  async agentPresence(_testCaseId: string): Promise<AgentPresence | null> {
     const agentDir = await tryGetDir(this.root, AGENT_DIR);
     const watchersDir = agentDir && (await tryGetDir(agentDir, WATCHERS_DIR));
     if (!watchersDir) return null;
-    let present: AgentWatcherKind | null = null;
+    let present: AgentPresence | null = null;
     for await (const [name, handle] of watchersDir.entries()) {
       if (handle.kind !== "file") continue;
       const file = await tryReadTextFile(watchersDir, name);
       if (!file || Date.now() - Date.parse(file.lastModified) > WATCHER_FRESH_MS) continue;
-      let kind: AgentWatcherKind;
+      let watcher;
       try {
-        kind = agentWatcherSchema.parse(JSON.parse(file.text)).kind;
+        watcher = agentWatcherSchema.parse(JSON.parse(file.text));
       } catch {
         continue;
       }
+      // A file without `protocol` predates versioning, which was wire v1.
+      const presence = { kind: watcher.kind, protocol: watcher.protocol ?? 1 };
       // claude-code wins the label when both are fresh — it answers first.
-      if (kind === "claude-code") return kind;
-      present = kind;
+      if (presence.kind === "claude-code") return presence;
+      present = presence;
     }
     return present;
   }
@@ -1233,6 +1258,18 @@ export class FsaDataStore implements DataStore {
   async touchHeartbeat(): Promise<void> {
     const agentDir = await tryGetDir(this.root, AGENT_DIR);
     if (!agentDir) return;
-    await writeJson(agentDir, HEARTBEAT_FILE, { touchedAt: nowIso() });
+    // The body says who the panel is, so a server can flag a protocol
+    // mismatch; the mtime stays the liveness signal.
+    let extension = "";
+    try {
+      extension = chrome.runtime.getManifest().version;
+    } catch {
+      // Not running as an extension (tests) — version stays blank.
+    }
+    await writeJson(agentDir, HEARTBEAT_FILE, {
+      touchedAt: nowIso(),
+      protocol: AGENT_PROTOCOL_VERSION,
+      extension,
+    });
   }
 }

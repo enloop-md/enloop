@@ -13,10 +13,20 @@
 export { lintCase } from "./lint.js";
 export type { LintResult, LintFinding } from "./lint.js";
 export { newTestCaseId } from "./id.js";
-export { CURRENT_FORMAT_VERSION, stepNumberLabels } from "./markdown.js";
+export { CURRENT_FORMAT_VERSION, parseCaseDocument, stepNumberLabels } from "./markdown.js";
+export { runFileSchema } from "./schemas.js";
+export { describeRating, isExemplaryRating, isPoorRating, ratingStars } from "./rating.js";
 export {
   compareVersionIds,
   nextMajorId,
   nextMinorId,
   versionIdFromFileName,
 } from "./version-id.js";
+export { AGENT_PROTOCOL_VERSION } from "./schemas.js";
+export {
+  environmentsFileSchema,
+  emptyEnvironments,
+  environmentsForProject,
+  missingEnvironmentValues,
+  newEnvironmentId,
+} from "./environments.js";

@@ -32,16 +32,19 @@ export function looksNavigable(where: string): boolean {
 /**
  * The absolute URL a `Where:` names, or a reason it cannot be resolved.
  *
- * A bare path like `/admin/sync-console` is only half an address; the other
- * half is whichever origin the tester is already on. That is the right guess
- * far more often than not — they are testing an app and have it open — but
- * it is a guess, so the caller shows the result before acting on it, and a
- * case that wants certainty writes an absolute `Where:` (or builds one from
- * a `%BASE_URL%` variable, which is substituted before the run starts).
+ * A bare path like `/admin/sync-console` is only half an address. The other
+ * half is the run's main domain — the first entry of the case's `# Domains`,
+ * resolved when the run started — when the case declares one, which is
+ * certain; otherwise whichever origin the tester is already on, which is
+ * the right guess far more often than not but is a guess, so the caller
+ * shows the result before acting on it. A case that wants certainty writes
+ * `Where: %APP%/admin/x`, which substitutes to an absolute URL before the
+ * run starts and needs neither.
  */
 export function resolveNavigationTarget(
   where: string,
   pageUrl: string | undefined,
+  mainOrigin = "",
 ): { url: string } | { error: string } {
   const value = where.trim();
 
@@ -49,6 +52,14 @@ export function resolveNavigationTarget(
   if (LOCAL_HOST.test(value)) return { url: `http://${value}` };
 
   if (value.startsWith("/")) {
+    const base = mainOrigin.trim();
+    if (base) {
+      try {
+        return { url: new URL(value, LOCAL_HOST.test(base) ? `http://${base}` : base).toString() };
+      } catch {
+        return { error: `Could not build a URL from ${base} and ${value}.` };
+      }
+    }
     if (!pageUrl || !ABSOLUTE.test(pageUrl)) {
       return {
         error:
@@ -76,8 +87,8 @@ export async function navigateActiveTab(url: string): Promise<void> {
 
 /** Resolves against the active tab and navigates it. Returns the URL opened,
  * or throws with a message meant to be shown to the tester. */
-export async function openWhere(where: string): Promise<string> {
-  const resolved = resolveNavigationTarget(where, await getActivePageUrl());
+export async function openWhere(where: string, mainOrigin = ""): Promise<string> {
+  const resolved = resolveNavigationTarget(where, await getActivePageUrl(), mainOrigin);
   if ("error" in resolved) throw new Error(resolved.error);
   await navigateActiveTab(resolved.url);
   return resolved.url;

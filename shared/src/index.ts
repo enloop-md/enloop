@@ -6,6 +6,7 @@ export * from "./markdown.js";
 export * from "./example-case.js";
 export * from "./variables.js";
 export * from "./environments.js";
+export * from "./rating.js";
 export * from "./selector-text.js";
 export * from "./viewer-link.js";
 export * from "./storage-id.js";

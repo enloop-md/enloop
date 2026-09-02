@@ -2,10 +2,11 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { questionsTick, resolveBackend } from "./answer.js";
 import { commandsTick } from "./commands.js";
-import { HELP, loadConfig } from "./config.js";
+import { DAEMON_VERSION, HELP, loadConfig } from "./config.js";
+import { AGENT_PROTOCOL_VERSION } from "@tcm/shared";
 import { log, warn } from "./log.js";
 import { runSetup } from "./setup.js";
-import { touchWatcher } from "./store.js";
+import { extensionProtocol, touchWatcher } from "./store.js";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -42,6 +43,11 @@ async function main(): Promise<void> {
   );
   log(`a fresh Claude Code serve pass always wins questions; this daemon defers and yields`);
 
+  // Warn once per folder when the extension's heartbeat declares a
+  // different wire version — one side is out of date, and finding out via
+  // a subtly wrong answer is the worst way.
+  const protocolWarned = new Set<string>();
+
   let stopping = false;
   process.on("SIGINT", () => {
     stopping = true;
@@ -51,7 +57,19 @@ async function main(): Promise<void> {
   do {
     for (const dataDir of cfg.dataDirs) {
       try {
-        touchWatcher(dataDir, cfg.watcherId, cfg.host);
+        touchWatcher(dataDir, cfg.watcherId, cfg.host, DAEMON_VERSION);
+        if (!protocolWarned.has(dataDir)) {
+          const ext = extensionProtocol(dataDir);
+          if (ext && ext.protocol !== AGENT_PROTOCOL_VERSION) {
+            protocolWarned.add(dataDir);
+            warn(
+              `${dataDir}: extension ${ext.extension} speaks channel protocol v${ext.protocol}, ` +
+                `this daemon speaks v${AGENT_PROTOCOL_VERSION} — update the older side`,
+            );
+          } else if (ext) {
+            protocolWarned.add(dataDir);
+          }
+        }
         if (!cfg.noCommands) await commandsTick(dataDir, cfg);
         if (!cfg.commandsOnly) await questionsTick(dataDir, backend, cfg);
       } catch (e) {

@@ -2,7 +2,9 @@ import type { z } from "zod";
 import type {
   stepTypeSchema,
   stepSchema,
+  stepGroupSchema,
   variableGeneratorSchema,
+  testCaseDomainSchema,
   testCaseVariableSchema,
   testCaseVersionSchema,
   caseBookkeepingSchema,
@@ -23,6 +25,7 @@ import type {
   runSwapSchema,
   agentQuestionFileSchema,
   agentQuestionAckSchema,
+  agentQuestionProgressSchema,
   agentWatcherSchema,
   agentWatcherKindSchema,
   caseContextSchema,
@@ -35,8 +38,11 @@ import type {
 export type StepType = z.infer<typeof stepTypeSchema>;
 /** One step, parsed out of a case document's `## Steps` section. */
 export type Step = z.infer<typeof stepSchema>;
+export type StepGroup = z.infer<typeof stepGroupSchema>;
 
 export type VariableGenerator = z.infer<typeof variableGeneratorSchema>;
+/** One domain, parsed out of a case document's `# Domains` section. */
+export type TestCaseDomain = z.infer<typeof testCaseDomainSchema>;
 /** One variable, parsed out of a case document's `# Variables` section. */
 export type TestCaseVariable = z.infer<typeof testCaseVariableSchema>;
 
@@ -84,12 +90,20 @@ export type RunSwap = z.infer<typeof runSwapSchema>;
 export type AgentQuestionFile = z.infer<typeof agentQuestionFileSchema>;
 /** On-disk `ack.json` — a serve pass has the question and is working. */
 export type AgentQuestionAck = z.infer<typeof agentQuestionAckSchema>;
+export type AgentQuestionProgress = z.infer<typeof agentQuestionProgressSchema>;
 /** A channel server's kind — Claude Code loop or the enloopd daemon. */
 export type AgentWatcherKind = z.infer<typeof agentWatcherKindSchema>;
 /** On-disk `test-cases/<id>/context.json` — authoring provenance. */
 export type CaseContext = z.infer<typeof caseContextSchema>;
 /** On-disk `agent/watchers/<id>.json` — server presence for arbitration. */
 export type AgentWatcher = z.infer<typeof agentWatcherSchema>;
+
+/** What the panel learns from a fresh watcher: who serves, and which wire
+ * version they speak (absent in the file = pre-versioning = 1). */
+export interface AgentPresence {
+  kind: AgentWatcherKind;
+  protocol: number;
+}
 /** On-disk `answer.json` — presence marks the question answered. */
 export type AgentAnswerMeta = z.infer<typeof agentAnswerMetaSchema>;
 /** Which part of the case an agent command was quoted from. */
@@ -107,6 +121,9 @@ export interface AgentQuestion extends AgentQuestionFile {
   /** Which kind of server claimed it — null while unclaimed, and for acks
    * written by skill versions that predate `by`. */
   pickedUpBy: AgentWatcherKind | null;
+  /** The server's latest progress line (`progress.json`), null until it
+   * writes one. Meaningful only while `answer` is null. */
+  progress: { text: string; at: string } | null;
   answer: { markdown: string; meta: AgentAnswerMeta } | null;
 }
 

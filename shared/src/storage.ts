@@ -4,8 +4,8 @@ import type { CompatResult } from "./run-compat.js";
 import type {
   AgentCommand,
   AgentCommandSourceField,
+  AgentPresence,
   AgentQuestion,
-  AgentWatcherKind,
   FreeRun,
   FreeRunFile,
   Run,
@@ -82,13 +82,15 @@ export interface RunStore {
   ): Promise<Run>;
   updateStep(testCaseId: string, runId: string, stepId: string, patch: StepPatch): Promise<Run>;
   /** Run-level fields that are not step state — the tester's comment on the
-   * run as a whole, and their decision about attaching captured output to the
-   * report. Saved as they are made rather than handed to `finishRun`, so
-   * closing the panel mid-sentence does not lose either. */
+   * run as a whole, their decision about attaching captured output to the
+   * report, and their star rating of the case. Saved as they are made rather
+   * than handed to `finishRun`, so closing the panel mid-sentence does not
+   * lose any of them. `rating: null` clears a rating; leaving it out keeps
+   * the one there. */
   updateRun(
     testCaseId: string,
     runId: string,
-    patch: { comment?: string; consoleInReport?: boolean },
+    patch: { comment?: string; consoleInReport?: boolean; rating?: number | null },
   ): Promise<Run>;
   /**
    * Appends what the page printed while the run was in progress — see
@@ -100,6 +102,14 @@ export interface RunStore {
    */
   appendConsole(testCaseId: string, runId: string, entries: CapturedEntry[]): Promise<void>;
   finishRun(testCaseId: string, runId: string, status: RunStatus): Promise<Run>;
+  /**
+   * The `feedback.md` a finished run left behind, verbatim, or `null` when
+   * the run had nothing to hand on (or has not finished yet). Exists so a
+   * tester with no agent watching the folder — a QA engineer on a machine
+   * with no Claude Code — can still copy or save the handoff and pass it to
+   * whoever has one.
+   */
+  getRunFeedback(testCaseId: string, runId: string): Promise<string | null>;
 }
 
 /** Everything that reads/writes free runs — unscripted verification
@@ -194,7 +204,7 @@ export interface AgentChannelStore {
    * enloopd daemon. `claude-code` wins the label when both are fresh —
    * that is who answers questions first. Null = nobody is watching, and
    * the panel should show how to connect a server. */
-  agentPresence(testCaseId: string): Promise<AgentWatcherKind | null>;
+  agentPresence(testCaseId: string): Promise<AgentPresence | null>;
   /** Marks the panel alive in every connected folder that has an `agent/`
    * dir (never creates one). The watching session kills the scripts it
    * spawned once this goes stale. */
