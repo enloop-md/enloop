@@ -17,8 +17,13 @@ export function buildBrief(opts: {
   doc: TestCaseVersion | null;
   runFile: RunFile | null;
   canPatch: boolean;
+  /** How the model reports what it is doing while it works: through a
+   * `progress` tool (api backend), by writing `progress.json` itself
+   * (CLI backends, which have file tools and nothing else), or not at all. */
+  progress?: "tool" | "file" | null;
 }): string {
   const { question, qDir, runDirPath, repo, doc, runFile, canPatch } = opts;
+  const progressFile = path.join(qDir, "progress.json");
   const step = doc?.steps.find((s) => s.id === question.stepId);
   const executed =
     runFile?.steps
@@ -54,13 +59,28 @@ export function buildBrief(opts: {
     `  with file:line where it helps. Do not speculate; if the source`,
     `  contradicts the step, say so plainly.`,
     ``,
+    opts.progress
+      ? `While you work the tester sees one status line under their question.` +
+        ` Keep it moving: whenever what you are doing changes, report it in one` +
+        ` short present-tense sentence in your own words — what you are looking` +
+        ` at, what you just found, that you are writing the answer. Not a fixed` +
+        ` phrase; the actual thing. ` +
+        (opts.progress === "tool"
+          ? `Use the progress tool for this.`
+          : `Do it by writing ${progressFile} with` +
+            ` {"id":"${question.id}","at":"<ISO time now>","text":"<the sentence>"}` +
+            ` — the one file you may write. If writing it is refused, carry on;` +
+            ` your tool calls are reported for you.`)
+      : ``,
+    ``,
     `Respond with the answer text only, as Markdown. The FIRST LINE must be`,
     `the direct answer; the exact click-path after it; background last. Your`,
     `entire response is shown to the tester verbatim — no preamble, no`,
     `"I looked at", no closing questions.`,
     canPatch
       ? `` // The api backend appends its own patch-tool instructions.
-      : `Do not attempt to edit any file — you are answering only.`,
+      : `Do not edit any file — you are answering only` +
+        (opts.progress === "file" ? ` (the progress file above is the one exception).` : `.`),
   ];
   return lines.filter((l) => l !== ``).join("\n");
 }

@@ -109,6 +109,12 @@ time, Chrome keeps what it already granted — nothing to re-approve.
 
 ## During a run
 
+A case written in **groups** (`# Steps: <title>` sections — see [the case
+format](case-format.md#groups)) shows each group's title and goal as a
+heading over its steps, with a running tally of how the steps under it have
+gone. The goal is the sentence to read before the next few verdicts: it
+says what they are for. Numbering runs on through groups.
+
 Every step takes **comments**, and each comment says **who it is for**:
 
 | Tick | When |
@@ -120,7 +126,19 @@ Every step takes **comments**, and each comment says **who it is for**:
 | Ops | environment or test data, not the app itself |
 
 Tick as many as apply, or none — an untagged comment is context, kept with
-the run and addressed to nobody. This replaced a free-text box, a note with a
+the run and addressed to nobody. The panel shows the five names in one row;
+**What do these mean?** unfolds the reasons above under each and stays
+unfolded until you fold it again. **Add comment** lights up the moment the
+box has anything in it, and clears both the box and the ticks, so the next
+comment starts addressed to nobody.
+
+Above the box, **+ Combine with previous step** adds the one comment testers
+leave most often, in a single tap: "This step needs to be combined with the
+previous step", addressed to the test writer. It is an ordinary comment once
+added — remove it with its × — and the **check** skill knows the wording and
+merges the two steps in the case's next version. Nothing changes in the run
+you are on. The button is not offered on the first step, and disappears once
+the comment is on the step. This replaced a free-text box, a note with a
 category dropdown, and a task list, which between them asked a tester holding
 a fact to first decide what kind of thing it was. Audience is a question
 anyone can answer mid-run; taxonomy is not.
@@ -134,6 +152,14 @@ is right before pressing Finish.
 Each audience gets its own section in `feedback.md`, so whoever picks the
 file up can find their own name in it. Anything ticked for the **test writer**
 goes one step further — see [project rules](#project-rules).
+
+**No agent on this machine?** A finished run shows **Comments for all
+steps** at the bottom of the screen. It opens the same text as `feedback.md`
+— every comment, rating and failure, grouped by audience — with a **Copy**
+button and a **Download .md** button. That is how a QA engineer with no
+Claude Code installed hands a run to the developer or test writer who has
+it: paste the text into a ticket or a chat, or attach the file, and the
+**check** skill reads it as it would read the file in the run's folder.
 
 Before finishing a run you can also leave a **comment on the run as a whole** —
 "ran against an old build", "felt slow throughout". It lands in `report.md`
@@ -162,7 +188,11 @@ agent and shows setup instructions right where you'd otherwise wait:
   the step you asked from: it may be rewritten even if you already gave it
   a result, and loading then resets that one result so you redo the step
   against the new text. The panel says when you've been "waiting for an
-  agent" versus when one has picked the question up and is working.
+  agent" versus when one has picked the question up — and, once it has,
+  what it is doing right now, in the agent's own words: *Reading the reset
+  form*, *Found it — the step names a renamed button*, *Writing the
+  answer*. The line shows how long ago it last changed, so a long think is
+  visibly a think and not a crash.
 - **Run a case's commands.** Inline commands in Dependencies, Prerequisites
   and step text (`node scripts/seed.js …`) get a ▶ **Run** button. The
   watching session executes them from the app repo, output streams into a
@@ -196,6 +226,29 @@ folder and nothing else.
 The extension never writes that file itself. A rule is a judgement about
 which of two things a comment was, and the skill that has read the run is the
 one placed to make it.
+
+### Rating steps and cases
+
+Rules say what a case must do. Stars say what a good one looked like.
+
+Under every step's verdict buttons, across from **Skip this step**, are five
+stars; above **Finish run** are five more for the case as a whole. They rate
+the *writing* — was this step clear, checkable, the right size — not the
+feature: a step can fail and deserve five stars. Most steps get none, and
+that is the intended state. The stars are for the outliers: the step you
+would show someone as the way to write one, and the one that made you guess.
+Tap a star to set, tap it again to clear.
+
+A rating lands in `run.json`, in `report.md`, and in `feedback.md` under
+*Steps the tester rated highly* and *…rated poorly*, beside whatever comment
+you left on the step — "excellent, the Expected line names the exact toast"
+teaches more than the stars alone. Across runs, the plugin's
+`enloop-case.mjs ratings` command collects every rated step in a project,
+printed as the run froze it, and the **quick** and **full** skills read that
+before authoring the way they read the rules: highly rated steps are the
+shape to write in, poorly rated ones the shape to avoid. The **check** skill
+treats one or two stars on a step as a defect to fix, and a shape starred
+across several cases as a rule worth writing down.
 
 A side panel closes whenever you click into the page you are testing, which
 during a run is constantly, and closing it destroys the panel. Reopening
@@ -288,6 +341,33 @@ self-contained file, opened by double-clicking it, with the steps tickable and
 the values copyable. Everything except the raw Markdown carries a suite's prep
 steps along with the case, since a reader handed the case alone would be
 missing the setup it assumes.
+
+## Environments and domains
+
+A case names the deployments it touches as **domains** — `%APP%/orders`,
+`%ADMIN%/audit` — and leaves their addresses to the run. **Settings →
+Environments** on a connected folder is where those addresses live: the
+domain and variable names every environment provides, then one card per
+deployment — local, staging, prod, a customer's instance — with an address
+per domain and a value per variable. A card may be scoped to a `@project`,
+so a folder holding several products' cases keeps their stagings apart, and
+one card per project can be marked **default**. Everything writes through to
+`environments.json` in the folder, which is also what the authoring skills
+fill in when they derive the deployments from the repo — so the screen is
+often already populated the first time you open it.
+
+On a case screen, the **Environment** picker sits above **Start run**. Picking
+one sets every domain and every environment-provided variable at once; the
+values below stay editable, and each shows where it came from — the
+environment's name, *open tab*, *default*, or a generator. The picker starts
+on the environment you used last in that folder, else the project's default.
+**No environment** is always on the list: then the main domain follows the tab
+you have open (and any other domain whose `Match:` fits it), which is the
+answer for a per-PR preview whose address exists nowhere but in your address
+bar. The run header names the environment for the whole run, and the report
+lists the address each domain resolved to. The screen never stops the run to
+ask for a value: a case that would need to is refused by the skills'
+validator before it reaches the folder.
 
 ## The viewer
 

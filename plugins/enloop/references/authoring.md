@@ -95,10 +95,11 @@ selectors have to be written, which fixtures cannot be trusted. They are how
 Enloop gets better at *this* project rather than in general, and they are the
 one input here that came from someone who has actually run these cases.
 
-The top of the file may carry **structured lines**, and one matters here:
-`Base URL: <origin>` — the environment this project's cases normally run
-against. It becomes the `Default:` of the case's `BASE_URL` variable in
-step 8. The prose sections bind as rules; the structured line is data.
+The prose sections bind as rules. An older rules file may still carry a
+`Base URL: <origin>` structured line — the pre-domains way of recording the
+deployment cases default to. Read it as the main domain's address only when
+the environments file below has nothing, and record it there so it is not
+needed again.
 
 **They are binding.** A rule outranks a habit and outranks anything below in
 this file that is not the grammar. If you believe one is wrong, say so in your
@@ -108,6 +109,80 @@ silently ignored is worse than no rules file at all.
 `(no rules recorded for … yet)` is the normal answer for a new project. Do not
 invent any, and do not write to this file — promoting a rule is the check
 skill's job, because it is the one that has seen the run that justified it.
+
+### 2b. Read this project's environments
+
+```bash
+node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" environments "$DATA_DIR" "<project name>"
+```
+
+The deployments this project's cases run against — `environments.json` in
+the data folder, the same file the panel's Environments screen edits and
+its run picker reads. It prints the **domain names** the project declares
+(`APP`, `ADMIN`, …; the first is the main domain), the **variable names**
+environments provide, every environment for this project with its values,
+and a `defaults` line: the addresses that become each domain's `Default:`
+in step 8.
+
+`(none declared)` is the normal answer for a project nobody has set up yet.
+It is not a reason to ask. Derive the deployments from the repo the same way
+you derive routes: `.env.example` / `.env.*` (`APP_URL`, `BASE_URL`,
+`NEXT_PUBLIC_*_URL`, `VITE_*_URL`), `docker-compose*.yml` ports and
+hostnames, deploy config (`fly.toml`, `vercel.json`, `netlify.toml`,
+`app.yaml`, Helm values, `Procfile` + a hosting README), a Playwright or
+Cypress config's `baseURL`, the README's "staging"/"demo"/"local
+development" sections. Then **record** what you found so the next case —
+and the panel — finds it:
+
+```bash
+node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" environments "$DATA_DIR" "<project name>" \
+  --domain APP --env local --set APP=http://localhost:3000
+node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" environments "$DATA_DIR" "<project name>" \
+  --env staging --set APP=https://staging.example.test --default
+```
+
+One domain per deployment the case touches: the app is `APP`; an admin
+console on its own host, a second tenant, a marketing site the flow signs
+in from, each get their own name. Mark the deployment the project normally
+tests against `--default`; when nothing says which, staging beats local
+beats prod, and say so in the report. A value that differs per deployment
+and is not an address — a QA account, a tenant id — is recorded the same
+way (`--variable QA_EMAIL --env staging --set QA_EMAIL=…`). What you could
+not find stays empty in that environment, listed in the report as a hole;
+it is never a question to the user and never a blank in the case.
+
+### 2c. Read what this project's testers rated
+
+```bash
+node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" ratings "$DATA_DIR" "<project name>"
+```
+
+Rules say what a case must do; this says what a good one looked like. The
+panel lets a tester put one to five stars on a step and on a case, and this
+command collects them across every run in the folder: the cases testers
+rated, the steps they rated highly — printed in full, as the run froze them
+— and the steps they rated poorly, with what the tester said was wrong.
+
+Use it as the style guide the contract cannot be:
+
+- **A highly rated step is the shape to write in** — its level of detail,
+  what its `Expected` names, how it phrases the action. Learn the pattern
+  and write new steps to it. Do not paste the step: its values are the
+  substituted ones from one run, and its route belongs to its own screen.
+- **A poorly rated step is the shape to avoid.** Where the tester said why,
+  that reason is a defect to keep out of every step you write today; where
+  they did not, read the step against the contract and work out which rule
+  it broke.
+- **A highly rated case is the one to model a new case on** when the
+  feature is similar — same depth, same split between quick and full.
+
+One rating is an opinion; the same shape starred in several runs is a
+style. When the ratings and a rule disagree, the rule wins — say so in your
+report, so the user can settle it in the rules file.
+
+`(no ratings recorded for … yet)` is the normal answer for a project whose
+testers have not starred anything, and changes nothing about what follows.
+Never write ratings yourself; they are the tester's.
 
 ## 3. Read the grammar the plugin ships
 
@@ -184,9 +259,12 @@ Practically, for each step you intend to write:
 - Route → the router config or route attribute. A route is the address of a
   place, and contract rule 2 wants one for every place the case names: the
   entry point in `# Prerequisites`, every step's `Where:`, and any screen or
-  record mentioned in prose. For the app under test, write every one of
-  them `%BASE_URL%/<route>` — `Where:` included — so the address works
-  from a cold start; a literal absolute URL is for another system's pages.
+  record mentioned in prose. Write every one of them `%<DOMAIN>%/<route>` —
+  `Where:` included — using the domain name from step 2b that the route
+  belongs to (`%APP%/orders`, `%ADMIN%/audit`), so the address works from a
+  cold start and the panel knows which deployment it is on. A scenario may
+  walk between domains step by step; a literal absolute URL is only for a
+  page of a system the case does not otherwise declare.
 - Visible label → the JSX/template/i18n entry. Quote it exactly, including
   capitalisation, in backticks.
 - Value the tester types → as `"**value**"`, quoted *and* bolded, exactly
@@ -225,20 +303,37 @@ not say, and this skill does:
   `Tags:` takes the ticket id, the feature area, and `manual`.
 - **Description** — what this verifies and why it exists now (which branch
   or ticket). Two or three sentences.
-- **`# Variables`** — declare `BASE_URL` in every case, generator and
-  default together:
+- **`# Domains`** — one entry per deployment the case touches, the main
+  one first, each with a `Default:` copied from the `defaults` line of
+  step 2b and a `Match:` glob when the project has more than one domain:
 
-      ## BASE_URL
-      The deployment under test — whichever one you have open.
-      Generator: page-origin
+      # Domains
+
+      ## APP
+      The web app under test.
+      Match: app.*.example.test
       Default: https://staging.example.test
 
-  The generator follows whatever deployment the tester has open; the
-  default is what a blank tab, the shared viewer and a downloaded page
-  resolve. Take the `Default:` from the rules file's `Base URL:` line
-  (step 2). When there is none, ask the user once, use the answer, and
-  offer the **setup** skill so the next case does not ask again. One
-  variable then moves the whole case between environments.
+      ## ADMIN
+      The admin console.
+      Match: admin.*.example.test
+      Default: https://admin.staging.example.test
+
+  The picked environment sets every one of them at run time; the default
+  is what a blank tab, the shared viewer and a downloaded page resolve;
+  the `Match:` is what lets a run started from the admin console's tab
+  fill `ADMIN` rather than `APP`. A domain is not a variable: no
+  `Generator:` line, and never `BASE_URL` under `# Variables` — that is
+  the pre-domains spelling, and the linter flags it.
+- **`# Variables`** — only values that are not addresses, and every one
+  resolved by you: a `Default:` read from the repo (a seeded record, a
+  fixture value, the rules file's *Accounts and data* section), a
+  `Generator:` for what must be fresh, or a name the project's
+  environments provide (step 2b) for what differs per deployment. **Never
+  ask the user for a value, and never leave one for the tester** — a
+  variable with none of the three is a linter error. When the repo cannot
+  tell you, write the best candidate you found as the `Default:` and mark
+  it as an assumption in the report.
 - **`# Prerequisites`** — the entry point first (contract rule 2a), then
   **who the tester is in the app** (contract rule 2d) — account, role, and
   where the credential lives, copied from the rules file's *Accounts and
@@ -246,7 +341,7 @@ not say, and this skill does:
   **every service the tester has to start themselves**, each with the
   command and the directory to run it in:
 
-      - Open %BASE_URL%/admin/integrations
+      - Open %APP%/admin/integrations
       - Logged in as %QA_EMAIL% (role `Administrator`) — password: vault
         item `staging QA bot`
       - API running locally: `npm run dev` in the app repo
@@ -261,6 +356,12 @@ not say, and this skill does:
 - **`# Steps`** — per the contract, with `Kind: quick` on the core path
   (rule 3b), `Kind: extra` on optional side-checks and conditionals
   (rule 3c), and cleanup steps at the end.
+- **Groups**, when the scope has several concerns (rule 9): one
+  `# Steps: <title>` section per concern, opening with its goal — what its
+  steps prove together — before the first step. An email refactoring is
+  *Log in*, *Restore password*, *Change the address*; a one-concern ticket
+  is a plain `# Steps`. Shared setup goes in a plain `# Steps` before the
+  first group, cleanup in one after the last.
 
 Write it to a scratch file first. It is not going into the cases folder
 until it parses clean and passes the by-eye list.
@@ -275,12 +376,14 @@ case in the panel ships with the plugin, so run it against your scratch
 file:
 
 ```bash
-node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" validate <scratch file> --project "<project name>"
+node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" validate <scratch file> --project "<project name>" --data-dir "$DATA_DIR"
 ```
 
 No build step, no `npm install`, no copy of the Enloop repo — the bundle is
 the same parser the extension uses, built from the same source as the
-grammar you read in step 3.
+grammar you read in step 3. `--data-dir` lets it read the project's
+environments, so a variable those provide is not reported as a question
+the case would ask.
 
 It prints **the document as parsed** — every step's title, `where`,
 `selectors`, `expected` and `note` — and that printout is the point of the
@@ -306,7 +409,8 @@ Then read its findings:
   real judgement for a green tick.
 
 Check the counts on the first lines against what you intended: steps,
-variables, dependencies, prerequisites, and how many are marked quick.
+domains (and which is main), variables, dependencies, prerequisites, and
+how many are marked quick.
 
 `validate` cannot see your app, so it says nothing about the specifics that
 matter most: a label you invented, a route that does not exist, a selector
@@ -357,13 +461,23 @@ Tell the user:
   are marked `Kind: quick` — so they know a quick run is available and what
   it covers.
 - **The `cold run` line from the validator, verbatim** — how much of the
-  case a first-time runner can click, and what it asks for before starting.
-- **Questions the case will ask before a run: N (names).** For each value
-  in that list, say why it cannot have a `Default:` or a `Generator:` —
-  zero is the norm, and every exception is a decision to defend.
+  case a first-time runner can click, what it asks for before starting
+  (always zero: the validator refuses anything else), and which names come
+  from the project's environments.
+- **The domains it declares and where their defaults came from** — the
+  environments file, or the repo files you derived them from and then
+  recorded. Name every environment you created or filled, and every value
+  that is still empty in one of them.
+- **Values you assumed.** Every `Default:` that came from your best
+  reading of the repo rather than from a fixture, the rules file or the
+  environments — so the user corrects a guess once, in the environments
+  file or the rules, rather than discovering it in a run.
 - Anything you could not derive from source — elements with no stable
   selector, values the tester must supply, steps you could not make binary.
   Be specific; this is the list that decides whether the case is trustworthy.
+- **Which rated steps or cases you modelled on**, when the project had any
+  — one line naming them, so the user can see the ratings doing their job
+  and correct a pattern they no longer want followed.
 - Whether the app map was built fresh or reused.
 - **Whether an agent is serving the folder.** Run
   `node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" agent-status "$DATA_DIR"`.

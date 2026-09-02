@@ -8,15 +8,20 @@
  * linter travel with the skills as `lib.mjs`, bundled with no dependencies,
  * and this is the command the authoring skills run:
  *
- *   node enloop-case.mjs validate <case.md> [--project <name>] [--findings-only]
+ *   node enloop-case.mjs validate <case.md> [--project <name>] [--data-dir <folder>] [--findings-only]
  *   node enloop-case.mjs write <case.md> --data-dir <folder>   validate, then land it
  *                        [--project <name>] [--case <id> [--patch]] [--suite <suiteId>]
+ *   node enloop-case.mjs environments <data folder> "<project>"   the deployments cases run
+ *                        [--domain NAME] [--variable NAME]         against: read, or record
+ *                        [--env <name> [--set NAME=value]...] [--default <name>]
  *   node enloop-case.mjs compat <old.md> <new.md>      can new replace old under a live run
  *   node enloop-case.mjs agent-status <data folder>    is any server watching the channel
  *   node enloop-case.mjs brief [--example]             the floor: a clean minimal case + the rules
  *   node enloop-case.mjs data-folder [--want <path>]   where this repo's cases go
  *   node enloop-case.mjs verify <data folder> <caseId> did the case land right
  *   node enloop-case.mjs rules <data folder> <project> this project's authoring rules
+ *   node enloop-case.mjs ratings <data folder> <project> what testers starred: exemplary
+ *                        [--limit N] [--min-runs N]           and poor steps, case ratings
  *   node enloop-case.mjs id "Project: Case title"      the case folder's id
  *   node enloop-case.mjs version                       the grammar format version
  *
@@ -40,7 +45,19 @@ import {
   nextMajorId,
   nextMinorId,
   versionIdFromFileName,
+  AGENT_PROTOCOL_VERSION,
   CURRENT_FORMAT_VERSION,
+  environmentsFileSchema,
+  emptyEnvironments,
+  environmentsForProject,
+  missingEnvironmentValues,
+  newEnvironmentId,
+  parseCaseDocument,
+  runFileSchema,
+  describeRating,
+  isExemplaryRating,
+  isPoorRating,
+  ratingStars,
 } from "./lib.mjs";
 
 const [command, ...rest] = process.argv.slice(2);
@@ -53,6 +70,26 @@ function die(message) {
 function flag(name) {
   const i = rest.indexOf(`--${name}`);
   return i === -1 ? undefined : rest[i + 1];
+}
+
+/** `environments.json` at the data folder root, or an empty file when it
+ * is absent or unreadable — the same degradation the panel applies. The
+ * second value says which it was, because "no environments" and "could not
+ * look" mean different things to the linter. */
+function readEnvironments(dataDir) {
+  const file = path.join(path.resolve(dataDir), "environments.json");
+  try {
+    const parsed = environmentsFileSchema.safeParse(JSON.parse(readFileSync(file, "utf8")));
+    return { file, data: parsed.success ? parsed.data : emptyEnvironments(), known: parsed.success };
+  } catch {
+    return { file, data: emptyEnvironments(), known: isDir(dataDir) };
+  }
+}
+
+/** The names a case may leave to its environments: the folder's whole
+ * contract, since every environment has the same shape by construction. */
+function environmentNamesOf(env) {
+  return env.known ? [...env.data.domains, ...env.data.variables] : undefined;
 }
 
 function isDir(p) {
@@ -71,6 +108,31 @@ function entries(p) {
   }
 }
 
+/**
+ * The text of one step as it sits in a case file: from its `## title` line
+ * under `# Steps` to the line before the next heading. `occurrence` picks
+ * among steps that share a title. Text, not a re-render: the reader of a
+ * rating wants the step exactly as the tester met it.
+ */
+function sliceStepSource(markdown, title, occurrence = 0) {
+  const lines = markdown.split(/\r?\n/);
+  let inSteps = false;
+  let seen = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^# /.test(line)) {
+      inSteps = /^# steps(?::.*)?$/i.test(line);
+      continue;
+    }
+    if (!inSteps || !/^## /.test(line) || line.slice(3).trim() !== title) continue;
+    if (seen++ < occurrence) continue;
+    const block = [line];
+    for (let j = i + 1; j < lines.length && !/^#{1,2} /.test(lines[j]); j++) block.push(lines[j]);
+    return block.join("\n");
+  }
+  return `## ${title}\n(step text not found in the frozen case)`;
+}
+
 function show(label, findings) {
   if (findings.length === 0) return;
   console.log(`\n${label}`);
@@ -87,7 +149,8 @@ function coldLine(cold) {
     `cold run    ${cold.navigableSteps}/${cold.uiSteps} steps one-click · ` +
     `asks ${cold.asks.length} value${cold.asks.length === 1 ? "" : "s"} before start` +
     `${cold.asks.length ? ` (${cold.asks.join(", ")})` : ""} · ` +
-    `unresolved: ${cold.unresolved.length ? cold.unresolved.join(", ") : "none"}`
+    `unresolved: ${cold.unresolved.length ? cold.unresolved.join(", ") : "none"}` +
+    `${cold.fromEnvironment?.length ? ` · from environment: ${cold.fromEnvironment.join(", ")}` : ""}`
   );
 }
 
@@ -130,16 +193,20 @@ switch (command) {
       // Skip flags, and skip the value belonging to the one flag that takes
       // one — otherwise a `--project Acme` makes Acme look like the filename.
       if (rest[i].startsWith("--")) {
-        if (rest[i] === "--project") i++;
+        if (rest[i] === "--project" || rest[i] === "--data-dir") i++;
         continue;
       }
       file = rest[i];
     }
     if (!file) {
-      die("usage: enloop-case.mjs validate <case.md> [--project <name>] [--findings-only]");
+      die("usage: enloop-case.mjs validate <case.md> [--project <name>] [--data-dir <folder>] [--findings-only]");
     }
     const expectProject = flag("project");
     const findingsOnly = rest.includes("--findings-only");
+    // Without the folder the linter cannot see which names the project's
+    // environments provide, and reports every environment-supplied
+    // variable as a question the case would ask.
+    const environmentNames = flag("data-dir") ? environmentNamesOf(readEnvironments(flag("data-dir"))) : undefined;
 
     let raw;
     try {
@@ -154,7 +221,7 @@ switch (command) {
     // does.
     let result;
     try {
-      result = lintCase(raw, { expectProject });
+      result = lintCase(raw, { expectProject, environmentNames });
     } catch (e) {
       console.error(`Cannot parse ${file}: ${e.message}`);
       process.exit(1);
@@ -168,9 +235,14 @@ switch (command) {
     );
     console.log(
       `counts      ${doc.steps.length} steps, ${quick.marked} marked quick, ` +
-        `${doc.variables.length} variables, ${doc.dependencies.length} dependencies, ` +
-        `${doc.prerequisites.length} prerequisites`,
+        `${doc.domains.length} domains, ${doc.variables.length} variables, ` +
+        `${doc.dependencies.length} dependencies, ${doc.prerequisites.length} prerequisites`,
     );
+    if (doc.domains.length > 0) {
+      console.log(
+        `domains     ${doc.domains.map((d, i) => `${d.name}${i === 0 ? " (main)" : ""}=${d.defaultValue ?? "(no default)"}`).join(", ")}`,
+      );
+    }
     // The measure of the cold-runner bar: what someone starting from a blank
     // tab can click, and what the case will ask them for first. Printed even
     // with --findings-only — a fix that costs a one-click step should show up
@@ -307,7 +379,10 @@ switch (command) {
 
     let result;
     try {
-      result = lintCase(raw, { expectProject: flag("project") });
+      result = lintCase(raw, {
+        expectProject: flag("project"),
+        environmentNames: environmentNamesOf(readEnvironments(dataDirArg)),
+      });
     } catch (e) {
       console.error(`Cannot parse ${file}: ${e.message}`);
       console.error("Nothing was written.");
@@ -412,22 +487,27 @@ switch (command) {
 
 Verifies the widget save path — and the shape of a minimal case.
 
-# Variables
+# Domains
 
-## BASE_URL
-The deployment under test — whichever one you have open.
-Generator: page-origin
+## APP
+The web app under test.
 Match: *.example.test
 Default: https://staging.example.test
 
+# Variables
+
+## QA_EMAIL
+The QA account — provided per environment (environments.json).
+Default: qa.bot@example.test
+
 # Prerequisites
-- Open %BASE_URL%/admin/widgets
-- Logged in as qa.bot@example.test — password: vault item \`staging QA\`
+- Open %APP%/admin/widgets
+- Logged in as %QA_EMAIL% — password: vault item \`staging QA\`
 
 # Steps
 
 ## Save the widget
-Where: %BASE_URL%/admin/widgets
+Where: %APP%/admin/widgets
 Kind: quick
 Selector: [data-testid="save-widget"]
 Put "**Blue widget**" in the \`Name\` field and click \`Save\`.
@@ -449,24 +529,31 @@ ${example}
 The hard rules — the step contract in one breath:
 
   1   One step = one action = one verdict. No "then" in instructions.
-  2   Every place is an address: %BASE_URL%/route in Where:, prerequisites
-      and links. Declare BASE_URL in every case, generator plus default.
+  2   Every place is an address: %APP%/route in Where:, prerequisites and
+      links. Declare every deployment the case touches under # Domains —
+      the first is the main one — with a Default: origin taken from the
+      project's environments (\`environments <folder> "<project>"\`). A
+      scenario may cross domains: %APP%/orders, then %ADMIN%/audit.
   2d  Say who the tester is: account, role, and where the credential lives
       — a place to look, never a person to ask.
   3   Every UI step carries a Selector: read from this repo's source.
       Never invented, never a structural path.
   4   ### Expected is observable, binary bullets. Rationale goes to ### Note.
-  6   Every value is resolved before the run: a Default:, a Generator:, or
-      exact instructions for obtaining it. Values to type as "**value**",
-      labels to find in \`backticks\`.
+  6   Every value is resolved by Enloop before the run — a Default:, a
+      Generator:, or the environments file — and never asked of the tester
+      or the user. Values to type as "**value**", labels to find in
+      \`backticks\`.
   7   No conditionals inside a step — a condition becomes its own step.
   8   Clean up what the run leaves behind, or say why not in a ### Note.
+  9   A case with several concerns groups its steps: \`# Steps: <title>\`
+      sections, each opening with its goal — what those steps prove
+      together — before the first \`## \` step. Numbering runs through.
 
 Every route, label and selector comes from source read in THIS session.
 
 Iterate, then land — nothing reaches the folder any other way:
 
-  node enloop-case.mjs validate <file> --findings-only
+  node enloop-case.mjs validate <file> --data-dir <folder> --findings-only
   node enloop-case.mjs write <file> --data-dir <folder> --project "<name>"
 
 The full grammar:  references/grammar.md, beside this validator
@@ -626,6 +713,136 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
    * that has to be told a path is an authoring skill that will be told the
    * wrong one.
    */
+  /**
+   * The deployments this project's cases run against, and the values that
+   * differ between them — `environments.json` at the data folder root, the
+   * same file the panel's Environments screen edits and its run picker
+   * reads. The authoring skills read it to learn the domain names and the
+   * default addresses a case must carry, and write to it when they derive
+   * a deployment from the repo (`.env.example`, deploy config, README), so
+   * the answer is recorded once instead of asked per case.
+   *
+   *   environments <folder> "<project>"                      print
+   *   … --domain APP [--domain ADMIN]                         add to the contract
+   *   … --variable QA_EMAIL                                   add to the contract
+   *   … --env staging --set APP=https://… --set QA_EMAIL=…    create/fill one
+   *   … --env staging --default                               the cold-run one
+   *
+   * Names are uppercased to the placeholder convention; an existing
+   * environment is matched by name within the project, case-insensitively.
+   * Exit 0 with the file printed after any change.
+   */
+  case "environments": {
+    const positional = [];
+    const VALUED = new Set(["--domain", "--variable", "--env", "--set"]);
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i].startsWith("--")) {
+        if (VALUED.has(rest[i])) i++;
+        continue;
+      }
+      positional.push(rest[i]);
+    }
+    const [dataDir, ...projectParts] = positional;
+    const project = projectParts.join(" ").trim();
+    if (!dataDir || !project) {
+      die(
+        'usage: enloop-case.mjs environments <data folder> "<project>" [--domain NAME]... [--variable NAME]... [--env <name> [--set NAME=value]... [--default]]',
+      );
+    }
+    if (!isDir(dataDir)) die(`${path.resolve(dataDir)} is not a directory.`);
+    const env = readEnvironments(dataDir);
+    const data = env.data;
+    const normalize = (raw) =>
+      raw
+        .trim()
+        .replace(/^%|%$/g, "")
+        .replace(/[^A-Za-z0-9_]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+        .toUpperCase();
+    const repeated = (name) =>
+      rest.flatMap((a, i) => (a === `--${name}` && rest[i + 1] ? [rest[i + 1]] : []));
+
+    let changed = false;
+    for (const raw of repeated("domain")) {
+      const name = normalize(raw);
+      if (name && !data.domains.includes(name)) {
+        data.domains.push(name);
+        changed = true;
+      }
+    }
+    for (const raw of repeated("variable")) {
+      const name = normalize(raw);
+      if (name && !data.variables.includes(name)) {
+        data.variables.push(name);
+        changed = true;
+      }
+    }
+    const envName = flag("env");
+    if (envName) {
+      let target = environmentsForProject(data, project).find(
+        (e) => e.name.trim().toLowerCase() === envName.trim().toLowerCase(),
+      );
+      if (!target) {
+        target = { id: newEnvironmentId(), name: envName.trim(), project, domains: {}, values: {} };
+        data.environments.push(target);
+        changed = true;
+      }
+      for (const pair of repeated("set")) {
+        const eq = pair.indexOf("=");
+        if (eq === -1) die(`--set expects NAME=value, got ${pair}`);
+        const name = normalize(pair.slice(0, eq));
+        const value = pair.slice(eq + 1).trim();
+        if (!name) continue;
+        // A name not yet in the contract joins it: a domain when the value
+        // is an address, a variable otherwise — the skill said what it is
+        // by what it set.
+        if (!data.domains.includes(name) && !data.variables.includes(name)) {
+          if (/^(https?:\/\/|localhost|127\.0\.0\.1)/i.test(value)) data.domains.push(name);
+          else data.variables.push(name);
+        }
+        if (data.domains.includes(name)) target.domains[name] = value;
+        else target.values[name] = value;
+        changed = true;
+      }
+      if (rest.includes("--default")) {
+        for (const e of data.environments) {
+          if (e === target) e.default = true;
+          else if (environmentsForProject({ ...data, environments: [e] }, project).length) delete e.default;
+        }
+        changed = true;
+      }
+    }
+    if (changed) {
+      writeFileSync(env.file, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+      console.log(`WROTE    ${env.file}`);
+    } else {
+      console.log(`PATH     ${env.file}${env.known ? "" : " (absent — nothing recorded yet)"}`);
+    }
+    const mine = environmentsForProject(data, project);
+    console.log(`domains  ${data.domains.length ? data.domains.map((d, i) => (i === 0 ? `${d} (main)` : d)).join(", ") : "(none declared)"}`);
+    console.log(`variables ${data.variables.length ? data.variables.join(", ") : "(none declared)"}`);
+    if (mine.length === 0) {
+      console.log(`environments (none for ${project})`);
+    }
+    for (const e of mine) {
+      const missing = missingEnvironmentValues(data, e);
+      console.log(
+        `env      ${e.name}${e.default ? " (default)" : ""}${e.project ? "" : " (all projects)"}${missing.length ? ` — ${missing.length} empty: ${missing.join(", ")}` : ""}`,
+      );
+      for (const d of data.domains) console.log(`           ${d}=${e.domains[d] ?? ""}`);
+      for (const v of data.variables) console.log(`           ${v}=${e.values[v] ?? ""}`);
+    }
+    // The case-side consequence, spelled out so a skill need not derive it:
+    // which environment's addresses become each domain's `Default:`.
+    const cold = mine.find((e) => e.default) ?? mine[0];
+    if (cold) {
+      console.log(
+        `defaults ${data.domains.map((d) => `${d}=${cold.domains[d] ?? "(empty)"}`).join(", ") || "(no domains)"} — from "${cold.name}"${cold.default ? "" : " (first listed; mark one --default)"}`,
+      );
+    }
+    break;
+  }
+
   case "rules": {
     const [dataDir, ...projectParts] = rest.filter((a) => !a.startsWith("--"));
     const project = projectParts.join(" ").trim();
@@ -644,6 +861,211 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
       console.log("");
       console.log(`(no rules recorded for ${project} yet)`);
     }
+    break;
+  }
+
+  /**
+   * What testers thought of this project's cases as test writing — the
+   * one-to-five stars the panel records on a step and on a run, collected
+   * across every run in the folder and grouped by project.
+   *
+   * Rules say what a case must do; this says what a good one looked like.
+   * A step five testers starred is the shape the next case should take, and
+   * the step they gave one star to is the shape to avoid, and neither used
+   * to reach the next authoring session at all: it sat in one run's
+   * `run.json` and was read by nobody. The authoring skills run this next
+   * to `rules`, and the check skill uses it to tell a lone opinion from a
+   * pattern before promoting one to a rule.
+   *
+   * Every rated step is printed with its text as the run froze it, since a
+   * rating without the step is a number without a lesson. Values are the
+   * substituted ones; `%NAME%` placeholders do not survive freezing.
+   *
+   *   ratings <folder> "<project>"       exemplary and poor steps, case ratings
+   *   … --limit N                        at most N steps per list (default 6)
+   *   … --min-runs N                     ignore a step rated in fewer runs
+   *
+   * Exit 0 always; `(no ratings recorded …)` is the normal answer for a
+   * project whose testers have not starred anything yet.
+   */
+  case "ratings": {
+    const positional = [];
+    let limit = 6;
+    let minRuns = 1;
+    for (let i = 0; i < rest.length; i++) {
+      const a = rest[i];
+      if (a === "--limit") limit = Math.max(1, Number(rest[++i]) || 6);
+      else if (a === "--min-runs") minRuns = Math.max(1, Number(rest[++i]) || 1);
+      else if (a.startsWith("--")) die(`ratings: unknown flag ${a}`);
+      else positional.push(a);
+    }
+    const [dataDir, ...projectParts] = positional;
+    const project = projectParts.join(" ").trim();
+    if (!dataDir || !project) {
+      die('usage: enloop-case.mjs ratings <data folder> "<project>" [--limit N] [--min-runs N]');
+    }
+    const dir = path.resolve(dataDir).replace(/\/+$/, "");
+    const runsRoot = path.join(dir, "runs");
+    const wanted = project.toLowerCase();
+
+    // One entry per case, one per (case, step title): a step keeps its
+    // title across versions far more reliably than its id, and a rating is
+    // about the step as the tester met it, not about a version number.
+    const cases = new Map();
+    const steps = new Map();
+    let scanned = 0;
+    let matched = 0;
+    for (const caseId of entries(runsRoot)) {
+      for (const runId of entries(path.join(runsRoot, caseId))) {
+        const runDir = path.join(runsRoot, caseId, runId);
+        let run;
+        let raw;
+        try {
+          run = runFileSchema.parse(JSON.parse(readFileSync(path.join(runDir, "run.json"), "utf8")));
+          raw = readFileSync(path.join(runDir, "case.md"), "utf8");
+        } catch {
+          continue;
+        }
+        scanned++;
+        let doc;
+        try {
+          doc = parseCaseDocument(raw, { version: run.testCaseVersion, createdAt: run.startedAt });
+        } catch {
+          continue;
+        }
+        if ((doc.project ?? "").trim().toLowerCase() !== wanted) continue;
+        matched++;
+
+        const c = cases.get(caseId) ?? { caseId, title: doc.title, ratings: [] };
+        c.title = doc.title;
+        if (run.rating != null) {
+          c.ratings.push({
+            rating: run.rating,
+            version: run.testCaseVersion,
+            at: run.startedAt,
+            comment: run.comment.trim(),
+          });
+        }
+        cases.set(caseId, c);
+
+        const byId = new Map(run.steps.map((st) => [st.stepId, st]));
+        const seen = new Map();
+        doc.steps.forEach((step, index) => {
+          const occurrence = seen.get(step.title) ?? 0;
+          seen.set(step.title, occurrence + 1);
+          const state = byId.get(step.id);
+          if (!state || state.rating == null) return;
+          const key = `${caseId}\n${step.title}`;
+          const entry = steps.get(key) ?? {
+            caseId,
+            caseTitle: doc.title,
+            title: step.title,
+            ratings: [],
+            latestAt: "",
+            source: "",
+            number: "",
+            comments: [],
+          };
+          entry.ratings.push(state.rating);
+          if (run.startedAt >= entry.latestAt) {
+            entry.latestAt = run.startedAt;
+            entry.source = sliceStepSource(raw, step.title, occurrence);
+            entry.number = String(index + 1);
+            entry.caseTitle = doc.title;
+          }
+          for (const comment of state.comments) {
+            const text = (comment.text ?? "").trim();
+            if (text) entry.comments.push(text);
+          }
+          const draft = (state.draft?.text ?? "").trim();
+          if (draft) entry.comments.push(draft);
+          steps.set(key, entry);
+        });
+      }
+    }
+
+    const avg = (xs) => xs.reduce((n, x) => n + x, 0) / xs.length;
+    const ratedCases = [...cases.values()].filter((c) => c.ratings.length > 0);
+    const ratedSteps = [...steps.values()].filter((e) => e.ratings.length >= minRuns);
+    // Recent runs last in a case's list, so the latest opinion is the one a
+    // reader's eye lands on.
+    for (const c of ratedCases) c.ratings.sort((a, b) => a.at.localeCompare(b.at));
+
+    console.log(`PROJECT ${project}`);
+    console.log(
+      `${matched} ${matched === 1 ? "run" : "runs"} of this project in ${runsRoot} (${scanned} scanned)`,
+    );
+    if (ratedCases.length === 0 && ratedSteps.length === 0) {
+      console.log("");
+      console.log(`(no ratings recorded for ${project} yet)`);
+      break;
+    }
+
+    if (ratedCases.length > 0) {
+      console.log("");
+      console.log("## Cases, as rated by testers");
+      console.log("");
+      ratedCases.sort((a, b) => avg(b.ratings.map((r) => r.rating)) - avg(a.ratings.map((r) => r.rating)));
+      for (const c of ratedCases) {
+        const mean = avg(c.ratings.map((r) => r.rating));
+        const latest = c.ratings[c.ratings.length - 1];
+        console.log(
+          `- ${ratingStars(Math.floor(mean))} ${mean.toFixed(1)} over ${c.ratings.length} ${
+            c.ratings.length === 1 ? "run" : "runs"
+          } — ${c.title} (case ${c.caseId}, latest v${latest.version})`,
+        );
+        const why = c.ratings.map((r) => r.comment).filter(Boolean);
+        for (const text of why.slice(-2)) console.log(`  > ${text}`);
+      }
+    }
+
+    const byMeanDesc = (a, b) => avg(b.ratings) - avg(a.ratings) || b.latestAt.localeCompare(a.latestAt);
+    const exemplary = ratedSteps.filter((e) => isExemplaryRating(avg(e.ratings))).sort(byMeanDesc);
+    const poor = ratedSteps.filter((e) => isPoorRating(avg(e.ratings))).sort((a, b) => -byMeanDesc(a, b));
+
+    const printSteps = (heading, lead, list) => {
+      if (list.length === 0) return;
+      console.log("");
+      console.log(`## ${heading}`);
+      console.log("");
+      console.log(lead);
+      for (const e of list.slice(0, limit)) {
+        const mean = avg(e.ratings);
+        console.log("");
+        console.log(
+          `### ${
+            e.ratings.length > 1
+              ? `${ratingStars(Math.floor(mean))} ${mean.toFixed(1)}/5 over ${e.ratings.length} runs`
+              : describeRating(e.ratings[0])
+          } — step ${e.number} of "${e.caseTitle}" (case ${e.caseId})`,
+        );
+        console.log("");
+        console.log("```markdown");
+        console.log(e.source.trimEnd());
+        console.log("```");
+        const unique = [...new Set(e.comments)];
+        if (unique.length > 0) {
+          console.log("");
+          console.log("The tester said:");
+          for (const text of unique.slice(0, 4)) console.log(`- ${text}`);
+        }
+      }
+      if (list.length > limit) {
+        console.log("");
+        console.log(`(${list.length - limit} more; pass --limit to see them)`);
+      }
+    };
+
+    printSteps(
+      "Steps testers rated highly — write the next ones like these",
+      "The shape, the level of detail, what the Expected line names. Learn the pattern; do not paste the step.",
+      exemplary,
+    );
+    printSteps(
+      "Steps testers rated poorly — do not repeat these",
+      "What was wrong is in the tester's words where they left any; otherwise judge the step against the contract.",
+      poor,
+    );
     break;
   }
 
@@ -668,10 +1090,30 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
         const age = Date.now() - statSync(file).mtimeMs;
         if (age > FRESH_MS) continue;
         const watcher = JSON.parse(readFileSync(file, "utf8"));
-        fresh.push(`WATCHING ${watcher.kind ?? "unknown"} (${watcher.id ?? name}, ${Math.round(age / 1000)}s ago)`);
+        const proto = watcher.protocol ?? 1;
+        fresh.push(
+          `WATCHING ${watcher.kind ?? "unknown"} (${watcher.id ?? name}, ${Math.round(age / 1000)}s ago)` +
+            (proto !== AGENT_PROTOCOL_VERSION
+              ? `  ⚠ speaks channel protocol v${proto}; this plugin speaks v${AGENT_PROTOCOL_VERSION} — update the older side`
+              : ""),
+        );
       } catch {
         // Unreadable watcher file — not presence.
       }
+    }
+    // The extension declares its wire version in the heartbeat body; a
+    // mismatch means plugin and extension shipped apart.
+    try {
+      const hb = JSON.parse(readFileSync(path.join(dataDir, "agent", "heartbeat.json"), "utf8"));
+      const proto = hb.protocol ?? 1;
+      if (proto !== AGENT_PROTOCOL_VERSION) {
+        console.log(
+          `MISMATCH extension ${hb.extension ?? "unknown"} speaks channel protocol v${proto}; ` +
+            `this plugin speaks v${AGENT_PROTOCOL_VERSION} — update the older side`,
+        );
+      }
+    } catch {
+      // No heartbeat yet — the panel has not used this folder's channel.
     }
     if (fresh.length > 0) {
       for (const line of fresh) console.log(line);
@@ -696,19 +1138,22 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
 
   case "version":
     console.log(CURRENT_FORMAT_VERSION);
+    console.log(`channel protocol ${AGENT_PROTOCOL_VERSION}`);
     break;
 
   default:
     die(
       "usage:\n" +
-        "  enloop-case.mjs validate <case.md> [--project <name>] [--findings-only]\n" +
+        "  enloop-case.mjs validate <case.md> [--project <name>] [--data-dir <folder>] [--findings-only]\n" +
         "  enloop-case.mjs write <case.md> --data-dir <folder> [--project <name>] [--case <id> [--patch]] [--suite <suiteId>]\n" +
         "  enloop-case.mjs compat <old.md> <new.md>\n" +
         "  enloop-case.mjs agent-status <data folder>\n" +
         "  enloop-case.mjs brief [--example]\n" +
         "  enloop-case.mjs data-folder [--want <path>]\n" +
         "  enloop-case.mjs verify <data folder> <caseId>\n" +
+        '  enloop-case.mjs environments <data folder> "<project>" [--domain NAME] [--variable NAME] [--env <name> [--set NAME=value] [--default]]\n' +
         '  enloop-case.mjs rules <data folder> "<project>"\n' +
+        '  enloop-case.mjs ratings <data folder> "<project>" [--limit N] [--min-runs N]\n' +
         '  enloop-case.mjs id "Project: Case title"\n' +
         "  enloop-case.mjs version",
     );

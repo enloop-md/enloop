@@ -33,7 +33,7 @@ An agent writes it, the side panel executes it step by step:
 
 ```markdown
 ## Sync the contact
-Where: %BASE_URL%/admin/sync-console
+Where: %APP%/admin/sync-console
 Selector: #sync-crm-mailer-btn
 Click `Sync CRM → Mailer`.
 

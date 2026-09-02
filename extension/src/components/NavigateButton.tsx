@@ -6,12 +6,13 @@ import { openWhere } from "../lib/navigate.js";
  * against rather than opening a new one, so the tester lands where the next
  * Highlight and the next automated step will look.
  *
- * A path-only `Where:` resolves against whatever page is currently open,
- * which can be wrong; the failure to show is therefore the message, inline
- * and persistent until dismissed by the next attempt — not a toast that
+ * A path-only `Where:` resolves against the run's main domain when the case
+ * declares one, else against whatever page is currently open, which can be
+ * wrong; the failure to show is therefore the message, inline and
+ * persistent until dismissed by the next attempt — not a toast that
  * vanishes before it is read.
  */
-export function NavigateButton({ where }: { where: string }) {
+export function NavigateButton({ where, mainOrigin = "" }: { where: string; mainOrigin?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -19,7 +20,7 @@ export function NavigateButton({ where }: { where: string }) {
     setBusy(true);
     setError(null);
     try {
-      await openWhere(where);
+      await openWhere(where, mainOrigin);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

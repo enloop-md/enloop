@@ -41,8 +41,11 @@ Three things, and nothing else:
 3. **Mark every step `Kind: quick`.** The whole case is the core path, so a
    quick run and a full run of it are the same thing.
 
-Keep variables to what the path cannot run without. A quick case that stops
-to ask for five values is not quick.
+Keep variables to what the path cannot run without, and resolve every one
+of them yourself — a default read from the repo, a generator, or the
+project's environments. A quick case never asks the user for a value, and
+never leaves one for the tester: the linter rejects it, and it would not be
+quick.
 
 ## First, print the brief
 

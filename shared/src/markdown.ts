@@ -7,6 +7,7 @@ import {
   type CaptureDigest,
 } from "./capture.js";
 import { COMMENT_AUDIENCES, VARIABLE_GENERATORS } from "./schemas.js";
+import { describeRating, isExemplaryRating, isPoorRating } from "./rating.js";
 import { stripViewerComment } from "./viewer-link.js";
 import type {
   CommentAudience,
@@ -20,6 +21,8 @@ import type {
   TestCaseVariable,
   TestCaseVersion,
   VariableGenerator,
+  TestCaseDomain,
+  StepGroup,
 } from "./types.js";
 
 /**
@@ -29,7 +32,7 @@ import type {
  * v1.md/v2.md version history, which tracks edits to a case's *content*
  * under this same grammar.
  */
-export const CURRENT_FORMAT_VERSION = "0.0.7";
+export const CURRENT_FORMAT_VERSION = "0.0.9";
 
 /**
  * Grammar. There is no separate spec by design: this comment is it, sitting
@@ -55,73 +58,91 @@ export const CURRENT_FORMAT_VERSION = "0.0.7";
  *
  *   Free text description.
  *
+ *   # Domains                                   (optional)
+ *
+ *   ## APP
+ *   The web app under test.                      (free text description)
+ *   Default: https://staging.example.test        (the origin a cold run
+ *                                                 uses — required in
+ *                                                 practice, see below)
+ *   Match: app.*.example.test                    (optional glob — which
+ *                                                 open tabs count as this
+ *                                                 domain)
+ *
+ *   ## ADMIN
+ *   The admin console, a separate deployment.
+ *   Default: https://admin.staging.example.test
+ *
+ *   A domain is a deployment the case touches, named once here and used
+ *   as an address prefix everywhere else: `Where: %APP%/admin/reports`,
+ *   `- Open %ADMIN%/tenants`, a link in prose. A case may declare several
+ *   — the app and its admin console, a marketing site and the app it
+ *   signs into, two tenants of one product — and a scenario walks between
+ *   them: "do X at %APP%/orders, then check Y at %ADMIN%/audit". The
+ *   **first** declared domain is the *main* domain: a bare route
+ *   (`Where: /admin/reports`) resolves against it.
+ *
+ *   A domain is not a variable. It has no generator, and its value is
+ *   decided per run by the **environment** the tester picks — local,
+ *   staging, prod, or a custom set of addresses — which the extension
+ *   keeps in `environments.json` beside the cases, one value per declared
+ *   domain per environment. Resolution, first hit wins: a value typed on
+ *   the case screen; the picked environment's value; when no environment
+ *   is picked, the open tab's origin — for the main domain, or for any
+ *   domain whose `Match:` glob accepts the tab's host; the `Default:`;
+ *   nothing, in which case `%APP%` stays literal. `Default:` is what a
+ *   run from a blank tab, the online viewer and a downloaded page use, so
+ *   every domain should carry one — the address of the deployment the
+ *   project normally tests against. `Match:` is what lets a tester start
+ *   from whichever tab they have open without the panel guessing the
+ *   admin console's tab is the app: `*` matches any run of characters,
+ *   case-insensitively; a pattern containing `/` is checked against the
+ *   whole origin instead of the host.
+ *
  *   # Variables                                 (optional)
  *
  *   ## USERNAME
  *   Login username to register with.            (free text description,
- *                                                 like a step's instructions)
- *   Generator: random-string 8                   (optional — see below;
- *                                                 omit for a plain manual
- *                                                 field)
+ *                                                like a step's instructions)
+ *   Generator: random-string 8                   (see below)
  *
  *   ## PRODUCT_ID
  *   Product to add to cart.
- *   Default: sku-12345                          (optional literal default)
+ *   Default: sku-12345                          (literal default)
+ *
+ *   A variable is a value the run needs that is not an address: an
+ *   account, a record id, a fresh string. **Every variable is resolved
+ *   before the run starts, by Enloop, and never asked of the tester**: it
+ *   carries a `Default:`, or a `Generator:`, or its name is one the
+ *   project's environments provide (the same `environments.json` — an
+ *   environment supplies variables as well as domains, so `%QA_EMAIL%` can
+ *   differ between staging and prod). A variable with none of the three is
+ *   a linter error, not a question the panel asks.
  *
  *   Generators, given as `Generator: <name> [arg]`: `timestamp` (epoch ms,
- *   or ISO text with arg `iso`), `page-url`, `page-origin`, `page-domain`
- *   (all three read the active tab when the run starts), `random-number`
- *   (arg `min-max`, default `0-999999`), `random-string` (arg = length,
- *   default 8).
+ *   or ISO text with arg `iso`), `random-number` (arg `min-max`, default
+ *   `0-999999`), `random-string` (arg = length, default 8), and the page
+ *   generators `page-url`, `page-origin`, `page-domain`, which read the
+ *   active tab when the run starts. The page generators predate `# Domains`:
+ *   a `## BASE_URL` variable with `Generator: page-origin` is the legacy way
+ *   to say "the deployment I have open", still parsed and still resolved,
+ *   and the linter asks for it to become the main domain instead.
+ *   `page-domain` (host only, no scheme, no port) remains right for a
+ *   value that is *about* a host — a tenant name, an email suffix — never
+ *   for an address prefix. `Match:` on a page generator works as it does
+ *   on a domain: a tab the glob refuses yields nothing and resolution
+ *   falls through to the `Default:`.
  *
- *   `page-origin` is the one a `BASE_URL` wants:
- *
- *     ## BASE_URL
- *     The deployment under test — whichever one you have open.
- *     Generator: page-origin
- *     Default: https://staging.example.test
- *
- *   With the tester on `https://instance1.example.com`, every
- *   `%BASE_URL%/admin/reports` in the case resolves against that instance;
- *   on `http://localhost:3000` it resolves against theirs. The case names no
- *   environment, so it moves between them without being edited, and a run
- *   starts wherever the tester already was. It yields scheme + host + port,
- *   because the value is used as a prefix and a bare host is not something a
- *   browser can open. The `Default:` is the environment the project
- *   usually tests against: with no page behind the generator — a run
- *   started from a blank tab, the shared viewer page — the value falls
- *   back to it, and the case's addresses keep working cold.
- *   `page-domain` is the bare host, for a value that is
- *   *about* the domain — a tenant name, an email suffix — rather than an
- *   address; using it as a `BASE_URL` produces `example.com/admin`, which
- *   gets no Go control and drops the port.
- *
- *   `Match:` says which pages a page generator may read:
- *
- *     ## BASE_URL
- *     The org under test — whichever one you have open.
- *     Generator: page-origin
- *     Match: *.example.test
- *     Default: https://staging.example.test
- *
- *   A tab whose host does not fit the glob (`*` matches any run of
- *   characters, case-insensitively; a pattern containing `/` is checked
- *   against the whole value instead of the host) yields nothing, so
- *   opening the panel on an unrelated site cannot leak that site's
- *   address into a run — resolution falls through to the default
- *   instead. The run screen says which pattern refused the page and
- *   offers the refused value as a one-click override; a typed value
- *   always overrides everything.
- *
- *   Starting a run
- *   resolves every declared variable — the value typed before the run
- *   starts, else its generator when the generator yields something (a
- *   `page-*` generator with no page behind it yields nothing), else the
- *   declared default, else empty — and replaces every
- *   `%NAME%` placeholder anywhere in the rest of the document (title,
- *   description, step instructions, selectors, scripts) with the resolved
- *   value. A variable that resolves to nothing is not substituted at all:
- *   the step keeps the literal `%NAME%`. See `substituteVariables`.
+ *   Domains and variables share one namespace — `%NAME%` is looked up in
+ *   both — so a name may not be declared in both sections. Starting a run
+ *   resolves every declared domain and variable (a value typed on the case
+ *   screen wins; then the environment; then the tab, for what may read it;
+ *   then the generator, for a variable that has one; then the `Default:`;
+ *   else empty) and replaces every `%NAME%` placeholder anywhere in the rest
+ *   of the document (title, description, step instructions, selectors,
+ *   scripts) with the resolved value. A name that resolves to nothing is
+ *   not substituted at all: the step keeps the literal `%NAME%`. See
+ *   `substituteVariables`.
  *
  *   # Dependencies                              (optional, bullet list)
  *   - Seeded test user
@@ -143,7 +164,7 @@ export const CURRENT_FORMAT_VERSION = "0.0.7";
  *   earns a bullet here rather than a first step that spends a verdict on
  *   arriving. This block is rendered Markdown with no page behind it,
  *   unlike a step's `Where:`, so an address in it is absolute or built from
- *   a variable (`%BASE_URL%/admin/reports`) — a bare route has no origin to
+ *   a domain (`%APP%/admin/reports`) — a bare route has no origin to
  *   resolve against here. Dependencies is for what must
  *   already be true and is not the tester's to arrange: a deployed branch,
  *   a migration, an access level. The run screen renders both in one
@@ -205,13 +226,14 @@ export const CURRENT_FORMAT_VERSION = "0.0.7";
  *
  *   A `Where:` that is a route (`/admin/x`), an absolute URL, or a local
  *   address (`localhost:3000/admin`) gets a Go control in the run screen
- *   that navigates the tab the run is using. A bare route resolves against
- *   whatever page is open, which is right when the tester is already in
- *   the app and refuses to guess when they are not — so a case that has to
- *   be certain declares a `BASE_URL` variable and writes
- *   `Where: %BASE_URL%/admin/x`, which substitutes to an absolute URL
- *   before the run starts. Prose (`the CRM's web console → Contacts`) is
- *   left alone; it names a place, not an address.
+ *   that navigates the tab the run is using. The standard form is
+ *   `Where: %APP%/admin/x` — a declared domain plus the route — which
+ *   substitutes to an absolute URL before the run starts and so works from
+ *   a blank tab, in the viewer and in a downloaded copy. A bare route
+ *   resolves against the main domain when the case declares one, and
+ *   otherwise against whatever page is open — refusing to guess when there
+ *   is none. Prose (`the CRM's web console → Contacts`) is left alone; it
+ *   names a place, not an address.
  *
  *   A single `Selector:` line is always one selector, even when it contains
  *   commas — `a, b` is a CSS selector *group*, and `querySelector` returns
@@ -259,6 +281,31 @@ export const CURRENT_FORMAT_VERSION = "0.0.7";
  *                                                  -> automated step; runs
  *                                                  in the page's own MAIN
  *                                                  world with DOM access)
+ *
+ *   # Steps: Restore password                  (optional — a group. The
+ *                                                 title after the colon
+ *                                                 names it)
+ *   The reset mail reaches the migrated          (the group's goal: what
+ *   address and its link signs the user in.       its steps prove together,
+ *                                                 in a sentence or two —
+ *                                                 required by the linter)
+ *
+ *   ## Request a reset link
+ *   ...
+ *
+ *   A case covering a broad change — "the email refactoring" — is a
+ *   handful of concerns, not a flat list of twenty verdicts: log in,
+ *   restore a password, change the address. Each concern is a group: a
+ *   `# Steps: <title>` section whose prose is the goal and whose `## `
+ *   steps are the steps that prove it. Groups are headings over one list,
+ *   not lists of their own: steps keep numbering through them, `Kind:`
+ *   marks apply per step, and a quick run drops a group whose steps are
+ *   all filtered out. A plain `# Steps` holds ungrouped steps and may sit
+ *   before or between groups (shared setup, cleanup). The run screen heads
+ *   each group's steps with its goal, and the report and feedback file
+ *   sum each group up — which is what lets a reader see that "restore
+ *   password" is broken while "log in" is fine, without reading every
+ *   step.
  *
  * `version`/`createdAt` are not part of the text — callers supply them
  * (derived from the filename and file mtime) via `fallback`. `@version`
@@ -337,18 +384,35 @@ export function parseCaseDocument(
   const { preamble, sections: topSections } = splitTopSections(rest, 1);
   const description = preamble.trim();
 
+  let domains: TestCaseDomain[] = [];
   let variables: TestCaseVariable[] = [];
   let dependencies: string[] = [];
   let prerequisites: string[] = [];
-  let steps: Step[] = [];
+  const groups: StepGroup[] = [];
+  const steps: Step[] = [];
 
   for (const section of topSections) {
     const name = section.heading.trim().toLowerCase();
-    if (name === "variables") variables = parseVariables(section.content);
+    const stepsHeading = STEPS_HEADING_RE.exec(section.heading.trim());
+    if (name === "domains") domains = parseDomains(section.content);
+    else if (name === "variables") variables = parseVariables(section.content);
     else if (name === "dependencies") dependencies = parseBulletList(section.content);
     else if (name === "prerequisites" || name === "prerequirements")
       prerequisites = parseBulletList(section.content);
-    else if (name === "steps") steps = parseSteps(section.content);
+    else if (stepsHeading) {
+      // Every `# Steps` / `# Steps: <group>` section contributes steps, in
+      // document order, numbered as one list — a group is a heading over a
+      // stretch of the same list, not a list of its own. The prose between
+      // a group's heading and its first step is the group's goal.
+      const groupTitle = (stepsHeading[1] ?? "").trim() || undefined;
+      const { preamble, sections } = splitTopSections(section.content, 2);
+      if (groupTitle && !groups.some((g) => g.title === groupTitle)) {
+        groups.push({ title: groupTitle, goal: preamble.trim() });
+      }
+      for (const s of sections) {
+        steps.push(parseOneStep(s.heading, s.content, steps.length, groupTitle));
+      }
+    }
   }
 
   if (requireSteps && steps.length === 0) {
@@ -365,12 +429,18 @@ export function parseCaseDocument(
     title,
     description,
     tags,
+    domains,
     variables,
     dependencies,
     prerequisites,
+    groups,
     steps,
   };
 }
+
+/** `# Steps`, or `# Steps: <group title>` — the heading of a section that
+ * holds steps. Group 1 is the title, absent on the plain form. */
+const STEPS_HEADING_RE = /^Steps(?::\s*(.*))?$/i;
 
 function splitTopSections(
   text: string,
@@ -398,6 +468,19 @@ function splitTopSections(
     preamble: preambleLines.join("\n"),
     sections: sections.map((s) => ({ heading: s.heading, content: s.content.join("\n").trim() })),
   };
+}
+
+function parseDomains(sectionBody: string): TestCaseDomain[] {
+  const { sections } = splitTopSections(sectionBody, 2);
+  return sections.map((s) => parseOneDomain(s.heading, s.content));
+}
+
+/** A domain's body is a description plus `Default:` and `Match:` lines —
+ * the variable grammar minus `Generator:`. Parsed by the variable reader
+ * and narrowed, so the two line syntaxes cannot drift apart. */
+function parseOneDomain(name: string, body: string): TestCaseDomain {
+  const v = parseOneVariable(name, body);
+  return { name: v.name, description: v.description, defaultValue: v.defaultValue, match: v.match };
 }
 
 function parseVariables(sectionBody: string): TestCaseVariable[] {
@@ -502,11 +585,6 @@ export function renderBulletList(items: string[]): string {
   return items.map((item) => `- ${item.trim().replace(/\n/g, "\n  ")}`).join("\n");
 }
 
-function parseSteps(stepsSectionBody: string): Step[] {
-  const { sections } = splitTopSections(stepsSectionBody, 2);
-  return sections.map((s, index) => parseOneStep(s.heading, s.content, index));
-}
-
 const FENCE_RE = /```([^\n]*)\n([\s\S]*?)```/;
 const SUBSECTION_RE = /^###\s+(Expected|Note)\s*$/i;
 const SELECTOR_RE = /^Selector:\s*(.*)$/i;
@@ -549,7 +627,7 @@ function splitStepSubsections(text: string): {
   };
 }
 
-function parseOneStep(title: string, body: string, index: number): Step {
+function parseOneStep(title: string, body: string, index: number, group?: string): Step {
   const lines = body.split("\n");
   let i = 0;
   while (i < lines.length && lines[i].trim() === "") i++;
@@ -609,6 +687,7 @@ function parseOneStep(title: string, body: string, index: number): Step {
     quick,
     extra,
     note,
+    group,
   };
 }
 
@@ -673,6 +752,18 @@ export function renderCaseMarkdown(doc: TestCaseVersion): string {
     out.push(doc.description.trim());
   }
 
+  if (doc.domains.length > 0) {
+    out.push("");
+    out.push("# Domains");
+    for (const domain of doc.domains) {
+      out.push("");
+      out.push(`## ${domain.name.trim()}`);
+      if (domain.description.trim()) out.push(domain.description.trim());
+      if (domain.defaultValue?.trim()) out.push(`Default: ${domain.defaultValue.trim()}`);
+      if (domain.match?.trim()) out.push(`Match: ${domain.match.trim()}`);
+    }
+  }
+
   if (doc.variables.length > 0) {
     out.push("");
     out.push("# Variables");
@@ -688,6 +779,7 @@ export function renderCaseMarkdown(doc: TestCaseVersion): string {
           }`,
         );
       }
+      if (variable.match?.trim()) out.push(`Match: ${variable.match.trim()}`);
     }
   }
 
@@ -701,10 +793,24 @@ export function renderCaseMarkdown(doc: TestCaseVersion): string {
     out.push(renderBulletList(items));
   }
 
-  out.push("");
-  out.push("# Steps");
-
+  // A group heading opens wherever the group changes, and a plain `# Steps`
+  // reopens for steps that follow a group without one — so the text says
+  // exactly what the parser will read back, wherever the groups sit.
+  let openGroup: string | undefined | null = null;
   for (const step of doc.steps) {
+    const group = step.group?.trim() || undefined;
+    if (openGroup === null || group !== openGroup) {
+      out.push("");
+      if (group) {
+        out.push(`# Steps: ${group}`);
+        const goal = doc.groups.find((g) => g.title === group)?.goal.trim();
+        if (goal) {
+          out.push("");
+          out.push(goal);
+        }
+      } else out.push("# Steps");
+      openGroup = group;
+    }
     out.push("");
     out.push(`## ${step.title.trim() || "Untitled step"}`);
     // `Where:`/`Selector:`/`Kind:` are a header block in any order; this
@@ -733,6 +839,10 @@ export function renderCaseMarkdown(doc: TestCaseVersion): string {
       out.push("### Note");
       out.push(step.note.trim());
     }
+  }
+  if (doc.steps.length === 0) {
+    out.push("");
+    out.push("# Steps");
   }
 
   return out.join("\n") + "\n";
@@ -802,6 +912,36 @@ export const AUDIENCE_LABELS: Record<CommentAudience, string> = {
   docs: "Docs",
   ops: "Ops",
 };
+
+/**
+ * Comments common enough to deserve a button. Each is a full, ordinary
+ * comment — text and audience — that the panel adds in one tap and that is
+ * indistinguishable on disk from one typed by hand. The wording is fixed
+ * here so the check skill can recognise it by text alone; keep the two in
+ * step.
+ *
+ * "Combine with previous step" is the first because it is the most common
+ * thing a tester says about a case that was authored screen by screen: an
+ * "open the page, see the field" step followed by "enter the value, save,
+ * verify" step is one test that got split, and the tester who notices does
+ * not want to change the case mid-run, only to tell the writer.
+ */
+export const QUICK_COMMENTS: ReadonlyArray<{
+  id: "combine-with-previous";
+  label: string;
+  text: string;
+  audiences: CommentAudience[];
+  /** False on the first step: there is no previous step to combine with. */
+  needsPreviousStep: boolean;
+}> = [
+  {
+    id: "combine-with-previous",
+    label: "Combine with previous step",
+    text: "This step needs to be combined with the previous step — they are one test that was split in two.",
+    audiences: ["test-writer"],
+    needsPreviousStep: true,
+  },
+];
 
 /** When to pick each one. Shown next to the checkbox in the panel, so the
  * choice is made from the description rather than from the word — "Product"
@@ -893,6 +1033,57 @@ function stepLabeller(doc: TestCaseVersion): (stepId: string | null) => string {
  * way — knowing a step logged three errors is not the same as reading them,
  * and the count is what makes the un-attached case visible rather than silent.
  */
+/**
+ * One line per group — its title, goal and how its steps ended — for the
+ * report and the feedback file. This is the level a reader wants first
+ * when a case has groups: "restore password: 1 failed" says where to look
+ * before any step does. Empty for a case without groups.
+ */
+function renderGroupSummary(doc: TestCaseVersion, run: RunFile): string[] {
+  if (doc.groups.length === 0) return [];
+  const byId = new Map(run.steps.map((s) => [s.stepId, s]));
+  const lines: string[] = [];
+  for (const group of doc.groups) {
+    const states = doc.steps
+      .filter((step) => step.group === group.title)
+      .map((step) => byId.get(step.id)?.status ?? "pending");
+    const tally = (
+      [
+        ["success", "passed"],
+        ["failed", "failed"],
+        ["warning", "with warnings"],
+        ["skipped", "skipped"],
+        ["pending", "not run"],
+        ["running", "running"],
+      ] as const
+    )
+      .map(([status, word]) => [word, states.filter((s) => s === status).length] as const)
+      .filter(([, n]) => n > 0)
+      .map(([word, n]) => `${n} ${word}`)
+      .join(", ");
+    // The icon is the group's verdict at a glance: any failure fails it,
+    // any warning warns, anything still open leaves it open, and a group
+    // whose run steps all passed passed — skipped extras do not dilute it.
+    const worst = states.includes("failed")
+      ? "failed"
+      : states.includes("warning")
+        ? "warning"
+        : states.some((s) => s === "pending" || s === "running")
+          ? "pending"
+          : states.includes("success")
+            ? "success"
+            : states.length > 0
+              ? "skipped"
+              : "pending";
+    const goal = group.goal.trim();
+    lines.push(
+      `- ${STATUS_ICON[worst] ?? ""} **${group.title}**${goal ? ` — ${goal}` : ""}` +
+        `${tally ? ` (${tally})` : " (no steps)"}`,
+    );
+  }
+  return lines;
+}
+
 export function renderRunReport(
   doc: TestCaseVersion,
   run: RunFile,
@@ -915,7 +1106,17 @@ export function renderRunReport(
   // deployment. Omitted entirely when no environment was chosen — the
   // values may still have pointed anywhere, and naming none is honest.
   if (run.environment.trim()) lines.push(`- Environment: ${run.environment.trim()}`);
+  // The addresses the run actually hit, one per declared domain. An
+  // environment name says which deployment was meant; this says which one
+  // was used, which is what matters when the two disagree.
+  for (const domain of doc.domains) {
+    const value = (run.variables[domain.name] ?? "").trim();
+    if (value) lines.push(`- ${domain.name}: ${value}`);
+  }
   lines.push(`- Status: ${run.status}`);
+  // The tester's opinion of the case as test writing — kept apart from
+  // Status on purpose, since a five-star case can fail and a chore can pass.
+  if (run.rating != null) lines.push(`- Case rating: ${describeRating(run.rating)}`);
   lines.push(`- Started: ${run.startedAt}`);
   lines.push(`- Finished: ${run.finishedAt ?? "—"}`);
   lines.push("");
@@ -932,6 +1133,13 @@ export function renderRunReport(
   if (digest) {
     lines.push(renderCaptureDigest(digest, labelStep));
   }
+  const groupSummary = renderGroupSummary(doc, run);
+  if (groupSummary.length > 0) {
+    lines.push("## By group");
+    lines.push("");
+    lines.push(...groupSummary);
+    lines.push("");
+  }
   lines.push("## Steps");
   lines.push("");
 
@@ -939,11 +1147,22 @@ export function renderRunReport(
   doc.steps.forEach((step, index) => {
     const state = byId.get(step.id);
     const status = state?.status ?? "pending";
+    // A group's heading opens once, above its first step, at the level the
+    // steps sit under — so a reader scrolling the report sees the concern
+    // before the verdicts that make it up.
+    if (step.group && doc.steps[index - 1]?.group !== step.group) {
+      lines.push(`**Group: ${step.group}**`);
+      lines.push("");
+    }
     lines.push(
       `### ${STATUS_ICON[status] ?? ""} ${numberLabels[index]}. ${step.title} (${status}${
         step.extra ? ", extra" : ""
       })`,
     );
+    if (state?.rating != null) {
+      lines.push("");
+      lines.push(`Rating: ${describeRating(state.rating)}`);
+    }
     const comments = state ? stepComments(state) : [];
     if (comments.length) {
       lines.push("");
@@ -990,7 +1209,10 @@ function hasStepSignal(step: Step, state: RunStepState): boolean {
     // A console error during a step the tester marked passed is signal in its
     // own right, on the same argument as the run comment below: a green run
     // with a stack trace in it is exactly the finding that used to disappear.
-    state.consoleErrors > 0
+    state.consoleErrors > 0 ||
+    // Stars are feedback for the test writer whichever way they point: the
+    // step to write the next ones like, or the one to rewrite.
+    state.rating != null
   );
 }
 
@@ -1028,7 +1250,7 @@ export function renderRunFeedback(
     );
 
   const runComment = run.comment.trim();
-  if (signalSteps.length === 0 && !runComment) return null;
+  if (signalSteps.length === 0 && !runComment && run.rating == null) return null;
 
   const failedCount = run.steps.filter((s) => s.status === "failed").length;
   const warningCount = run.steps.filter((s) => s.status === "warning").length;
@@ -1048,10 +1270,25 @@ export function renderRunFeedback(
   const failedItems: string[] = [];
   const skippedItems: string[] = [];
   const consoleItems: string[] = [];
+  const exemplaryItems: string[] = [];
+  const poorItems: string[] = [];
 
   for (const { step, index, state } of signalSteps) {
     const stepNum = numberLabels[index];
     const comments = stepComments(state);
+    // Four and five stars go to one list, one and two to the other; a three
+    // is "nothing to say" with a number on it and stays in the step detail.
+    // The step's own comments ride along, since "excellent" without a reason
+    // teaches less than "excellent — the Expected line names the exact toast".
+    if (state.rating != null && (isExemplaryRating(state.rating) || isPoorRating(state.rating))) {
+      const why = comments
+        .map((c) => c.text.trim())
+        .filter(Boolean)
+        .join("; ");
+      (isExemplaryRating(state.rating) ? exemplaryItems : poorItems).push(
+        `- **${step.title}** (step ${stepNum}): ${describeRating(state.rating)}${why ? ` — ${why}` : ""}`,
+      );
+    }
     const toDeveloper = comments.some((c) => c.audiences.includes("developer"));
     for (const comment of comments) {
       for (const audience of comment.audiences) {
@@ -1111,6 +1348,11 @@ export function renderRunFeedback(
     `${failedCount} failed, ${warningCount} warnings, ${noteCount} tester comments` +
       `${skippedCount > 0 ? `, ${skippedCount} ${skippedCount === 1 ? "step" : "steps"} skipped` : ""}.`,
   );
+  if (run.rating != null) {
+    lines.push(
+      `The tester rated the case as a piece of test writing: **${describeRating(run.rating)}**.`,
+    );
+  }
   if (hasCaptureSignal(captured)) {
     lines.push(
       digest
@@ -1124,7 +1366,13 @@ export function renderRunFeedback(
   lines.push("");
   const addressedCount = [...addressed.values()].reduce((n, items) => n + items.length, 0);
   const hasActionItems =
-    addressedCount + failedItems.length + skippedItems.length + consoleItems.length > 0;
+    addressedCount +
+      failedItems.length +
+      skippedItems.length +
+      consoleItems.length +
+      exemplaryItems.length +
+      poorItems.length >
+    0;
   lines.push(
     hasActionItems
       ? "This file was written by a human tester reviewing the feature. Each section below " +
@@ -1139,6 +1387,20 @@ export function renderRunFeedback(
     lines.push("## The tester's own words on this run");
     lines.push("");
     lines.push(runComment);
+  }
+
+  // Before the addressed sections: a case with groups was written as a set
+  // of concerns, and "which concern broke" is the first thing every reader
+  // wants — the developer to know where to look, the test writer to know
+  // which goal the failing steps were serving.
+  const groupSummary = renderGroupSummary(doc, run);
+  if (groupSummary.length > 0) {
+    lines.push("");
+    lines.push("## By group");
+    lines.push("");
+    lines.push("Each group's goal, and how the steps written to prove it ended:");
+    lines.push("");
+    lines.push(...groupSummary);
   }
 
   const actionSections: Array<{ heading: string; items: string[]; lead?: string }> = [
@@ -1169,6 +1431,27 @@ export function renderRunFeedback(
         "demanding a verdict, or remove it.",
     },
     { heading: "Errors and failed requests from the page", items: consoleItems },
+    {
+      heading: "Steps the tester rated highly",
+      items: exemplaryItems,
+      // Addressed to the test writer, and to the next case rather than this
+      // one: a star is not an action item on the step it sits on. The
+      // aggregate command is named because one tester's five is a data
+      // point and five testers' fives are a style.
+      lead:
+        "For the test writer. These are the steps to write the next ones like — the shape, " +
+        "the level of detail, what the Expected line names. `enloop-case.mjs ratings` " +
+        "collects them across every run of this project.",
+    },
+    {
+      heading: "Steps the tester rated poorly",
+      items: poorItems,
+      lead:
+        "For the test writer. Rewrite these in the next version — the comment beside each " +
+        "says why when the tester said; when they did not, judge the step against the " +
+        "contract and say in your report what you changed. A shape that earns one star " +
+        "in several cases is a project rule waiting to be written.",
+    },
   ];
   // A comment-only handoff has nothing to list, and an empty "Action items"
   // heading reads as a bug in this renderer rather than as an all-clear.
@@ -1228,6 +1511,7 @@ export function renderRunFeedback(
       `### ${STATUS_ICON[state.status] ?? ""} ${numberLabels[index]}. ${step.title} (${state.status})`,
     );
     if (step.expected) lines.push(`Expected: ${step.expected}`);
+    if (state.rating != null) lines.push(`Rating: ${describeRating(state.rating)}`);
     const detailComments = stepComments(state);
     if (detailComments.length > 0) {
       lines.push("Comments:");
@@ -1300,8 +1584,7 @@ function mergeTopLevelSection(
     const before = markdown.slice(0, range.end).replace(/[ \t]*\n?$/, "");
     return `${before}\n\n${trimmed}\n\n${markdown.slice(range.end)}`;
   }
-  const stepsMatch = /^# Steps[ \t]*\r?\n/im.exec(markdown);
-  const insertAt = stepsMatch ? stepsMatch.index : markdown.length;
+  const insertAt = stepsSections(markdown)[0]?.headingStart ?? markdown.length;
   return markdown.slice(0, insertAt) + `# ${headingName}\n\n${trimmed}\n\n` + markdown.slice(insertAt);
 }
 
@@ -1362,10 +1645,10 @@ export function renderReadableCase(
   const automated = doc.steps.filter((s) => s.type === "automated");
 
   const resolved: Record<string, string> = {};
-  const undecided: TestCaseVariable[] = [];
-  for (const variable of doc.variables) {
-    if (variable.defaultValue?.trim()) resolved[variable.name] = variable.defaultValue.trim();
-    else undecided.push(variable);
+  const undecided: Array<Pick<TestCaseVariable, "name" | "description">> = [];
+  for (const entry of [...doc.domains, ...doc.variables]) {
+    if (entry.defaultValue?.trim()) resolved[entry.name] = entry.defaultValue.trim();
+    else undecided.push(entry);
   }
   const prose = (text: string) => proseForReader(text, resolved);
 
@@ -1426,6 +1709,11 @@ export function renderReadableCase(
 
   const runnableLabels = stepNumberLabels(runnable);
   runnable.forEach((step, index) => {
+    if (step.group && runnable[index - 1]?.group !== step.group) {
+      const goal = doc.groups.find((g) => g.title === step.group)?.goal.trim();
+      lines.push(`**${prose(step.group)}**${goal ? ` — ${prose(goal)}` : ""}`);
+      lines.push("");
+    }
     lines.push(`### ${runnableLabels[index]}. ${prose(step.title)}`);
     lines.push("");
     if (step.extra) {
@@ -1485,9 +1773,15 @@ function stepBodyIsQuick(body: string): boolean {
 
 /** Number of steps a quick run of this document would execute. */
 export function countQuickSteps(markdown: string): number {
-  const stepsRaw = extractSectionRaw(stripViewerComment(markdown).replace(/\r\n/g, "\n"), "Steps");
-  if (!stepsRaw) return 0;
-  return splitTopSections(stepsRaw, 2).sections.filter((s) => stepBodyIsQuick(s.content)).length;
+  const normalized = stripViewerComment(markdown).replace(/\r\n/g, "\n");
+  return stepsSections(normalized).reduce(
+    (n, range) =>
+      n +
+      splitTopSections(normalized.slice(range.start, range.end), 2).sections.filter((s) =>
+        stepBodyIsQuick(s.content),
+      ).length,
+    0,
+  );
 }
 
 /**
@@ -1514,15 +1808,58 @@ export function filterToQuickSteps(markdown: string): string {
   // step, so it would otherwise ride along inside that step's body and be
   // kept or dropped depending on whether that step happened to be quick.
   const normalized = stripViewerComment(markdown).replace(/\r\n/g, "\n");
-  const range = sectionRange(normalized, "Steps");
-  if (!range) return normalized;
+  const ranges = stepsSections(normalized);
+  if (ranges.length === 0) return normalized;
 
-  const stepsBody = normalized.slice(range.start, range.end);
-  const kept = splitTopSections(stepsBody, 2)
-    .sections.filter((s) => stepBodyIsQuick(s.content))
-    .map((s) => `## ${s.heading}\n${s.content}`.trim());
+  // Last section first, so earlier offsets stay valid while later text moves.
+  let result = normalized;
+  for (const range of [...ranges].reverse()) {
+    const { preamble, sections } = splitTopSections(normalized.slice(range.start, range.end), 2);
+    const kept = sections
+      .filter((s) => stepBodyIsQuick(s.content))
+      .map((s) => `## ${s.heading}\n${s.content}`.trim());
+    // A group none of whose steps is quick leaves the quick run whole —
+    // heading and goal too. A heading over nothing would parse as an empty
+    // group, and the linter would rightly refuse the document it was in.
+    if (kept.length === 0 && range.group) {
+      result = result.slice(0, range.headingStart) + result.slice(range.end);
+      continue;
+    }
+    const goal = range.group && preamble.trim() ? preamble.trim() + "\n\n" : "";
+    result =
+      result.slice(0, range.start) + goal + kept.join("\n\n") + "\n\n" + result.slice(range.end);
+  }
+  return result;
+}
 
-  return normalized.slice(0, range.start) + kept.join("\n\n") + "\n\n" + normalized.slice(range.end);
+/**
+ * Every section that holds steps — `# Steps` and each `# Steps: <group>` —
+ * in document order. `headingStart` is the offset of the heading line
+ * itself, `start`/`end` bracket the content under it (as `sectionRange`),
+ * and `group` is the title after the colon, or `null` for the plain form.
+ * Text surgery on steps goes through this rather than `sectionRange`,
+ * which finds one section by exact name and so would see only the plain
+ * `# Steps` of a grouped case.
+ */
+function stepsSections(
+  markdown: string,
+): Array<{ group: string | null; headingStart: number; start: number; end: number }> {
+  const out: Array<{ group: string | null; headingStart: number; start: number; end: number }> = [];
+  const headingRe = /^# Steps(?::[ \t]*([^\r\n]*?))?[ \t]*(?:\r?\n|$)/gim;
+  let match: RegExpExecArray | null;
+  while ((match = headingRe.exec(markdown)) !== null) {
+    const start = match.index + match[0].length;
+    const nextHeading = /^# /m.exec(markdown.slice(start));
+    const end = nextHeading ? start + nextHeading.index : markdown.length;
+    out.push({
+      group: (match[1] ?? "").trim() || null,
+      headingStart: match.index,
+      start,
+      end,
+    });
+    if (match[0].length === 0) headingRe.lastIndex++;
+  }
+  return out;
 }
 
 /**
@@ -1540,15 +1877,57 @@ export function buildRunSource(caseMarkdown: string, suiteMarkdown: string | nul
   const normalizedCase = stripViewerComment(caseMarkdown).replace(/\r\n/g, "\n");
   const normalizedSuite = stripViewerComment(suiteMarkdown).replace(/\r\n/g, "\n");
 
-  const suiteSteps = extractSectionRaw(normalizedSuite, "Steps");
+  // A suite's prep steps are taken from every steps section it has, group
+  // headings and goals dropped: prep is shared setup, and it joins the case
+  // ungrouped, ahead of whatever the case groups.
+  const suiteSteps = stepsSections(normalizedSuite)
+    .flatMap(
+      (range) =>
+        splitTopSections(normalizedSuite.slice(range.start, range.end), 2).sections,
+    )
+    .map((s) => `## ${s.heading}\n${s.content}`.trim())
+    .join("\n\n");
+  const suiteDomains = extractSectionRaw(normalizedSuite, "Domains");
   const suiteVariables = extractSectionRaw(normalizedSuite, "Variables");
   const suiteDependencies = extractSectionRaw(normalizedSuite, "Dependencies");
   const suitePrerequisites = extractSectionRaw(normalizedSuite, "Prerequisites");
 
   let result = normalizedCase;
 
-  if (suiteSteps?.trim()) {
-    result = mergeTopLevelSection(result, "Steps", prefixStepHeadings(suiteSteps), "prepend");
+  if (suiteSteps.trim()) {
+    const prep = prefixStepHeadings(suiteSteps);
+    const first = stepsSections(result)[0];
+    if (!first) {
+      result = mergeTopLevelSection(result, "Steps", prep, "prepend");
+    } else if (first.group) {
+      // The case opens with a group: prep gets a plain `# Steps` of its own
+      // in front of it rather than being read as the group's first steps.
+      result =
+        result.slice(0, first.headingStart) +
+        `# Steps\n\n${prep}\n\n` +
+        result.slice(first.headingStart);
+    } else {
+      result = result.slice(0, first.start) + prep + "\n\n" + result.slice(first.start);
+    }
+  }
+
+  // Suite domains follow the variable rule: appended after the case's own,
+  // so a case that redeclares `APP` keeps its own entry — and its own main
+  // domain, since the case's first declaration stays first.
+  if (suiteDomains?.trim()) {
+    const caseDomainSection = extractSectionRaw(result, "Domains");
+    const caseDomainNames = new Set(
+      caseDomainSection ? parseDomains(caseDomainSection).map((d) => d.name) : [],
+    );
+    const suiteDomainSubsections = splitTopSections(suiteDomains, 2).sections.filter(
+      (s) => !caseDomainNames.has(s.heading.trim()),
+    );
+    if (suiteDomainSubsections.length > 0) {
+      const suiteDomainText = suiteDomainSubsections
+        .map((s) => `## ${s.heading}\n${s.content}`.trim())
+        .join("\n\n");
+      result = mergeTopLevelSection(result, "Domains", suiteDomainText, "append");
+    }
   }
 
   if (suiteVariables?.trim()) {

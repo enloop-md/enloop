@@ -23,8 +23,8 @@ whole point is that they never have to come here.
 
 The panel is the sole authority on loading a patch into a live run, and the
 run history under `runs/` stays read-only for you, as everywhere else. What
-you own here is `agent/**` answers and statuses, `test-cases/**` versions
-via the validator, and the processes you spawn.
+you own here is `agent/**` answers, progress lines and statuses,
+`test-cases/**` versions via the validator, and the processes you spawn.
 
 ## 1. Resolve where things live
 
@@ -64,8 +64,11 @@ When `agent/` does exist, announce this loop before anything else — write
 
 ```json
 { "id": "claude-code", "kind": "claude-code", "host": "<hostname>",
-  "lastSeenAt": "<iso now>" }
+  "lastSeenAt": "<iso now>", "protocol": 1 }
 ```
+
+`protocol` is the channel's wire version — currently **1**; it is what
+lets the extension warn when a stale plugin serves a newer folder.
 
 This is how a standalone answering daemon (`enloopd`) knows you are alive
 and defers to you — you hold the task's context, it reads the repo cold.
@@ -92,13 +95,30 @@ each one that is not:
    been read. An `ack.json` already present means an earlier pass died
    mid-answer: leave the file as it is and keep going, the question still
    needs its answer.
-2. Read `question.json`: which case, which run, which step, what the tester
+2. **Say what you are doing, as you do it.** The tester sees one status
+   line under their question, and a line that has not changed in a minute
+   reads as a server that died. Rewrite `progress.json` in the question's
+   directory whenever what you are doing changes:
+
+   ```json
+   { "id": "<question id>", "at": "<iso now>",
+     "text": "Reading the reset form in ResetForm.tsx" }
+   ```
+
+   One short present-tense sentence, in your own words, about the actual
+   thing — what you are opening, what you just found, that you are writing
+   the answer or preparing a patch. Not a fixed phrase from a list: "Found
+   it — the step names a button that was renamed in #412" tells them more
+   than "Working". At the least, write one before you start reading, one
+   when you know the answer, and one when you start writing it. Never
+   write it after `answer.json` exists.
+3. Read `question.json`: which case, which run, which step, what the tester
    selected, and what they asked — plus `pageUrl` (where they were
    standing) and `attachments`. Then read the run's frozen
    `"$DATA_DIR"/runs/<testCaseId>/<runId>/case.md` and `run.json` — the
    step (`stepId` is the positional `step-<n>` heading in document order)
    plus which steps are already executed.
-3. Use the attachments — they are the tester's actual page at the moment of
+4. Use the attachments — they are the tester's actual page at the moment of
    asking, which the app source alone cannot show:
    - `page.html` — a sanitized DOM snapshot (scripts and styles stripped,
      ids/classes/testids/aria kept; each frame introduced by a
@@ -111,12 +131,12 @@ each one that is not:
      spinner that never resolved).
    Treat both as evidence of *that moment*, not of the current page — the
    tester may have navigated since.
-4. Answer from evidence. Read the app source until the answer is concrete —
+5. Answer from evidence. Read the app source until the answer is concrete —
    the exact clicks, the exact field, `file:line` where it helps. The tester
    is standing in the page mid-run: the **first line of `answer.md` is the
    direct answer**, the click-path after it, background last. Do not
    speculate; if the source contradicts the step, say that plainly.
-5. Decide whether to patch the case. Patch **only** when the step text
+6. Decide whether to patch the case. Patch **only** when the step text
    itself was insufficient — when the next tester would have to ask the same
    question. A patch:
    - starts from the case's **latest stored** version — highest id,
@@ -152,7 +172,7 @@ each one that is not:
      `quick`/`full`/`check` landing goes to `v4`. Take the landed id from
      the `landed v<id>` output line, never from your own count — a
      concurrent write shifts it.
-6. Before writing, check the directory one more time: an `answer.json`
+7. Before writing, check the directory one more time: an `answer.json`
    that appeared meanwhile means another server finished first — a complete
    answer is terminal, never overwrite one. Otherwise write `answer.md`,
    then `answer.json` — **that order**; the panel treats `answer.json` as

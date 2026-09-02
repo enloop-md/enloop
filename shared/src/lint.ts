@@ -4,7 +4,7 @@ import {
   substituteVariables,
   CURRENT_FORMAT_VERSION,
 } from "./markdown.js";
-import { resolveVariableValues } from "./variables.js";
+import { resolveRunValues } from "./variables.js";
 import type { TestCaseVersion } from "./types.js";
 
 /**
@@ -62,11 +62,33 @@ export interface LintResult {
     /** Variables that end a cold resolution empty — a `page-*` generator
      * with no page and no `Default:` to fall back to. */
     unresolved: string[];
-    /** Variables the tester must type before starting (no default, no
-     * generator) — the questions the case will ask. */
+    /** Domains and variables that reach the run with no value from the
+     * case itself and none from the project's environments — the questions
+     * the case would ask. Zero is the bar; each name here is a lint error
+     * already listed above. */
     asks: string[];
+    /** Names the case leaves to the environment: no `Default:`, no
+     * generator, provided by `environments.json`. Fine, and worth
+     * knowing — a run without an environment picked will ask for them. */
+    fromEnvironment: string[];
   };
 }
+
+export interface LintOptions {
+  expectProject?: string;
+  /** Domain and variable names the project's environments provide (from
+   * `environments.json`, every environment's contract). A variable with
+   * no default and no generator is only an error when nothing here
+   * supplies it. Undefined = the caller could not read the file, which
+   * is not the same as an empty contract. */
+  environmentNames?: string[];
+}
+
+/** An origin a domain's `Default:` may be: scheme + host, optional port,
+ * nothing after. `localhost:3000` is accepted scheme-less because that is
+ * how everyone writes it and the Go control adds `http://`. */
+const ORIGIN = /^(https?:\/\/[^\s/]+|localhost(:\d+)?|127\.0\.0\.1(:\d+)?|\[::1\](:\d+)?)\/?$/i;
+const ORIGIN_WITH_PATH = /^(https?:\/\/[^\s/]+|localhost(:\d+)?|127\.0\.0\.1(:\d+)?)\/\S+$/i;
 
 /** An address a Go control can use, or a placeholder that becomes one before
  * the run starts. Deliberately the same shape the run screen's
@@ -113,13 +135,15 @@ function stripCode(text: string): string {
   return text.replace(/`[^`]*`/g, " ");
 }
 
-export function lintCase(raw: string, options: { expectProject?: string } = {}): LintResult {
+export function lintCase(raw: string, options: LintOptions = {}): LintResult {
   const errors: LintFinding[] = [];
   const warnings: LintFinding[] = [];
   const createdAt = new Date().toISOString();
+  const environmentNames = new Set(options.environmentNames ?? []);
+  const environmentsKnown = options.environmentNames !== undefined;
 
   const declared = parseCaseDocument(raw, { version: "1", createdAt });
-  const values = resolveVariableValues(declared.variables, {});
+  const values = resolveRunValues(declared, {});
   const substituted = substituteVariables(raw, values);
   const doc = parseCaseDocument(substituted, { version: "1", createdAt });
 
@@ -129,7 +153,7 @@ export function lintCase(raw: string, options: { expectProject?: string } = {}):
     errors.push({ rule: "7", message: "No `# ` title line — the first heading is the case title." });
   }
   if (doc.steps.length === 0) {
-    errors.push({ rule: "1", message: "No steps parsed. Check that `# Steps` is a top-level heading and each step is `## `." });
+    errors.push({ rule: "1", message: "No steps parsed. Check that `# Steps` (or `# Steps: <group>`) is a top-level heading and each step is `## `." });
   }
   if (!doc.project.trim()) {
     errors.push({ rule: "reject", message: "No `@project` line naming the app under test." });
@@ -152,7 +176,10 @@ export function lintCase(raw: string, options: { expectProject?: string } = {}):
   // One the tester supplies by hand is *supposed* to survive authoring — the
   // panel resolves it when the run starts — so flagging it would push authors
   // to invent a default for a value they have no business guessing.
-  const declaredNames = new Set(declared.variables.map((v) => v.name));
+  const declaredNames = new Set([
+    ...declared.domains.map((d) => d.name),
+    ...declared.variables.map((v) => v.name),
+  ]);
   const everyField = [
     doc.title,
     doc.description,
@@ -175,8 +202,55 @@ export function lintCase(raw: string, options: { expectProject?: string } = {}):
   for (const name of undeclared) {
     errors.push({
       rule: "6",
-      message: `%${name}% is used but never declared under \`# Variables\`, so it stays literal in the run — a typo, or a missing declaration.`,
+      message: `%${name}% is used but never declared under \`# Domains\` or \`# Variables\`, so it stays literal in the run — a typo, or a missing declaration.`,
     });
+  }
+
+  // --- domains -------------------------------------------------------------
+
+  // One namespace: `%APP%` is looked up in both sections, so a name in both
+  // is two declarations racing for one placeholder.
+  const domainNames = new Set(declared.domains.map((d) => d.name));
+  for (const variable of declared.variables) {
+    if (domainNames.has(variable.name)) {
+      errors.push({
+        rule: "2b",
+        at: variable.name,
+        message: `\`${variable.name}\` is declared under both \`# Domains\` and \`# Variables\`. An address is a domain; keep the one declaration.`,
+      });
+    }
+  }
+  for (const domain of declared.domains) {
+    const def = domain.defaultValue?.trim() ?? "";
+    if (!def) {
+      warnings.push({
+        rule: "2b",
+        at: domain.name,
+        message: `Domain \`${domain.name}\` has no \`Default:\`, so a run from a blank tab, the shared viewer and a downloaded copy have no address for it. Default it to the deployment the project normally tests against — the default environment's address.`,
+      });
+    } else if (ORIGIN_WITH_PATH.test(def)) {
+      warnings.push({
+        rule: "2b",
+        at: domain.name,
+        message: `Domain \`${domain.name}\` defaults to \`${def}\`, which carries a path. A domain is an origin — scheme, host, port — and routes go on the \`%${domain.name}%/…\` references instead.`,
+      });
+    } else if (!ORIGIN.test(def)) {
+      errors.push({
+        rule: "2b",
+        at: domain.name,
+        message: `Domain \`${domain.name}\` defaults to \`${def}\`, which is not an origin a browser can open. Write \`https://host\`, \`http://host:port\` or \`localhost:port\`.`,
+      });
+    }
+  }
+  if (declared.domains.length > 1) {
+    const unmatched = declared.domains.filter((d) => !d.match?.trim()).map((d) => d.name);
+    if (unmatched.length > 0) {
+      warnings.push({
+        rule: "2b",
+        at: "Domains",
+        message: `Several domains, and ${unmatched.map((n) => `\`${n}\``).join(", ")} ${unmatched.length === 1 ? "carries" : "carry"} no \`Match:\`. With a pattern per domain the panel can tell which deployment the open tab is; without one, only the main domain follows the tab, and a run started from the wrong tab starts on the wrong address.`,
+      });
+    }
   }
 
   if (doc.formatVersion && doc.formatVersion !== CURRENT_FORMAT_VERSION) {
@@ -186,18 +260,24 @@ export function lintCase(raw: string, options: { expectProject?: string } = {}):
     });
   }
   for (const variable of declared.variables) {
-    const described = variable.description.trim().length > 0;
-    if (!variable.defaultValue && !variable.generator && !described) {
+    // Every value is Enloop's to resolve, never the tester's to type: a
+    // default, a generator, or the environments file. A description
+    // telling the tester where to look used to pass here; it no longer
+    // does, because "look it up before you start" is still a question.
+    if (!variable.defaultValue?.trim() && !variable.generator && !environmentNames.has(variable.name)) {
       errors.push({
         rule: "6",
         at: variable.name,
-        message: "No `Default:`, no `Generator:`, and no description saying how to obtain the value.",
+        message:
+          "No `Default:`, no `Generator:`, and no environment provides it — the run would have to ask. Give it a default (a fixture from the repo, a value from the rules file), a generator, or record it per environment: `enloop-case.mjs environments <data folder> \"<project>\" --variable NAME --env <name> --set NAME=value`." +
+          (environmentsKnown ? "" : " (Pass --data-dir so environments.json is consulted.)"),
       });
-    } else if (!variable.defaultValue && !variable.generator) {
+    }
+    if (variable.name === "BASE_URL" || (variable.generator === "page-origin" && everyField.includes(`%${variable.name}%/`))) {
       warnings.push({
-        rule: "6",
+        rule: "2b",
         at: variable.name,
-        message: "No `Default:` and no `Generator:` — the description must say exactly where to get the value, before the run starts.",
+        message: `\`${variable.name}\` is an address written as a variable — the pre-domains form. Declare it under \`# Domains\` (first entry = main domain; \`Default:\` and \`Match:\` carry over, drop \`Generator:\`) so environments can set it and the panel treats it as an address.`,
       });
     }
     if (variable.match && !variable.generator?.startsWith("page-")) {
@@ -230,23 +310,15 @@ export function lintCase(raw: string, options: { expectProject?: string } = {}):
   const namesAddresses =
     declared.steps.some((s) => ADDRESS.test(s.where?.trim() ?? "")) ||
     declared.prerequisites.some((p) => OPENS_SOMEWHERE.test(p));
-  if (namesAddresses && !declaredNames.has("BASE_URL")) {
+  if (namesAddresses && declared.domains.length === 0 && !declaredNames.has("BASE_URL")) {
     warnings.push({
       rule: "2b",
-      at: "Variables",
+      at: "Domains",
       message:
-        "The case names addresses but declares no `BASE_URL`. Declare it (`Generator: page-origin` plus a `Default:`) and build app addresses as `%BASE_URL%/…` — a literal absolute URL is right only for another system's pages.",
+        "The case names addresses but declares no `# Domains`. Declare the deployment(s) it touches — `## APP` with a `Default:` origin — and build app addresses as `%APP%/…`; a literal absolute URL is right only for a page of a system the case does not otherwise name.",
     });
   }
-  const baseUrl = declared.variables.find((v) => v.name === "BASE_URL");
-  if (baseUrl && !baseUrl.defaultValue?.trim()) {
-    warnings.push({
-      rule: "2b",
-      at: "BASE_URL",
-      message:
-        "`BASE_URL` has no `Default:`, so a run from a blank tab and the shared viewer have no address to fall back to. Default it to the environment this project normally tests against.",
-    });
-  }
+  const mainDomain = declared.domains[0]?.name ?? (declaredNames.has("BASE_URL") ? "BASE_URL" : "APP");
   const saysWho =
     doc.prerequisites.some((p) => LOGIN_HINT.test(p)) ||
     declared.variables.some((v) => LOGIN_HINT.test(`${v.name} ${v.description}`)) ||
@@ -275,7 +347,7 @@ export function lintCase(raw: string, options: { expectProject?: string } = {}):
       errors.push({
         rule: "2a",
         at: "Prerequisites",
-        message: `Bare route in a prerequisite: "${item.trim()}". This block has no open page to resolve against — use an absolute URL or %BASE_URL%/….`,
+        message: `Bare route in a prerequisite: "${item.trim()}". This block has no open page to resolve against — use an absolute URL or %${mainDomain}%/….`,
       });
     }
   }
@@ -308,7 +380,7 @@ export function lintCase(raw: string, options: { expectProject?: string } = {}):
       warnings.push({
         rule: "2b",
         at: step.title,
-        message: `\`Where: ${where}\` is a bare route — one click only when the run's tab is already on the app. \`%BASE_URL%${where}\` works from anywhere.`,
+        message: `\`Where: ${where}\` is a bare route — it resolves against the main domain in the panel and nowhere else. \`%${mainDomain}%${where}\` works from anywhere, and says which domain.`,
       });
     }
 
@@ -400,6 +472,39 @@ export function lintCase(raw: string, options: { expectProject?: string } = {}):
     }
   }
 
+  // --- groups --------------------------------------------------------------
+
+  // A group is a heading plus a goal plus steps; missing any of the three
+  // it is a heading over nothing, and a reader is told a concern exists
+  // that the case never proves.
+  for (const group of doc.groups) {
+    if (!group.goal.trim()) {
+      errors.push({
+        rule: "9",
+        at: group.title,
+        message: `\`# Steps: ${group.title}\` has no goal. Under the heading, before the first step, say what its steps prove together.`,
+      });
+    }
+    if (!doc.steps.some((s) => s.group === group.title)) {
+      errors.push({ rule: "9", at: group.title, message: "The group has no steps under it." });
+    }
+  }
+  const groupHeadings = [...substituted.matchAll(/^# Steps:[ \t]*(.+?)[ \t]*$/gim)].map((m) => m[1]);
+  for (const title of new Set(groupHeadings.filter((t, i) => groupHeadings.indexOf(t) !== i))) {
+    errors.push({
+      rule: "9",
+      at: title,
+      message: "This group heading appears twice. A group's steps sit together under one heading; merge them or name the second group differently.",
+    });
+  }
+  if (doc.groups.length === 1 && doc.steps.every((s) => s.group)) {
+    warnings.push({
+      rule: "9",
+      at: doc.groups[0].title,
+      message: "Every step is in the one group, so the group is the case. Groups earn their headings when a case has several concerns; otherwise use a plain `# Steps` and let the description carry the goal.",
+    });
+  }
+
   // --- the quick subset is a document of its own ---------------------------
 
   let quickParses = true;
@@ -446,12 +551,16 @@ export function lintCase(raw: string, options: { expectProject?: string } = {}):
     const w = s.where?.trim() ?? "";
     return COLD_OPENABLE.test(w) && !/\s/.test(w);
   }).length;
+  const fromEnvironment = [...declared.domains, ...declared.variables]
+    .filter((v) => environmentNames.has(v.name))
+    .map((v) => v.name);
   const asks = declared.variables
-    .filter((v) => !v.defaultValue?.trim() && !v.generator)
+    .filter((v) => !v.defaultValue?.trim() && !v.generator && !environmentNames.has(v.name))
     .map((v) => v.name);
-  const unresolved = declared.variables
-    .filter((v) => v.generator && !(values[v.name] ?? "").trim())
-    .map((v) => v.name);
+  const unresolved = [
+    ...declared.domains.filter((d) => !(values[d.name] ?? "").trim() && !environmentNames.has(d.name)),
+    ...declared.variables.filter((v) => v.generator && !(values[v.name] ?? "").trim()),
+  ].map((v) => v.name);
 
   return {
     ok: errors.length === 0,
@@ -459,6 +568,6 @@ export function lintCase(raw: string, options: { expectProject?: string } = {}):
     warnings,
     doc,
     quick: { marked: quickMarked, total: doc.steps.length, parses: quickParses },
-    cold: { navigableSteps, uiSteps: uiSteps.length, unresolved, asks },
+    cold: { navigableSteps, uiSteps: uiSteps.length, unresolved, asks, fromEnvironment },
   };
 }

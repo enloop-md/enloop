@@ -1,6 +1,6 @@
 ---
 name: setup
-description: Prepare the app repo you are currently in for Enloop — record the project name and the base URL its cases default to, and install the test-selector convention into the repo's agent instructions (AGENTS.md or CLAUDE.md) so every element and action a test needs to find (buttons, links, inputs, containers) arrives already labelled instead of being backfilled later. Use when the user asks to set up / configure / onboard Enloop for a project, wants new UI to be written with test handles by default, or is writing their first case from a repo. Run once per repo. Not for adding attributes to existing code — that is enloop:instrument, which this skill hands off to.
+description: Prepare the app repo you are currently in for Enloop — record the project name, the deployments its cases run against (domains and environments: local, staging, prod), and install the test-selector convention into the repo's agent instructions (AGENTS.md or CLAUDE.md) so every element and action a test needs to find (buttons, links, inputs, containers) arrives already labelled instead of being backfilled later. Use when the user asks to set up / configure / onboard Enloop for a project, wants new UI to be written with test handles by default, or is writing their first case from a repo. Run once per repo. Not for adding attributes to existing code — that is enloop:instrument, which this skill hands off to.
 disable-model-invocation: true
 allowed-tools: Read Grep Glob Edit Write Bash(git diff *) Bash(git log *) Bash(git status *) Bash(git rev-parse *) Bash(git remote *) Bash(rg *) Bash(ls *) Bash(cat *) Bash(basename *) Bash(node *)
 ---
@@ -13,9 +13,12 @@ deliverables:
 
 1. **The project name is recorded**, so every case written from this repo
    is findable in a Library holding several products' cases.
-2. **The base URL is recorded in the project's rules file**, so every
-   case's `BASE_URL` variable gets its `Default:` without anyone asking
-   again — the address a cold run and the shared viewer fall back to.
+2. **The deployments are recorded as environments** — the domain names
+   the app is made of (`APP`, and `ADMIN` when the console is its own
+   host) and the address of each in local, staging, prod — so every case
+   declares its `# Domains` with the right defaults, the panel offers the
+   environments before a run, and no skill and no run ever asks for an
+   address again.
 3. **The selector convention is written into the repo's agent instructions**
    (`AGENTS.md` or `CLAUDE.md`, see step 6), so new UI is authored with test
    handles already on it.
@@ -62,37 +65,86 @@ cheap to fix today and expensive later: it is baked into the titles of
 every case written from here, and changing it means new versions of all of
 them.
 
-## 3. Record the base URL in the project's rules file
+## 3. Record the deployments as environments
 
-The environment this project's cases normally test against — staging, a
-demo instance, `http://localhost:3000`. Every case declares a `BASE_URL`
-variable, and this value is its `Default:`: what a run started from a
-blank tab, the online viewer, and a downloaded page resolve when no app
-tab is behind the run. Recording it once is what stops every future case
-from asking.
+An app is reachable at several addresses — `http://localhost:3000`, a
+staging host, production — and often *is* several hosts at once: the app
+and an admin console, a marketing site and the product it signs into, one
+host per tenant. Every case names the hosts it touches as **domains**
+(`%APP%/orders`, `%ADMIN%/audit`) and leaves the addresses to the
+**environment** the tester picks before a run. This step records both,
+once, in the data folder's `environments.json` — the file the panel's
+Environments screen edits and the authoring skills read.
 
-Offer what you can detect — a staging link in the README, a
-`.env.example`, a deploy config — and confirm with the user.
-
-Then write it into the rules file in the data folder. Resolve the plugin
-and the folder the way every skill does:
+Resolve the plugin and the folder the way every skill does:
 
 ```bash
 ENLOOP_PLUGIN="<the installed plugin root, two levels above this skill>"
 node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" data-folder
-node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" rules "$DATA_DIR" "<project name>"
+node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" environments "$DATA_DIR" "<project name>"
 ```
 
 `data-folder` prints the folder — `AMBIGUOUS`/`NONE` mean ask rather than
-guess; `references/data-folder.md` at the plugin root says how. `rules`
-prints the rules file's path and current content. If the file does not
-exist, create it with the base URL up top and the prose sections stubbed
-for the **check** skill to fill later:
+guess; `references/data-folder.md` at the plugin root says how.
+`environments` prints what is already recorded for this project.
+
+Then **derive the deployments from the repo** — the same way the authoring
+skills derive routes, and for the same reason: a remembered address is an
+invented one.
+
+```bash
+rg -n -i '(APP|BASE|PUBLIC|SITE|API|ADMIN|FRONTEND|BACKEND)_?URL|HOST(NAME)?=' .env.example .env.* 2>/dev/null
+rg -n -i 'baseURL|baseUrl' playwright.config.* cypress.config.* 2>/dev/null
+rg -n -i 'ports:|hostname|VIRTUAL_HOST|\.localhost' docker-compose*.yml compose*.yml 2>/dev/null
+rg -n -i 'staging|production|prod\.|demo\.' README.md fly.toml vercel.json netlify.toml app.yaml 2>/dev/null | head -20
+```
+
+From that, decide:
+
+- **The domain names.** `APP` for the app under test. A second name only
+  for a host that is genuinely separate — an admin console on its own
+  host, a second tenant, the site the flow starts from. A path under the
+  same host is a route, not a domain.
+- **The environments.** One per deployment you can name an address for —
+  `local` from the dev server port, `staging` and `prod` from the deploy
+  config or README. Which one is the **default** — the deployment cases
+  are normally run against, and the one whose addresses become each
+  domain's `Default:` in every case: staging when there is one, local
+  when the project has nothing deployed, never prod unless the user says
+  so.
+
+Show the user what you derived and where each address came from, in one
+block, and confirm it once. This is the one moment in Enloop where an
+address is put to a person — because it is written once here and read by
+every case after — so make it cheap: propose the complete set, let them
+correct a value, do not ask open questions.
+
+Record it:
+
+```bash
+node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" environments "$DATA_DIR" "<project name>" \
+  --domain APP --domain ADMIN \
+  --env local --set APP=http://localhost:3000 --set ADMIN=http://localhost:3001
+node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" environments "$DATA_DIR" "<project name>" \
+  --env staging --set APP=https://staging.example.test --set ADMIN=https://admin.staging.example.test --default
+```
+
+Environments are scoped to the project name, so one folder serving
+several repos keeps each product's staging apart. Values that differ per
+deployment and are not addresses — the QA account, a tenant id — belong
+here too (`--variable QA_EMAIL --env staging --set QA_EMAIL=…`); take them
+from seeds and fixtures, or leave the value empty and say so in the
+report. What is empty shows as a hole in the panel's Environments screen,
+which is where a teammate fills it.
+
+**The rules file.** Cases also read `rules/<project>.md` in the data
+folder — the prose rules the **check** skill accumulates from runs. Print
+it (`enloop-case.mjs rules "$DATA_DIR" "<project name>"`); if it does not
+exist, create it with the sections stubbed for the **check** skill to fill
+later:
 
 ```markdown
 # Enloop rules — <project name>
-
-Base URL: https://staging.example.test
 
 # Navigation
 
@@ -103,11 +155,11 @@ Base URL: https://staging.example.test
 # Vocabulary
 ```
 
-`Base URL:` is a **structured line** — the authoring skills copy it
-verbatim into every case's `BASE_URL` default — so keep exactly that
-shape. If the file already exists, add or correct the `Base URL:` line
-and leave every rule in it alone: the rules belong to the **check** skill
-and the user.
+An older rules file may carry a `Base URL: <origin>` line from before
+environments existed. Move its value into the default environment's `APP`
+address and delete the line; the environments file is the one source now.
+Leave every rule in the file alone: the rules belong to the **check**
+skill and the user.
 
 ## 4. Detect the selector convention
 
@@ -301,7 +353,9 @@ that deserves its own turn with its own review.
 ## 9. Report
 
 - The project name recorded, and where it was written.
-- The base URL recorded, and the rules file it lives in.
+- The domains and environments recorded — each address and the repo file
+  it came from, which environment is the default, and every value left
+  empty for someone to fill in the panel's Environments screen.
 - The selector convention detected (with the usage count that established
   it) or chosen, and which instructions file it now lives in.
 - Whether the production build strips test attributes, and what you

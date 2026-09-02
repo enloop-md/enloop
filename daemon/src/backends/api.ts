@@ -35,8 +35,22 @@ export async function answerViaApi(opts: {
   testCaseId: string;
   model: string;
   canPatch: boolean;
+  /** Called with one short line whenever the work changes shape — every
+   * tool call, plus whatever the model says through its `progress` tool.
+   * The daemon writes it where the panel reads it. */
+  onProgress?: (text: string) => void;
 }): Promise<BackendResult> {
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const progress = (text: string) => opts.onProgress?.(text);
+  /** A path as the tester would recognise it: relative to the repo or the
+   * data folder, never the machine's absolute layout. */
+  const shown = (p: string): string => {
+    const abs = path.resolve(p);
+    for (const root of [path.resolve(opts.repo), path.resolve(opts.dataDir)]) {
+      if (abs.startsWith(root + path.sep)) return path.relative(root, abs);
+    }
+    return path.basename(abs);
+  };
   const { betaZodTool } = await import("@anthropic-ai/sdk/helpers/beta/zod");
   const client = new Anthropic();
 
@@ -60,6 +74,7 @@ export async function answerViaApi(opts: {
         "Read a text file inside the app repo or the data folder. Returns at most 100KB.",
       inputSchema: z.object({ path: z.string() }),
       run: ({ path: p }) => {
+        progress(`Reading ${shown(p)}`);
         const abs = jail(p);
         const size = statSync(abs).size;
         const text = readFileSync(abs, "utf8").slice(0, 100_000);
@@ -70,7 +85,10 @@ export async function answerViaApi(opts: {
       name: "list_dir",
       description: "List a directory inside the app repo or the data folder.",
       inputSchema: z.object({ path: z.string() }),
-      run: ({ path: p }) => readdirSync(jail(p)).join("\n") || "(empty)",
+      run: ({ path: p }) => {
+        progress(`Looking through ${shown(p)}`);
+        return readdirSync(jail(p)).join("\n") || "(empty)";
+      },
     }),
     betaZodTool({
       name: "grep",
@@ -82,6 +100,7 @@ export async function answerViaApi(opts: {
         fixed: z.boolean().describe("true = literal string, false = regex").optional(),
       }),
       run: async ({ pattern, path: p, fixed }) => {
+        progress(`Searching for "${pattern.slice(0, 60)}" in ${shown(p)}`);
         const abs = jail(p);
         try {
           const { stdout } = await execFileP(
@@ -95,6 +114,20 @@ export async function answerViaApi(opts: {
         }
       },
     }),
+    // The model's own voice: a tool that does nothing but tell the tester
+    // what it is doing, in whatever words fit. The automatic lines above
+    // say which file is open; this one says why — "found the field, the
+    // step names the wrong label" — which is what a waiting tester wants.
+    betaZodTool({
+      name: "progress",
+      description:
+        "Tell the waiting tester, in one short present-tense sentence, what you are doing or have just found — e.g. \"Checking which label the reset form actually shows\", \"Found it — the step names a button that was renamed\", \"Writing the answer\". Call it whenever what you are doing changes. It never affects the answer.",
+      inputSchema: z.object({ text: z.string() }),
+      run: ({ text }) => {
+        progress(text);
+        return "ok";
+      },
+    }),
     ...(opts.canPatch
       ? [
           betaZodTool({
@@ -103,6 +136,7 @@ export async function answerViaApi(opts: {
               "Land a patched version of the case being run, as the next minor version. Pass the COMPLETE case markdown. It is validated first; on errors nothing is written and the errors come back for you to fix.",
             inputSchema: z.object({ markdown: z.string() }),
             run: ({ markdown }) => {
+              progress("Landing a patched version of the case");
               const result = lintCase(markdown);
               if (!result.ok) {
                 return `REFUSED — fix these and call land_patch again:\n${result.errors

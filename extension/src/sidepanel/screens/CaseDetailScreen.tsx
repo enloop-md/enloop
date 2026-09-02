@@ -1,10 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  defaultEnvironment,
   emptyEnvironments,
+  environmentsForProject,
+  environmentValues,
   generateVariableValue,
   matchesPagePattern,
   missingEnvironmentValues,
-  resolveVariableValues,
+  resolveRunValues,
   parseCaseDocument,
   renderBulletList,
   renderCasePage,
@@ -13,8 +16,10 @@ import {
   VARIABLE_GENERATOR_LABELS,
   viewerLink,
   withViewerComment,
+  type Environment,
   type EnvironmentsFile,
   type RunTier,
+  type TestCaseDomain,
   type TestCaseMeta,
   type TestCaseVariable,
   type TestCaseVersion,
@@ -55,6 +60,7 @@ export function CaseDetailScreen({
   // What a run of the current version would actually execute: the case
   // merged with its suite. Loaded here so starting a run never has to stop
   // and ask — the values are already resolved and on screen.
+  const [domains, setDomains] = useState<TestCaseDomain[]>([]);
   const [variables, setVariables] = useState<TestCaseVariable[]>([]);
   /** True once the run source has been parsed — distinguishes "no variables
    * declared" from "not looked yet", which the environment restore needs. */
@@ -65,19 +71,18 @@ export function CaseDetailScreen({
   // the moment the run began rather than the moment this screen opened.
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [edited, setEdited] = useState<Record<string, string>>({});
-  /** Page values a variable's `Match:` refused, by name — shown so the
-   * tester knows why a field is not following the open tab. */
+  /** Page values a domain's or a page variable's `Match:` refused, by name
+   * — shown so the tester knows why a field is not following the open tab. */
   const [pageRefused, setPageRefused] = useState<Record<string, string>>({});
   const pageUrl = useActivePageUrl();
   const [valuesOpen, setValuesOpen] = useState(false);
-  // This folder's named deployments. A run may pick one to pre-fill its
-  // values, or go without and have them typed — which is also the whole
-  // answer for per-PR domains a service generates (decided 2026-08-16).
+  // This folder's named deployments — the addresses of every domain the
+  // case declares, and the values that differ per deployment. A run picks
+  // one, or goes without and lets the main domain follow the open tab —
+  // which is also the whole answer for per-PR domains a service generates
+  // (decided 2026-08-16).
   const [envFile, setEnvFile] = useState<EnvironmentsFile | null>(null);
   const [selectedEnvId, setSelectedEnvId] = useState<string | null>(null);
-  /** Names the selected environment wrote into `edited`, so switching
-   * environments replaces its own contributions and nothing else. */
-  const [envApplied, setEnvApplied] = useState<ReadonlySet<string>>(new Set());
   const envRestored = useRef(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -139,6 +144,7 @@ export function CaseDetailScreen({
         version: meta.currentVersion,
         createdAt: new Date().toISOString(),
       });
+      setDomains(doc.domains);
       setVariables(doc.variables);
       setVariablesLoaded(true);
       setRunStepCounts({ total: doc.steps.length, quick: doc.steps.filter((s) => s.quick).length });
@@ -148,20 +154,48 @@ export function CaseDetailScreen({
     };
   }, [store, testCaseId, meta?.currentVersion]);
 
+  /** The environments this case may pick from: its project's, plus any
+   * unscoped ones. A folder holds several projects' cases, and staging of
+   * one is not staging of another. */
+  const project = meta?.project ?? "";
+  const offered = useMemo(
+    () => (envFile ? environmentsForProject(envFile, project) : []),
+    [envFile, project],
+  );
+  const selectedEnv: Environment | undefined = selectedEnvId
+    ? offered.find((e) => e.id === selectedEnvId)
+    : undefined;
+  /** What the resolver sees of the picked environment — nothing when none
+   * is picked, which is what lets the main domain follow the open tab. */
+  const envContext = useMemo(
+    () => (selectedEnv ? environmentValues(selectedEnv) : undefined),
+    [selectedEnv],
+  );
+
   // What the run would use, for display — recomputed every time the active
-  // tab changes, because a page value snapshotted when this screen opened
-  // describes a tab the tester may have long since left. The run itself
-  // re-reads the tab at the moment Start is pressed; this keeps what they
-  // are looking at equal to what that read will find. Through the shared
-  // resolver, so a page a variable's `Match:` refuses — or no page at all —
-  // falls through to the declared default exactly as it does everywhere
+  // tab or the picked environment changes, because a page value snapshotted
+  // when this screen opened describes a tab the tester may have long since
+  // left. The run itself re-reads the tab at the moment Start is pressed;
+  // this keeps what they are looking at equal to what that read will find.
+  // Through the shared resolver, so a domain or page variable whose
+  // `Match:` refuses the tab — or no page at all — falls through to the
+  // environment and the declared default exactly as it does everywhere
   // else. Page-derived entries follow the tab; other generators keep their
   // first preview rather than rerolling on every tab switch.
   useEffect(() => {
     setPreviews((prev) => {
-      const next = resolveVariableValues(variables, {}, { pageUrl });
+      const next = resolveRunValues(
+        { domains, variables },
+        {},
+        { pageUrl, environment: envContext },
+      );
       for (const v of variables) {
-        if (!v.generator?.startsWith("page-") && prev[v.name] !== undefined) {
+        if (
+          !v.generator?.startsWith("page-") &&
+          v.generator &&
+          !envContext?.values[v.name] &&
+          prev[v.name] !== undefined
+        ) {
           next[v.name] = prev[v.name];
         }
       }
@@ -169,15 +203,28 @@ export function CaseDetailScreen({
     });
     // What the page *would* have yielded where `Match:` refused it, so the
     // values form can say why a field is not following the open tab and
-    // offer the refusal as an explicit override.
+    // offer the refusal as an explicit override. Only meaningful with no
+    // environment picked — with one, the tab is not consulted at all.
     const refused: Record<string, string> = {};
+    if (!envContext && pageUrl) {
+      let origin = "";
+      try {
+        origin = new URL(pageUrl).origin;
+      } catch {
+        origin = "";
+      }
+      for (const d of domains) {
+        if (d.match && origin && !matchesPagePattern(d.match, origin))
+          refused[d.name] = origin;
+      }
+    }
     for (const v of variables) {
       if (!v.match || !v.generator?.startsWith("page-")) continue;
       const raw = generateVariableValue({ ...v, match: undefined }, { pageUrl });
       if (raw && !matchesPagePattern(v.match, raw)) refused[v.name] = raw;
     }
     setPageRefused(refused);
-  }, [variables, pageUrl]);
+  }, [domains, variables, pageUrl, envContext]);
 
   /** The last choice is remembered per folder — "which deployment am I
    * testing" rarely changes between runs of cases from the same repo. */
@@ -187,34 +234,53 @@ export function CaseDetailScreen({
     setSelectedEnvId(envId);
     if (envId) localStorage.setItem(envMemoryKey, envId);
     else localStorage.removeItem(envMemoryKey);
-
-    const env = envId ? envFile?.environments.find((e) => e.id === envId) : undefined;
-    const applied = new Set<string>();
-    if (env) {
-      for (const v of variables) {
-        if ((env.values[v.name] ?? "").trim()) applied.add(v.name);
-      }
-    }
-    setEdited((prev) => {
-      const next = { ...prev };
-      // The previous environment's values leave; hand-typed ones stay.
-      for (const name of envApplied) delete next[name];
-      if (env) for (const name of applied) next[name] = env.values[name];
-      return next;
-    });
-    setEnvApplied(applied);
   }
 
-  // Re-apply the remembered environment once both the environment list and
-  // the declared variables are known — not before, or there is nothing to
-  // pre-fill into.
+  // Pick the starting environment once both the environment list and the
+  // case's project are known: the remembered one when it still applies to
+  // this project, else the project's default, else none.
   useEffect(() => {
-    if (envRestored.current || !envFile || !variablesLoaded) return;
+    if (envRestored.current || !envFile || !variablesLoaded || !meta) return;
     envRestored.current = true;
     const saved = localStorage.getItem(envMemoryKey);
-    if (saved && envFile.environments.some((e) => e.id === saved)) applyEnvironment(saved);
+    const remembered = saved ? offered.find((e) => e.id === saved) : undefined;
+    const initial = remembered ?? defaultEnvironment(envFile, project);
+    if (initial) setSelectedEnvId(initial.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot restore
-  }, [envFile, variablesLoaded]);
+  }, [envFile, variablesLoaded, meta]);
+
+  /** Where each value on the form comes from, so the tester can read "this
+   * address is staging's" or "this follows the open tab" instead of
+   * inferring it. */
+  function sourceOf(name: string, kind: "domain" | "variable"): string {
+    if (name in edited) return "typed";
+    if (
+      envContext &&
+      (envContext.domains[name] ?? envContext.values[name] ?? "").trim()
+    ) {
+      return selectedEnv?.name ?? "environment";
+    }
+    if (kind === "domain") {
+      const d = domains.find((x) => x.name === name);
+      const isMain = domains[0]?.name === name;
+      const preview = previews[name] ?? "";
+      if (!envContext && preview && preview !== d?.defaultValue?.trim())
+        return "open tab";
+      if (!envContext && preview && isMain && pageUrl) {
+        try {
+          if (new URL(pageUrl).origin === preview) return "open tab";
+        } catch {
+          // not a URL — the default it is
+        }
+      }
+      return preview ? "default" : "no value";
+    }
+    const v = variables.find((x) => x.name === name);
+    if (v?.generator && (previews[name] ?? "").trim()) {
+      return `${VARIABLE_GENERATOR_LABELS[v.generator]} · fresh at start`;
+    }
+    return (previews[name] ?? "").trim() ? "default" : "no value";
+  }
 
   async function startRun(tier: RunTier) {
     if (!meta) return;
@@ -228,10 +294,11 @@ export function CaseDetailScreen({
       // through to the default. A value the tester typed wins outright,
       // which is also how a `Match:` refusal is overridden.
       const pageUrl = await getActivePageUrl().catch(() => undefined);
-      const values = resolveVariableValues(variables, edited, { pageUrl });
-      const environmentName = selectedEnvId
-        ? (envFile?.environments.find((e) => e.id === selectedEnvId)?.name ?? "")
-        : "";
+      const values = resolveRunValues({ domains, variables }, edited, {
+        pageUrl,
+        environment: envContext,
+      });
+      const environmentName = selectedEnv?.name ?? "";
       const run = await store.createRun(
         testCaseId,
         meta.currentVersion,
@@ -428,68 +495,103 @@ export function CaseDetailScreen({
 
         <ol className="space-y-2">
           {version?.steps.map((s, i) => (
-            <li key={s.id} className="rounded border border-slate-200 p-2 text-sm">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">#{i + 1}</span>
-                <span className="flex-1 font-medium text-slate-800">{s.title}</span>
-                {s.quick && (
-                  <span
-                    className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
-                    title="Runs in a quick run as well as a full one"
-                  >
-                    quick
-                  </span>
-                )}
-                {s.type === "automated" && (
-                  <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-700">
-                    automated
-                  </span>
-                )}
-              </div>
-              {s.selectors.map((sel, si) => (
-                <code
-                  key={`${si}-${sel}`}
-                  className={`mt-1 block text-[10px] ${
-                    si === 0 ? "text-amber-600" : "text-amber-600/60"
-                  }`}
-                >
-                  {s.selectors.length > 1 ? `${si + 1}. ${sel}` : sel}
-                </code>
-              ))}
-              {s.instructions && (
-                <Markdown text={s.instructions} className="mt-1 text-xs text-slate-500" />
-              )}
-              {s.type === "automated" && s.script && (
-                <pre className="mt-1 overflow-x-auto rounded bg-slate-900 p-2 text-[11px] text-slate-100">
-                  {s.script}
-                </pre>
-              )}
-              {s.expected && (
-                <div className="mt-1 text-xs text-slate-500">
-                  <span className="font-medium text-slate-600">Expected:</span>
-                  <Markdown text={s.expected} className="text-xs text-slate-500" />
+            <li key={s.id}>
+              {s.group && version.steps[i - 1]?.group !== s.group && (
+                <div className="mb-1 mt-3 border-l-2 border-amber-400 pl-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                    {s.group}
+                  </div>
+                  {version.groups
+                    .find((g) => g.title === s.group)
+                    ?.goal.trim() && (
+                    <Markdown
+                      text={
+                        version.groups.find((g) => g.title === s.group)!.goal
+                      }
+                      className="text-xs text-slate-500"
+                    />
+                  )}
                 </div>
               )}
+              <div className="rounded border border-slate-200 p-2 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400">#{i + 1}</span>
+                  <span className="flex-1 font-medium text-slate-800">
+                    {s.title}
+                  </span>
+                  {s.quick && (
+                    <span
+                      className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
+                      title="Runs in a quick run as well as a full one"
+                    >
+                      quick
+                    </span>
+                  )}
+                  {s.type === "automated" && (
+                    <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-700">
+                      automated
+                    </span>
+                  )}
+                </div>
+                {s.selectors.map((sel, si) => (
+                  <code
+                    key={`${si}-${sel}`}
+                    className={`mt-1 block text-[10px] ${
+                      si === 0 ? "text-amber-600" : "text-amber-600/60"
+                    }`}
+                  >
+                    {s.selectors.length > 1 ? `${si + 1}. ${sel}` : sel}
+                  </code>
+                ))}
+                {s.instructions && (
+                  <Markdown
+                    text={s.instructions}
+                    className="mt-1 text-xs text-slate-500"
+                  />
+                )}
+                {s.type === "automated" && s.script && (
+                  <pre className="mt-1 overflow-x-auto rounded bg-slate-900 p-2 text-[11px] text-slate-100">
+                    {s.script}
+                  </pre>
+                )}
+                {s.expected && (
+                  <div className="mt-1 text-xs text-slate-500">
+                    <span className="font-medium text-slate-600">
+                      Expected:
+                    </span>
+                    <Markdown
+                      text={s.expected}
+                      className="text-xs text-slate-500"
+                    />
+                  </div>
+                )}
+              </div>
             </li>
           ))}
         </ol>
       </div>
 
       <div className="border-t border-slate-200">
-        {envFile && envFile.environments.length > 0 && (
+        {envFile && offered.length > 0 && (
           <EnvironmentPicker
             file={envFile}
+            offered={offered}
             selectedId={selectedEnvId}
-            appliedCount={envApplied.size}
+            declared={[
+              ...domains.map((d) => d.name),
+              ...variables.map((v) => v.name),
+            ]}
             onSelect={applyEnvironment}
           />
         )}
-        {variables.length > 0 && (
+        {(domains.length > 0 || variables.length > 0) && (
           <RunValues
+            domains={domains}
             variables={variables}
             previews={previews}
             edited={edited}
             refused={pageRefused}
+            sourceOf={sourceOf}
             open={valuesOpen}
             onToggle={() => setValuesOpen((o) => !o)}
             onChange={(name, value) => setEdited((prev) => ({ ...prev, [name]: value }))}
@@ -682,24 +784,39 @@ function ShareMenu({
 }
 
 /**
- * Which deployment this run is against. Selecting one pre-fills the values
- * below; it locks nothing — every value stays editable, and "No environment"
- * is always on the list, because some deployments (a per-PR preview whose
- * domain a service just generated) exist only as a value someone pastes.
+ * Which deployment this run is against. Selecting one decides every
+ * declared domain's address and any variable the environment carries; it
+ * locks nothing — every value stays editable, and "No environment" is
+ * always on the list, because some deployments (a per-PR preview whose
+ * domain a service just generated) exist only as the tab someone has open.
  */
 function EnvironmentPicker({
   file,
+  offered,
   selectedId,
-  appliedCount,
+  declared,
   onSelect,
 }: {
   file: EnvironmentsFile;
+  offered: Environment[];
   selectedId: string | null;
-  appliedCount: number;
+  /** Names the case declares — what "N filled" counts against. */
+  declared: string[];
   onSelect: (envId: string | null) => void;
 }) {
-  const selected = selectedId ? file.environments.find((e) => e.id === selectedId) : undefined;
-  const missing = selected ? missingEnvironmentValues(file, selected) : [];
+  const selected = selectedId
+    ? offered.find((e) => e.id === selectedId)
+    : undefined;
+  const values = selected ? environmentValues(selected) : null;
+  const filled = values
+    ? declared.filter((name) => name in values.domains || name in values.values)
+        .length
+    : 0;
+  const missing = selected
+    ? missingEnvironmentValues(file, selected).filter((name) =>
+        declared.includes(name),
+      )
+    : [];
 
   return (
     <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-3 py-1.5">
@@ -709,10 +826,11 @@ function EnvironmentPicker({
         onChange={(e) => onSelect(e.target.value || null)}
         className="min-w-0 flex-1 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-xs text-slate-700"
       >
-        <option value="">No environment — values as below</option>
-        {file.environments.map((env) => (
+        <option value="">No environment — follow the open tab</option>
+        {offered.map((env) => (
           <option key={env.id} value={env.id}>
             {env.name}
+            {env.default ? " (default)" : ""}
             {missingEnvironmentValues(file, env).length > 0
               ? ` (${missingEnvironmentValues(file, env).length} empty)`
               : ""}
@@ -724,11 +842,12 @@ function EnvironmentPicker({
           className="shrink-0 text-[10px] text-slate-400"
           title={
             missing.length > 0
-              ? `No value for ${missing.join(", ")} — those fall back to the case's own defaults.`
+              ? `No value for ${missing.join(", ")} in this environment — those fall back to the case's own defaults.`
               : undefined
           }
         >
-          {appliedCount} filled{missing.length > 0 ? ` · ${missing.length} empty` : ""}
+          {filled} filled
+          {missing.length > 0 ? ` · ${missing.length} empty` : ""}
         </span>
       )}
     </div>
@@ -743,27 +862,118 @@ function EnvironmentPicker({
  * were right every time. Here it is collapsed by default and the run starts
  * without it — the values are still editable, they just no longer stand in
  * the way of the thing the tester came to do.
+ *
+ * Domains come first: they decide which deployment every address in the
+ * run points at, and the main one is what a bare route resolves against.
  */
 function RunValues({
+  domains,
   variables,
   previews,
   edited,
   refused,
+  sourceOf,
   open,
   onToggle,
   onChange,
   onReset,
 }: {
+  domains: TestCaseDomain[];
   variables: TestCaseVariable[];
   previews: Record<string, string>;
   edited: Record<string, string>;
   refused: Record<string, string>;
+  sourceOf: (name: string, kind: "domain" | "variable") => string;
   open: boolean;
   onToggle: () => void;
   onChange: (name: string, value: string) => void;
   onReset: (name: string) => void;
 }) {
-  const missing = variables.filter((v) => !(edited[v.name] ?? previews[v.name] ?? "").trim());
+  const rows: Array<{
+    name: string;
+    description: string;
+    kind: "domain" | "variable";
+    match?: string;
+  }> = [
+    ...domains.map((d) => ({
+      name: d.name,
+      description: d.description,
+      kind: "domain" as const,
+      match: d.match,
+    })),
+    ...variables.map((v) => ({
+      name: v.name,
+      description: v.description,
+      kind: "variable" as const,
+      match: v.match,
+    })),
+  ];
+  const missing = rows.filter(
+    (r) => !(edited[r.name] ?? previews[r.name] ?? "").trim(),
+  );
+  const mainName = domains[0]?.name;
+
+  const renderRow = (row: (typeof rows)[number]) => {
+    const isEdited = row.name in edited;
+    const value = edited[row.name] ?? previews[row.name] ?? "";
+    const source = sourceOf(row.name, row.kind);
+    return (
+      <div key={row.name} className="space-y-0.5">
+        <div className="flex items-center justify-between gap-2">
+          <label className="text-xs font-medium text-slate-600">
+            %{row.name}%
+            {row.kind === "domain" && (
+              <span className="ml-1 rounded bg-slate-200 px-1 py-px text-[9px] font-normal text-slate-600">
+                {row.name === mainName ? "main domain" : "domain"}
+              </span>
+            )}
+          </label>
+          {isEdited ? (
+            <button
+              onClick={() => onReset(row.name)}
+              className="shrink-0 text-[10px] text-sky-600 hover:underline"
+            >
+              ↺ back to auto
+            </button>
+          ) : (
+            source !== "no value" && (
+              <span className="shrink-0 text-[10px] text-slate-400">
+                {source}
+              </span>
+            )
+          )}
+        </div>
+        {row.description && (
+          <p className="text-[11px] text-slate-400">{row.description}</p>
+        )}
+        <input
+          value={value}
+          onChange={(e) => onChange(row.name, e.target.value)}
+          placeholder={row.kind === "domain" ? "https://…" : undefined}
+          className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm"
+        />
+        {refused[row.name] && !isEdited && (
+          <p className="text-[10px] text-amber-600">
+            The open page (<code>{refused[row.name]}</code>) doesn't match{" "}
+            <code>{row.match}</code>, so it wasn't used.{" "}
+            <button
+              onClick={() => onChange(row.name, refused[row.name])}
+              className="text-sky-600 hover:underline"
+            >
+              Use it anyway
+            </button>
+          </p>
+        )}
+        {!value.trim() && (
+          <p className="text-[10px] text-amber-600">
+            No value — steps keep the literal %{row.name}% rather than a blank.
+            {row.kind === "domain" &&
+              " Pick an environment, or open the app in this tab."}
+          </p>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="border-b border-slate-100 bg-slate-50">
@@ -781,7 +991,12 @@ function RunValues({
           ▸
         </span>
         <span className="flex-1">
-          {variables.length} value{variables.length === 1 ? "" : "s"} for this run
+          {domains.length > 0 &&
+            `${domains.length} domain${domains.length === 1 ? "" : "s"}`}
+          {domains.length > 0 && variables.length > 0 && " · "}
+          {variables.length > 0 &&
+            `${variables.length} value${variables.length === 1 ? "" : "s"}`}
+          {" for this run"}
           {missing.length > 0 && (
             <span className="text-amber-600"> · {missing.length} with no value</span>
           )}
@@ -795,54 +1010,14 @@ function RunValues({
       >
         <div className="overflow-hidden" inert={!open}>
           <div className="space-y-2.5 px-3 pb-3">
-            {variables.map((v) => {
-              const isEdited = v.name in edited;
-              const value = edited[v.name] ?? previews[v.name] ?? "";
-              return (
-                <div key={v.name} className="space-y-0.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <label className="text-xs font-medium text-slate-600">%{v.name}%</label>
-                    {isEdited ? (
-                      <button
-                        onClick={() => onReset(v.name)}
-                        className="shrink-0 text-[10px] text-sky-600 hover:underline"
-                      >
-                        ↺ back to auto
-                      </button>
-                    ) : (
-                      v.generator && (
-                        <span className="shrink-0 text-[10px] text-slate-400">
-                          {VARIABLE_GENERATOR_LABELS[v.generator]} · fresh at start
-                        </span>
-                      )
-                    )}
-                  </div>
-                  {v.description && <p className="text-[11px] text-slate-400">{v.description}</p>}
-                  <input
-                    value={value}
-                    onChange={(e) => onChange(v.name, e.target.value)}
-                    className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm"
-                  />
-                  {refused[v.name] && !isEdited && (
-                    <p className="text-[10px] text-amber-600">
-                      The open page (<code>{refused[v.name]}</code>) doesn't match{" "}
-                      <code>{v.match}</code>, so it wasn't used.{" "}
-                      <button
-                        onClick={() => onChange(v.name, refused[v.name])}
-                        className="text-sky-600 hover:underline"
-                      >
-                        Use it anyway
-                      </button>
-                    </p>
-                  )}
-                  {!value.trim() && (
-                    <p className="text-[10px] text-amber-600">
-                      No value — steps keep the literal %{v.name}% rather than a blank.
-                    </p>
-                  )}
-                </div>
-              );
-            })}
+            {rows.map(renderRow)}
+            {!open
+              ? null
+              : mainName && (
+                  <p className="text-[10px] text-slate-400">
+                    Bare routes in the case open against %{mainName}%.
+                  </p>
+                )}
           </div>
         </div>
       </div>

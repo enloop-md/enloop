@@ -3,7 +3,7 @@ import type {
   AgentCommand,
   AgentCommandSourceField,
   AgentQuestion,
-  AgentWatcherKind,
+  AgentPresence,
   DataStore,
 } from "@tcm/shared";
 
@@ -50,7 +50,7 @@ export function useAgentChannel(
   const [commands, setCommands] = useState<AgentCommand[]>([]);
   // Who is serving this folder — null means nobody, and the ask/run UI
   // shows how to connect a server instead of a wait that never ends.
-  const [watcher, setWatcher] = useState<AgentWatcherKind | null>(null);
+  const [watcher, setWatcher] = useState<AgentPresence | null>(null);
 
   const refresh = useCallback(async () => {
     try {

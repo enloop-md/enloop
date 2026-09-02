@@ -36,6 +36,21 @@ interface StepDraft {
   script: string;
   expected: string;
   note: string;
+  /** Title of the group this step sits in — one of `Draft.groups`, or empty
+   * for a step under the plain `# Steps`. */
+  group: string;
+}
+
+interface GroupDraft {
+  title: string;
+  goal: string;
+}
+
+interface DomainDraft {
+  name: string;
+  description: string;
+  defaultValue: string;
+  match: string;
 }
 
 interface VariableDraft {
@@ -44,6 +59,7 @@ interface VariableDraft {
   defaultValue: string;
   generator: string;
   generatorArg: string;
+  match: string;
 }
 
 interface Draft {
@@ -54,7 +70,9 @@ interface Draft {
   description: string;
   dependencies: string;
   prerequisites: string;
+  domains: DomainDraft[];
   variables: VariableDraft[];
+  groups: GroupDraft[];
   steps: StepDraft[];
 }
 
@@ -69,6 +87,7 @@ function emptyStep(): StepDraft {
     script: "",
     expected: "",
     note: "",
+    group: "",
   };
 }
 
@@ -81,7 +100,9 @@ function emptyDraft(): Draft {
     description: "",
     dependencies: "",
     prerequisites: "",
+    domains: [],
     variables: [],
+    groups: [],
     steps: [emptyStep()],
   };
 }
@@ -128,6 +149,14 @@ function toDocument(draft: Draft): TestCaseVersion {
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean),
+    domains: draft.domains
+      .filter((d) => d.name.trim())
+      .map((d) => ({
+        name: d.name.trim(),
+        description: d.description,
+        defaultValue: d.defaultValue.trim() || undefined,
+        match: d.match.trim() || undefined,
+      })),
     variables: draft.variables
       .filter((v) => v.name.trim())
       .map((v) => ({
@@ -136,9 +165,23 @@ function toDocument(draft: Draft): TestCaseVersion {
         defaultValue: v.defaultValue.trim() || undefined,
         generator: (v.generator || undefined) as TestCaseVersion["variables"][number]["generator"],
         generatorArg: v.generatorArg.trim() || undefined,
+        match: v.match.trim() || undefined,
       })),
     dependencies: bulletItems(draft.dependencies),
     prerequisites: bulletItems(draft.prerequisites),
+    // A group named on a step but not in the list still renders as a
+    // heading, with an empty goal the linter will ask for — better than a
+    // step silently losing the group it was given.
+    groups: [
+      ...draft.groups
+        .filter((g) => g.title.trim())
+        .map((g) => ({ title: g.title.trim(), goal: g.goal.trim() })),
+      ...draft.steps
+        .map((s) => s.group.trim())
+        .filter((title, i, all) => title && all.indexOf(title) === i)
+        .filter((title) => !draft.groups.some((g) => g.title.trim() === title))
+        .map((title) => ({ title, goal: "" })),
+    ],
     steps: draft.steps.map((s, index) => ({
       id: `step-${index + 1}`,
       order: index,
@@ -152,6 +195,7 @@ function toDocument(draft: Draft): TestCaseVersion {
       quick: s.quick,
       extra: s.extra,
       note: s.note.trim() || undefined,
+      group: s.group.trim() || undefined,
     })),
   };
 }
@@ -171,12 +215,20 @@ function fromMarkdown(markdown: string): Draft {
     description: doc.description,
     dependencies: bulletText(doc.dependencies),
     prerequisites: bulletText(doc.prerequisites),
+    groups: doc.groups.map((g) => ({ title: g.title, goal: g.goal })),
+    domains: doc.domains.map((d) => ({
+      name: d.name,
+      description: d.description,
+      defaultValue: d.defaultValue ?? "",
+      match: d.match ?? "",
+    })),
     variables: doc.variables.map((v) => ({
       name: v.name,
       description: v.description,
       defaultValue: v.defaultValue ?? "",
       generator: v.generator ?? "",
       generatorArg: v.generatorArg ?? "",
+      match: v.match ?? "",
     })),
     steps:
       doc.steps.length > 0
@@ -190,6 +242,7 @@ function fromMarkdown(markdown: string): Draft {
             script: s.script ?? "",
             expected: s.expected ?? "",
             note: s.note ?? "",
+            group: s.group ?? "",
           }))
         : [emptyStep()],
   };
@@ -338,6 +391,80 @@ export function renderBuilder(
   );
   form.appendChild(before);
 
+  // ---- domains
+  const domainsList = el("div", "blist");
+  function renderDomains(): void {
+    domainsList.replaceChildren();
+    draft.domains.forEach((domain, index) => {
+      const card = el("div", "bcard");
+      const bar = el("div", "bcard-head");
+      bar.appendChild(
+        el("span", "bcard-title", `%${domain.name || "NAME"}%${index === 0 ? " — main" : ""}`),
+      );
+      const remove = el("button", "bghost", "Remove");
+      remove.addEventListener("click", () => {
+        draft.domains.splice(index, 1);
+        renderDomains();
+        refreshPreview();
+      });
+      bar.appendChild(remove);
+      card.appendChild(bar);
+
+      card.appendChild(
+        field("Name", domain.name, (v) => {
+          domain.name = v.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+          (bar.firstChild as HTMLElement).textContent =
+            `%${domain.name || "NAME"}%${index === 0 ? " — main" : ""}`;
+          refreshPreview();
+        }, { placeholder: "APP", hint: "Used as %NAME%/route in Where: lines, prerequisites and links." }),
+      );
+      card.appendChild(
+        field("What it is", domain.description, (v) => {
+          domain.description = v;
+          refreshPreview();
+        }, { placeholder: "The web app under test." }),
+      );
+      card.appendChild(
+        field("Default address", domain.defaultValue, (v) => {
+          domain.defaultValue = v;
+          refreshPreview();
+        }, {
+          placeholder: "https://staging.example.test",
+          hint: "Scheme, host and port — the deployment a run uses when no environment is picked.",
+        }),
+      );
+      card.appendChild(
+        field("Matches tabs", domain.match, (v) => {
+          domain.match = v;
+          refreshPreview();
+        }, {
+          placeholder: "*.example.test",
+          hint: "Optional glob. An open tab whose host fits counts as this domain.",
+        }),
+      );
+      domainsList.appendChild(card);
+    });
+  }
+
+  const domains = el("section", "bsection");
+  domains.appendChild(el("h2", undefined, "Domains (optional)"));
+  domains.appendChild(
+    el(
+      "p",
+      "bhint",
+      "The deployments the case touches — the app, its admin console, a second tenant. The first is the main domain; an environment picked before a run sets every one of them.",
+    ),
+  );
+  domains.appendChild(domainsList);
+  const addDomain = el("button", "bghost", "+ Add a domain");
+  addDomain.addEventListener("click", () => {
+    draft.domains.push({ name: "", description: "", defaultValue: "", match: "" });
+    renderDomains();
+    refreshPreview();
+  });
+  domains.appendChild(addDomain);
+  form.appendChild(domains);
+
   // ---- variables
   function renderVariables(): void {
     varsList.replaceChildren();
@@ -359,7 +486,7 @@ export function renderBuilder(
           variable.name = v.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
           (bar.firstChild as HTMLElement).textContent = `%${variable.name || "NAME"}%`;
           refreshPreview();
-        }, { placeholder: "BASE_URL", hint: "Used as %NAME% anywhere in the case." }),
+        }, { placeholder: "QA_EMAIL", hint: "Used as %NAME% anywhere in the case." }),
       );
       card.appendChild(
         field("What it is", variable.description, (v) => {
@@ -371,7 +498,7 @@ export function renderBuilder(
         field("Default value", variable.defaultValue, (v) => {
           variable.defaultValue = v;
           refreshPreview();
-        }, { placeholder: "https://app.example.com" }),
+        }, { placeholder: "qa.bot@example.test" }),
       );
 
       const genWrap = el("label", "bfield");
@@ -417,6 +544,7 @@ export function renderBuilder(
       defaultValue: "",
       generator: "",
       generatorArg: "",
+      match: "",
     });
     renderVariables();
     refreshPreview();
@@ -496,6 +624,15 @@ export function renderBuilder(
         }),
       );
       card.appendChild(
+        field("Group", step.group, (v) => {
+          step.group = v;
+          refreshPreview();
+        }, {
+          placeholder: "Restore password",
+          hint: "Optional. The title of a group from the list above; steps of one group sit together.",
+        }),
+      );
+      card.appendChild(
         field("Selectors", step.selectors, (v) => {
           step.selectors = v;
           refreshPreview();
@@ -567,6 +704,63 @@ export function renderBuilder(
     });
   }
 
+  // ---- groups
+  const groupsList = el("div", "blist");
+  function renderGroups(): void {
+    groupsList.replaceChildren();
+    draft.groups.forEach((group, index) => {
+      const card = el("div", "bcard");
+      const bar = el("div", "bcard-head");
+      bar.appendChild(el("span", "bcard-title", group.title || `Group ${index + 1}`));
+      const remove = el("button", "bghost", "Remove");
+      remove.addEventListener("click", () => {
+        draft.groups.splice(index, 1);
+        renderGroups();
+        refreshPreview();
+      });
+      bar.appendChild(remove);
+      card.appendChild(bar);
+      card.appendChild(
+        field("Title", group.title, (v) => {
+          group.title = v;
+          (bar.firstChild as HTMLElement).textContent = v || `Group ${index + 1}`;
+          refreshPreview();
+        }, { placeholder: "Restore password", hint: "Type the same title in the Group field of each step that belongs here." }),
+      );
+      card.appendChild(
+        field("Goal", group.goal, (v) => {
+          group.goal = v;
+          refreshPreview();
+        }, {
+          area: true,
+          rows: 2,
+          placeholder: "The reset mail reaches the migrated address and its link signs the user in.",
+          hint: "What the group's steps prove together — required.",
+        }),
+      );
+      groupsList.appendChild(card);
+    });
+  }
+
+  const groups = el("section", "bsection");
+  groups.appendChild(el("h2", undefined, "Groups (optional)"));
+  groups.appendChild(
+    el(
+      "p",
+      "bhint",
+      "A case covering a broad change reads better as a few concerns — log in, restore a password, change the address — each with a goal and the steps that prove it. Steps keep numbering through groups.",
+    ),
+  );
+  groups.appendChild(groupsList);
+  const addGroup = el("button", "bghost", "+ Add a group");
+  addGroup.addEventListener("click", () => {
+    draft.groups.push({ title: "", goal: "" });
+    renderGroups();
+    refreshPreview();
+  });
+  groups.appendChild(addGroup);
+  form.appendChild(groups);
+
   const steps = el("section", "bsection");
   steps.appendChild(el("h2", undefined, "Steps"));
   steps.appendChild(stepsList);
@@ -621,7 +815,9 @@ export function renderBuilder(
   output.appendChild(actions);
   form.appendChild(output);
 
+  renderDomains();
   renderVariables();
+  renderGroups();
   renderSteps();
   refreshPreview();
 }

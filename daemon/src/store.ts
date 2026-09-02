@@ -9,15 +9,18 @@ import {
 import path from "node:path";
 import {
   agentCommandRequestSchema,
+  agentHeartbeatSchema,
   caseContextSchema,
   agentCommandStatusSchema,
   agentQuestionAckSchema,
+  agentQuestionProgressSchema,
   agentQuestionFileSchema,
   agentWatcherSchema,
   compareVersionIds,
   parseCaseDocument,
   runFileSchema,
   versionIdFromFileName,
+  AGENT_PROTOCOL_VERSION,
   type AgentCommandRequest,
   type AgentCommandStatus,
   type AgentQuestionAck,
@@ -95,6 +98,20 @@ export function listQuestions(dataDir: string): QuestionDir[] {
 
 export function readAck(qDir: string): AgentQuestionAck | null {
   return readJson(path.join(qDir, "ack.json"), agentQuestionAckSchema);
+}
+
+/** The line the tester sees under the question while the answer is being
+ * worked out — rewritten as often as the work changes shape. Never after
+ * the answer: the panel stops showing it then, and a question another
+ * server took over is not ours to narrate. */
+export function writeProgress(qDir: string, questionId: string, text: string): void {
+  const line = text.replace(/\s+/g, " ").trim().slice(0, 160);
+  if (!line) return;
+  writeJson(path.join(qDir, "progress.json"), { id: questionId, at: new Date().toISOString(), text: line });
+}
+
+export function readProgress(qDir: string): string | null {
+  return readJson(path.join(qDir, "progress.json"), agentQuestionProgressSchema)?.text ?? null;
 }
 
 export function isAnswered(qDir: string): boolean {
@@ -178,7 +195,12 @@ export function statusAgeSeconds(cmdDir: string): number | null {
 
 // ---- presence and liveness ----------------------------------------------
 
-export function touchWatcher(dataDir: string, id: string, host: string): void {
+export function touchWatcher(
+  dataDir: string,
+  id: string,
+  host: string,
+  serverVersion: string,
+): void {
   const agentDir = path.join(dataDir, "agent");
   // Presence belongs to a channel in use; never create agent/ ourselves.
   if (!existsSync(agentDir)) return;
@@ -187,7 +209,18 @@ export function touchWatcher(dataDir: string, id: string, host: string): void {
     kind: "daemon",
     host,
     lastSeenAt: new Date().toISOString(),
+    protocol: AGENT_PROTOCOL_VERSION,
+    serverVersion,
   } satisfies AgentWatcher);
+}
+
+/** The extension's declared wire version, from the heartbeat body. Null =
+ * no heartbeat yet; a body without `protocol` is a pre-versioning
+ * extension, which spoke wire v1. */
+export function extensionProtocol(dataDir: string): { protocol: number; extension: string } | null {
+  const hb = readJson(path.join(dataDir, "agent", "heartbeat.json"), agentHeartbeatSchema);
+  if (!hb) return null;
+  return { protocol: hb.protocol ?? 1, extension: hb.extension ?? "unknown" };
 }
 
 /** Is a claude-code loop provably alive on this folder? Freshness by file

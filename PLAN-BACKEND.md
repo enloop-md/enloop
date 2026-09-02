@@ -1256,7 +1256,24 @@ data" flow does not. Needed before this is a real product with real customers.
 
 ---
 
-## 17. Environments (revised 2026-08-16; local mode built)
+## 17. Environments (revised 2026-08-16; local mode built; domains added 2026-09-02)
+
+**2026-09-02 revision — domains are first-class.** Point 1 below said "a
+domain is just the common variable"; that proved wrong once cases touched
+more than one deployment (app + admin console, two tenants) and once the
+skills had to *write* environments rather than have users type them. Now:
+a case declares `# Domains` (first = main; `%APP%/route` everywhere, bare
+routes resolve against the main one), `environments.json` carries a
+`domains` contract beside `variables` and each environment holds
+`domains` (addresses) beside `values`, environments are scoped by
+`project` with one flagged `default` per project, and the panel resolves
+a domain from the picked environment before the open tab. Backend tables
+gain `environment_domain` (project_id, name, position) and
+`environment_domain_value` (environment_id, name, origin), or one table
+with a `kind` column — same discipline either way. The skills read and
+write the file through `enloop-case.mjs environments`; nothing in a case
+is asked of the user any more (a variable with no default, generator or
+environment is a lint error).
 
 Status: **the design below is superseded in three ways, and the local-mode
 half is implemented on master** (`shared/src/environments.ts`,

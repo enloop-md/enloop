@@ -45,10 +45,11 @@ WHAT THE PANEL DOES
 - One case, two depths: steps marked as the core path make a two-minute
   Quick run of the same case a Full run covers completely — written once,
   never duplicated.
-- Values resolve when the run starts, not when the case was written: a
-  BASE_URL follows whichever deployment you have open, can be pinned to a
-  domain pattern so a random tab is refused, and falls back to the
-  environment the case declares.
+- Values resolve when the run starts, not when the case was written: pick
+  an environment — local, staging, prod, your own set of addresses — and
+  every domain the case touches points there; pick none and the case
+  follows whichever deployment you have open, refusing a tab that does not
+  match.
 - Optionally capture what the page said during the run — console errors and
   failed requests land in the report beside the step where they happened.
 - Stuck on a step? Ask the agent session watching your folder, right from

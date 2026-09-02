@@ -77,6 +77,16 @@ whose `run.json` has `finishedAt` set — and say which one you picked, with
 its date, before doing anything else. Picking the wrong run wastes the
 whole triage.
 
+**A `feedback.md` handed to you instead of a run folder** — pasted into the
+prompt, attached, or saved as a file the user names — is a run too. The
+extension shows the same text under *Comments for all steps* with a copy
+and a download button, and that is how a tester with no agent on their
+machine passes a run on. Its header names the case and version; find that
+case in the data folder (or in the repo) and treat the file as step 3's
+`feedback.md`. There is no `run.json`, `case.md` or `console.md` behind it,
+so say so in the report and do not guess at what they would have held —
+the step statuses and comments in the file are all the run you have.
+
 If both listings come back empty, do not conclude the case was never run
 until you have confirmed `$DATA_DIR` is right — `ls "$DATA_DIR"` should
 show `test-cases`/`runs`/`free-runs`. An empty result from a wrong path
@@ -89,7 +99,11 @@ confirmed, say so plainly: the case exists but has no runs.
 list, written by the extension when the run finished, and its sections are
 **addressed**: *For the developer*, *For product*, *For the test writer*,
 *For the docs writer*, *For ops*. Take every section, not only the one that
-sounds like yours; you are the one triaging all of them.
+sounds like yours; you are the one triaging all of them. A case written
+in groups (`# Steps: <title>`) opens both files with a **By group** list —
+each group's goal and how its steps ended. Read it before the steps: a
+failure is a failure *of that goal*, and the fix, whether in the app or in
+the case, is judged against the goal rather than the single step.
 
 Then read, always:
 
@@ -103,6 +117,12 @@ Then read, always:
   source is still your job, and it is routine for a comment addressed to the
   developer to turn out to be a case defect, or the reverse. Use it as the
   order to check things in, never as the answer.
+- **Ratings**, when the tester gave any: `rating` on the run (the case as
+  a piece of test writing, one to five stars) and `rating` on a step. They
+  are in `feedback.md` as *Steps the tester rated highly* and *…rated
+  poorly*, and in `report.md` per step. A rating is about the writing, not
+  the feature — a five-star case can fail. What to do with them is under
+  *Ratings* in section 7.
 - **`run.json`'s own `comment` and `tier`**, before any of the steps:
   - `comment` is the tester's account of the run as a whole — "ran against
     an old build", "felt slow throughout". It routinely reframes what the
@@ -234,8 +254,9 @@ node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" validate "$DATA_DIR/test-cases/<
 ```
 
 The contract's mechanical half has grown since many cases were written —
-bare-route `Where:` lines, a `BASE_URL` with no default, nothing saying
-who the tester is, data left to find mid-run — and its findings on an old
+bare-route `Where:` lines, `BASE_URL` still written as a variable instead
+of a `# Domains` entry, a domain with no default, a variable the run would
+have to ask for, nothing saying who the tester is — and its findings on an old
 case are case defects like any stale selector. Read the `cold run` line it
 prints: a case a first-time runner cannot click through is exactly what
 these sweeps exist to catch.
@@ -256,9 +277,13 @@ session.
    case defects.
 3. Fix what you own exactly as step 7 does — landed with `write --case`,
    which validates first, with a `Change note:` naming the sweep and the
-   previous version untouched. Take the `BASE_URL` default and the account
-   facts from the rules file, and every route, label and selector from
-   source read now — a sweep invents nothing.
+   previous version untouched. Take the domain names and their defaults
+   from the project's environments (`enloop-case.mjs environments "$DATA_DIR"
+   "<project>"`), the account facts from the rules file, and every route,
+   label and selector from source read now — a sweep invents nothing and
+   asks for nothing: a value it cannot find becomes a `Default:` marked as
+   an assumption in the report, or an environment variable recorded with
+   the best value found.
 4. Report per step 8, plus the `cold run` line **before and after** — that
    pair is the whole point of the sweep.
 
@@ -267,6 +292,15 @@ Coverage is the **full** skill's job; this mode exists so a case reaches
 the current bar without paying for an authoring session.
 
 ## 7. Act on what you own
+
+**"This step needs to be combined with the previous step"** — a comment
+the panel adds in one tap, addressed to the test writer, and the most
+common thing a tester says about a case authored screen by screen: an
+"open the page, see the field" step followed by an "enter the value, save,
+verify" step is one test split in two. It is a case defect with the fix
+already named. In the next version merge the step into the one before it —
+one action, the `Where:` of the first, the `Expected` of the second, and
+the selectors of both — and say in your report which two became one.
 
 **Case defects — fix them.** The case is yours to correct. Read the current
 highest `v<n>.md`, apply the fix to a scratch copy, add a `Change note:`
@@ -331,6 +365,40 @@ judgement in front of the person who can settle it.
 
 The **quick** and **full** skills read this file before authoring and must
 obey it, so a rule you write here is enforced from the next case onward.
+
+### Ratings — what the stars are for
+
+A tester's stars are the one piece of feedback that says *how well written*
+a step was rather than what went wrong with the app, and they are cheap to
+give, so they arrive without a reason more often than comments do.
+
+- **One or two stars on a step is a case defect** to fix in the new version,
+  the same as a comment for the test writer. When the tester said why, fix
+  that. When they did not, read the step against the contract and the
+  project's highly rated steps and work out what it lacks — usually an
+  `Expected` that names nothing checkable, an action with two things in it,
+  or a route the tester had to guess. Say in your report what you changed
+  and why you think it earned the rating.
+- **Four or five stars on a step is a pattern, not an action item.** Nothing
+  to fix. But before you promote any rule from this run, look at what the
+  project's testers have starred across *all* its runs:
+
+  ```bash
+  node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" ratings "$DATA_DIR" "<project>"
+  ```
+
+  A shape starred in several cases is a rule the project already follows
+  without having written down — "the `Expected` line quotes the exact toast
+  text" — and is worth a bullet in the rules file in the imperative. A
+  shape that earns one star in several cases is the same thing inverted.
+  One run's stars are never enough on their own; that is what the aggregate
+  is for.
+- **A case rating** goes in your report's first line next to the verdict on
+  the run. A one-star case with a green run is still a case to rewrite; say
+  which of the two the user should care about first.
+
+Never write a rating yourself, and never edit one. They are the tester's
+opinion on disk, and the authoring skills read them as such.
 
 ## 8. Report
 

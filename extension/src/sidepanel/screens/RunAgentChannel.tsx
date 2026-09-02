@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import {
   compareVersionIds,
+  AGENT_PROTOCOL_VERSION,
   type AgentCommand,
   type AgentQuestion,
-  type AgentWatcherKind,
+  type AgentPresence,
   type CompatResult,
   type Run,
 } from "@tcm/shared";
@@ -29,12 +30,39 @@ import { commandPending, type AskDraft } from "../useAgentChannel.js";
  * answer needs a watching server, not more patience. */
 const UNWATCHED_HINT_MS = 60_000;
 
+/** How long the server has been quiet, worded so the tester knows whether
+ * to worry: nothing for a fresh line, the age once it is not fresh, and a
+ * reassurance past the point where silence starts to look like death. The
+ * poll is every few seconds, so the age moves while they watch. */
+function describeSilence(quietMs: number, hasProgress: boolean): string {
+  const s = Math.max(0, Math.round(quietMs / 1000));
+  if (s < 8) return "";
+  const age = s < 60 ? `${s}s` : `${Math.floor(s / 60)} min`;
+  if (s < 120) return hasProgress ? `· ${age} ago` : `· ${age}`;
+  return `· quiet for ${age} — still on it`;
+}
+
 /**
  * Shown wherever the tester is about to wait on a server that is not
  * there. The daemon is the recommended fix — always on, no session to
  * babysit; a manual /enloop:serve pass is the there-right-now alternative
  * for someone already sitting in Claude Code.
  */
+/** A server is present but speaks a different wire version — one of the
+ * three parts is out of date, and guessing which way breaks is worse than
+ * saying so. Everything still tries to work; this is a warning, not a
+ * refusal, because protocol changes are additive until they are not. */
+function ProtocolMismatchHint({ presence }: { presence: AgentPresence }) {
+  const who = presence.kind === "claude-code" ? "Claude Code serve pass" : "enloopd daemon";
+  return (
+    <p className="rounded border border-amber-200 bg-amber-50/60 p-1.5 text-[10px] text-amber-800">
+      The watching {who} speaks channel protocol v{presence.protocol}; this extension speaks v
+      {AGENT_PROTOCOL_VERSION}. Update the older side — extension via the Web Store,
+      daemon/plugin from the Enloop repo.
+    </p>
+  );
+}
+
 function AgentSetupHint() {
   return (
     <div className="space-y-1 rounded border border-amber-200 bg-amber-50/60 p-2 text-[11px] text-slate-600">
@@ -75,7 +103,7 @@ export function StepQuestions({
   stepId: string;
   questions: AgentQuestion[];
   readOnly: boolean;
-  watcher: AgentWatcherKind | null;
+  watcher: AgentPresence | null;
   onAsk: (draft: AskDraft) => Promise<void>;
   onSwapped: (run: Run) => void;
 }) {
@@ -156,6 +184,9 @@ export function StepQuestions({
       {!readOnly && open && (
         <div className="space-y-1 rounded border border-violet-200 bg-violet-50/50 p-2">
           {watcher === null && <AgentSetupHint />}
+          {watcher !== null && watcher.protocol !== AGENT_PROTOCOL_VERSION && (
+            <ProtocolMismatchHint presence={watcher} />
+          )}
           {selection && (
             <p className="border-l-2 border-violet-300 pl-1.5 text-[11px] italic text-slate-500">
               “{selection}”
@@ -238,7 +269,7 @@ function QuestionCard({
   run: Run;
   question: AgentQuestion;
   readOnly: boolean;
-  watcher: AgentWatcherKind | null;
+  watcher: AgentPresence | null;
   onSwapped: (run: Run) => void;
 }) {
   const waitedMs = Date.now() - Date.parse(question.askedAt);
@@ -272,13 +303,25 @@ function QuestionCard({
       )}
       {question.answer === null ? (
         question.pickedUpAt !== null ? (
+          // The server's own words about what it is doing, when it has
+          // written any — a line that changes is what tells a tester the
+          // minute of silence is work and not a crash. The generic line is
+          // the fallback for servers that never report.
           <div className="text-[11px] text-emerald-600">
             <span className="mr-1 inline-block animate-pulse">●</span>
-            {question.pickedUpBy === "claude-code"
-              ? "Claude Code is working on the answer…"
-              : question.pickedUpBy === "daemon"
-                ? "Enloop daemon is working on the answer…"
-                : "Agent is working on the answer…"}
+            {question.progress
+              ? question.progress.text
+              : question.pickedUpBy === "claude-code"
+                ? "Claude Code is working on the answer…"
+                : question.pickedUpBy === "daemon"
+                  ? "Enloop daemon is working on the answer…"
+                  : "Agent is working on the answer…"}
+            <span className="ml-1 text-slate-400">
+              {describeSilence(
+                Date.now() - Date.parse(question.progress?.at ?? question.pickedUpAt),
+                question.progress !== null,
+              )}
+            </span>
           </div>
         ) : (
           <div className="space-y-1 text-[11px] text-slate-400">
