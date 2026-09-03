@@ -42,7 +42,7 @@ async function storageKey(): Promise<string> {
   return "nav:default";
 }
 
-function isScreen(value: unknown): value is Screen {
+export function isScreen(value: unknown): value is Screen {
   if (typeof value !== "object" || value === null) return false;
   const screen = value as { kind?: unknown; [key: string]: unknown };
   const str = (key: string) => typeof screen[key] === "string";
@@ -52,6 +52,8 @@ function isScreen(value: unknown): value is Screen {
     case "library":
     case "settings":
       return true;
+    case "environments":
+      return str("storageId");
     case "caseDetail":
       return str("testCaseId");
     case "editor":
@@ -77,7 +79,7 @@ function isScreen(value: unknown): value is Screen {
  * were the work in progress. Everything under it is a place, not a draft,
  * and restores fine.
  */
-function withoutDeadDrafts(stack: Screen[]): Screen[] {
+export function withoutDeadDrafts(stack: Screen[]): Screen[] {
   const trimmed = [...stack];
   while (
     trimmed.length > 1 &&
