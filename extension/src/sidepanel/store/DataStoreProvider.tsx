@@ -64,7 +64,49 @@ interface DataStoreContextValue {
 
 const DataStoreContext = createContext<DataStoreContextValue | null>(null);
 
-const DEFAULT_STORAGE_KEY = "enloop:default-storage";
+export const DEFAULT_STORAGE_KEY = "enloop:default-storage";
+
+export async function loadDefaultStorageId(): Promise<string | null> {
+  try {
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      const stored = await chrome.storage.local.get(DEFAULT_STORAGE_KEY);
+      const val = stored[DEFAULT_STORAGE_KEY];
+      if (typeof val === "string") return val;
+
+      if (typeof localStorage !== "undefined") {
+        const legacy = localStorage.getItem(DEFAULT_STORAGE_KEY);
+        if (legacy) {
+          await chrome.storage.local.set({ [DEFAULT_STORAGE_KEY]: legacy });
+          localStorage.removeItem(DEFAULT_STORAGE_KEY);
+          return legacy;
+        }
+      }
+      return null;
+    }
+  } catch {
+    // Fall back to localStorage if chrome.storage is unavailable
+  }
+
+  if (typeof localStorage !== "undefined") {
+    return localStorage.getItem(DEFAULT_STORAGE_KEY);
+  }
+  return null;
+}
+
+export async function persistDefaultStorageId(id: string): Promise<void> {
+  try {
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      await chrome.storage.local.set({ [DEFAULT_STORAGE_KEY]: id });
+      return;
+    }
+  } catch {
+    // Fall back to localStorage
+  }
+
+  if (typeof localStorage !== "undefined") {
+    localStorage.setItem(DEFAULT_STORAGE_KEY, id);
+  }
+}
 
 /** How often the open panel marks itself alive in each connected folder's
  * `agent/heartbeat.json`. The serve skill treats 5 minutes of silence as
@@ -107,7 +149,7 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     (async () => {
       await migrateLegacyStorage();
-      const saved = localStorage.getItem(DEFAULT_STORAGE_KEY);
+      const saved = await loadDefaultStorageId();
       if (saved) setDefaultId(saved);
       await refresh();
     })().catch((e) => setState({ status: "error", message: describeError(e) }));
@@ -132,7 +174,7 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
   }, [store]);
 
   const setDefaultStorageId = useCallback((id: string) => {
-    localStorage.setItem(DEFAULT_STORAGE_KEY, id);
+    void persistDefaultStorageId(id);
     setDefaultId(id);
   }, []);
 
@@ -175,22 +217,37 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  const contextValue = useMemo<DataStoreContextValue>(
+    () => ({
+      store,
+      state,
+      storages,
+      degraded,
+      defaultStorageId,
+      setDefaultStorageId,
+      addStorage,
+      removeStorage,
+      renameStorage,
+      reconnect,
+      refresh,
+    }),
+    [
+      store,
+      state,
+      storages,
+      degraded,
+      defaultStorageId,
+      setDefaultStorageId,
+      addStorage,
+      removeStorage,
+      renameStorage,
+      reconnect,
+      refresh,
+    ],
+  );
+
   return (
-    <DataStoreContext.Provider
-      value={{
-        store,
-        state,
-        storages,
-        degraded,
-        defaultStorageId,
-        setDefaultStorageId,
-        addStorage,
-        removeStorage,
-        renameStorage,
-        reconnect,
-        refresh,
-      }}
-    >
+    <DataStoreContext.Provider value={contextValue}>
       {children}
     </DataStoreContext.Provider>
   );
@@ -233,34 +290,77 @@ export interface WorkspaceValue {
 export function useWorkspace(): WorkspaceValue {
   const ctx = useDataStore();
   const store = ctx.store;
-  return {
-    storages: ctx.storages,
-    degraded: ctx.degraded,
-    defaultStorageId: ctx.defaultStorageId,
-    setDefaultStorageId: ctx.setDefaultStorageId,
-    addStorage: ctx.addStorage,
-    removeStorage: ctx.removeStorage,
-    renameStorage: ctx.renameStorage,
-    reconnect: ctx.reconnect,
-    createTestCaseIn: (storageId, body, suiteId) => {
+
+  const createTestCaseIn = useCallback(
+    (storageId: string, body: string, suiteId?: string) => {
       if (!store) throw new Error("No storage connected");
       return store.createTestCaseIn(storageId, body, suiteId);
     },
-    createSuiteIn: (storageId, body) => {
+    [store],
+  );
+
+  const createSuiteIn = useCallback(
+    (storageId: string, body: string) => {
       if (!store) throw new Error("No storage connected");
       return store.createSuiteIn(storageId, body);
     },
-    createFreeRunIn: (storageId, title) => {
+    [store],
+  );
+
+  const createFreeRunIn = useCallback(
+    (storageId: string, title: string) => {
       if (!store) throw new Error("No storage connected");
       return store.createFreeRunIn(storageId, title);
     },
-    getEnvironmentsIn: (storageId) => {
+    [store],
+  );
+
+  const getEnvironmentsIn = useCallback(
+    (storageId: string) => {
       if (!store) throw new Error("No storage connected");
       return store.getEnvironmentsIn(storageId);
     },
-    saveEnvironmentsIn: (storageId, file) => {
+    [store],
+  );
+
+  const saveEnvironmentsIn = useCallback(
+    (storageId: string, file: EnvironmentsFile) => {
       if (!store) throw new Error("No storage connected");
       return store.saveEnvironmentsIn(storageId, file);
     },
-  };
+    [store],
+  );
+
+  return useMemo<WorkspaceValue>(
+    () => ({
+      storages: ctx.storages,
+      degraded: ctx.degraded,
+      defaultStorageId: ctx.defaultStorageId,
+      setDefaultStorageId: ctx.setDefaultStorageId,
+      addStorage: ctx.addStorage,
+      removeStorage: ctx.removeStorage,
+      renameStorage: ctx.renameStorage,
+      reconnect: ctx.reconnect,
+      createTestCaseIn,
+      createSuiteIn,
+      createFreeRunIn,
+      getEnvironmentsIn,
+      saveEnvironmentsIn,
+    }),
+    [
+      ctx.storages,
+      ctx.degraded,
+      ctx.defaultStorageId,
+      ctx.setDefaultStorageId,
+      ctx.addStorage,
+      ctx.removeStorage,
+      ctx.renameStorage,
+      ctx.reconnect,
+      createTestCaseIn,
+      createSuiteIn,
+      createFreeRunIn,
+      getEnvironmentsIn,
+      saveEnvironmentsIn,
+    ],
+  );
 }
