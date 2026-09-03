@@ -1,6 +1,6 @@
 # Enloop hardening — tests, CI, and the gaps under the design
 
-Status: **nothing built. Written 2026-08-24.** Source: a full-codebase audit
+Status: **tracked as GitHub issues [#1–#22](https://github.com/enloop-md/enloop/issues) since 2026-09-03** — items 1–9 and 11 are one issue each, item 10's findings one issue each. Two parts are already done in 0.13.0: item 3's `Match:` re-serialization, and item 11's copy/download of `feedback.md` plus the check skill accepting a bare file (what remains is issue #10). Written 2026-08-24. Source: a full-codebase audit
 (shared, extension, daemon, plugins, tooling) run on 2026-08-24 against a
 working tree that included the uncommitted post-0.12.0 changes. Line numbers
 below were read from that tree — **re-verify each reference before editing;
