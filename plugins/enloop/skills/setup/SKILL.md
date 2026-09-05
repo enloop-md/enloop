@@ -14,9 +14,9 @@ deliverables:
 1. **The project name is recorded**, so every case written from this repo
    is findable in a Library holding several products' cases.
 2. **The deployments are recorded as environments** — the domain names
-   the app is made of (`APP`, and `ADMIN` when the console is its own
+   the app is made of (`DOMAIN`, and `ADMIN` when the console is its own
    host) and the address of each in local, staging, prod — so every case
-   declares its `# Domains` with the right defaults, the panel offers the
+   names the right hosts in its `@locations:` line, the panel offers the
    environments before a run, and no skill and no run ever asks for an
    address again.
 3. **The selector convention is written into the repo's agent instructions**
@@ -70,9 +70,10 @@ them.
 An app is reachable at several addresses — `http://localhost:3000`, a
 staging host, production — and often *is* several hosts at once: the app
 and an admin console, a marketing site and the product it signs into, one
-host per tenant. Every case names the hosts it touches as **domains**
-(`%APP%/orders`, `%ADMIN%/audit`) and leaves the addresses to the
-**environment** the tester picks before a run. This step records both,
+host per tenant. Every case builds its addresses on `%DOMAIN%` — the tab
+the run starts from, or the **environment** the tester picks — names the
+hosts it is meant for in an `@locations:` line, and declares a domain
+only for a second host (`%ADMIN%/audit`). This step records both,
 once, in the data folder's `environments.json` — the file the panel's
 Environments screen edits and the authoring skills read.
 
@@ -101,17 +102,18 @@ rg -n -i 'staging|production|prod\.|demo\.' README.md fly.toml vercel.json netli
 
 From that, decide:
 
-- **The domain names.** `APP` for the app under test. A second name only
-  for a host that is genuinely separate — an admin console on its own
-  host, a second tenant, the site the flow starts from. A path under the
-  same host is a route, not a domain.
+- **The domain names.** `DOMAIN` for the app under test — the name every
+  case uses without declaring it. A second name only for a host that is
+  genuinely separate — an admin console on its own host, a second tenant,
+  the site the flow starts from. A path under the same host is a route,
+  not a domain.
 - **The environments.** One per deployment you can name an address for —
   `local` from the dev server port, `staging` and `prod` from the deploy
   config or README. Which one is the **default** — the deployment cases
-  are normally run against, and the one whose addresses become each
-  domain's `Default:` in every case: staging when there is one, local
-  when the project has nothing deployed, never prod unless the user says
-  so.
+  are normally run against, whose host leads every case's `@locations:`
+  line and whose addresses become a declared domain's `Default:`:
+  staging when there is one, local when the project has nothing deployed,
+  never prod unless the user says so.
 
 Show the user what you derived and where each address came from, in one
 block, and confirm it once. This is the one moment in Enloop where an
@@ -123,11 +125,19 @@ Record it:
 
 ```bash
 node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" environments "$DATA_DIR" "<project name>" \
-  --domain APP --domain ADMIN \
-  --env local --set APP=http://localhost:3000 --set ADMIN=http://localhost:3001
+  --domain DOMAIN --domain ADMIN \
+  --env local --set DOMAIN=http://localhost:3000 --set ADMIN=http://localhost:3001
 node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" environments "$DATA_DIR" "<project name>" \
-  --env staging --set APP=https://staging.example.test --set ADMIN=https://admin.staging.example.test --default
+  --env staging --set DOMAIN=https://staging.example.test --set ADMIN=https://admin.staging.example.test --default
 ```
+
+Write a `README.md` into the data folder if there is none — three
+sentences a teammate who clones the repo can follow with nothing else:
+install the extension (the Chrome Web Store link), open the side panel,
+connect this folder or the repository that holds it; and that any case
+can be opened in a browser without the extension via the viewer link
+inside the file. This is the whole onboarding for a QA engineer who
+arrives after you.
 
 Environments are scoped to the project name, so one folder serving
 several repos keeps each product's staging apart. Values that differ per

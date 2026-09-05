@@ -17,9 +17,11 @@ import { CURRENT_FORMAT_VERSION } from "./markdown.js";
  * It runs against a public practice site rather than a page bundled here,
  * because the thing being demonstrated is the panel acting on a real page in
  * a real tab — a local fixture would demonstrate a different product.
- * `%SITE%` is a domain so that a tester who cannot reach that site (or
- * would rather not) can point the whole case somewhere else from the case
- * screen — or from an environment — without editing it.
+ * Addresses are `%DOMAIN%`-built so that a tester who cannot reach that
+ * site (or would rather not) can point the whole case somewhere else from
+ * the case screen — or from an environment — without editing it; the
+ * `@locations` line is what a cold reader starts from, and what colours
+ * the addresses when the run starts from some other tab.
  */
 export const EXAMPLE_CASE_TITLE = "Enloop example: log in and out of a demo app";
 
@@ -28,6 +30,9 @@ export function exampleCaseSource(): string {
 @version ${CURRENT_FORMAT_VERSION}
 @project Enloop example
 Tags: example
+@locations: the-internet.herokuapp.com
+Goal: You can run a case in the side panel — Go, Highlight, typed values, an automated step — end to end
+You will: log in to a demo site with a given account, watch each control do its job, and log out again
 
 A two-minute case to run before writing any of your own. It exercises every
 control the side panel has: **Go** opens a page in this tab, **Highlight**
@@ -38,14 +43,6 @@ It runs against the-internet.herokuapp.com, a public practice site — no
 account of yours is involved, and the last step logs out again, so you can
 run it as many times as you like.
 
-# Domains
-
-## SITE
-The site this case runs against. Every %SITE% in the case is replaced with
-this address when the run starts, so pointing it elsewhere — here, or by
-picking an environment — moves the whole case.
-Default: https://the-internet.herokuapp.com
-
 # Variables
 
 ## RUN_TAG
@@ -54,16 +51,19 @@ the panel fills it in when the run starts, and you will see it appear
 inside a step further down.
 Generator: random-string 6
 
+# You will need
+- Nothing beyond this browser: the demo account is in the case.
+
 # Dependencies
 - Chrome's side panel is open — you are reading this in it.
 
 # Prerequisites
-- An internet connection: this case runs against a public demo site.
+- Open %DOMAIN%/login — an internet connection: this case runs against a public demo site.
 
 # Steps
 
 ## Open the login page
-Where: %SITE%/login
+Where: %DOMAIN%/login
 Selector: #username
 Kind: quick
 Click **Go** next to *Where* above. It navigates the tab you are looking at
@@ -75,12 +75,16 @@ front of you.
 - **✨ Highlight** scrolls to the Username field and flashes it amber.
 
 ### Note
-\`Where:\` here is \`%SITE%/login\` rather than a bare \`/login\`. The
-domain is substituted before the run starts, so Go knows the whole address
-instead of having to guess an origin from whatever tab happens to be open.
+\`Where:\` here is \`%DOMAIN%/login\` rather than a bare \`/login\`. The
+domain needs no declaration: it is the tab you start the run from, unless
+you type an address or pick an environment on the case screen, and it is
+substituted before the run starts, so Go knows the whole address. The
+\`@locations\` line under the title says which hosts this case is meant
+for — start it from some other tab and every address turns red; it still
+opens, so the choice stays yours.
 
 ## Type the username
-Where: %SITE%/login
+Where: %DOMAIN%/login
 Selector: #username
 Kind: quick
 Put "**tomsmith**" in the Username field.
@@ -105,7 +109,7 @@ Backticks mean the opposite: something to *find* on screen, like
 prose.
 
 ## Type the password
-Where: %SITE%/login
+Where: %DOMAIN%/login
 Selector: #password
 Selector: form input[type="password"]
 Kind: quick
@@ -123,16 +127,17 @@ which one matched. The link above is the other way to write a Highlight —
 mid-sentence.
 
 ## Log in
-Where: %SITE%/login
+Where: %DOMAIN%/login
 Selector: button[type="submit"]
 Kind: quick
 Click the \`Login\` button.
 
 ### Expected
-- The page moves to %SITE%/secure.
+- The page moves to %DOMAIN%/secure.
 - A green flash message reports a successful login.
 
 ## Check the flash message
+Where: %DOMAIN%/secure
 Kind: quick
 \`\`\`js
 const flash = document.querySelector("#flash");
@@ -152,7 +157,7 @@ fails the step. Nothing else about the step changes — it still has a title,
 and you can still override its result by hand.
 
 ## Read the secure area
-Where: %SITE%/secure
+Where: %DOMAIN%/secure
 Selector: #content h2
 Read the heading of the page you landed on.
 
@@ -166,7 +171,7 @@ case is written once, in full, and the marks pick out the core path worth
 running during development.
 
 ## Check the footer credit
-Where: %SITE%/secure
+Where: %DOMAIN%/secure
 Selector: #page-footer a
 Kind: extra
 Scroll to the bottom of the page and read the footer.
@@ -185,6 +190,7 @@ and skips are reported to the test writer — a step skipped run after run is
 one the case should stop demanding.
 
 ## Say something about this step
+Where: the side panel, on this step
 Kind: quick
 Every step takes comments, and this is the one to try them on.
 
@@ -214,7 +220,7 @@ always follow, and writes the standing ones into the project's rules file.
 An untagged comment stays in the report for a human.
 
 ## Log out
-Where: %SITE%/secure
+Where: %DOMAIN%/secure
 Selector: a[href="/logout"]
 Kind: quick
 Click **Logout**.
@@ -228,6 +234,7 @@ Cleanup is a step like any other, and it is marked quick deliberately: a
 case that cannot be run twice will be run once.
 
 ## Comment on the run as a whole
+Where: the side panel
 Find the box at the bottom of the run screen — *Comment on the whole run
 (optional)* — and type "**felt quick, nothing surprising**".
 
@@ -242,6 +249,7 @@ at all. A run comment counts as feedback on its own — it alone will produce
 a \`feedback.md\`.
 
 ## Hand this case to someone else
+Where: the side panel
 Go back to the case screen (the arrow at the top left) and find **Share v1**
 at the bottom. Open **⤓ Download** and take a look at the four entries.
 
@@ -261,6 +269,7 @@ see: simplified drops selectors and scripts and fills in default values, so
 what is left is instructions.
 
 ## Send this case as a link
+Where: the side panel
 Still on the case screen, press **🔗 Copy link**, then paste it into the
 address bar of a new tab.
 
@@ -276,6 +285,7 @@ being told how. It is an HTML comment: invisible on GitHub and in previews,
 plain in the file.
 
 ## See where your cases are kept
+Where: the side panel
 Open **Settings** (the gear, top right) and read the **Storages** section.
 
 ### Expected
@@ -291,6 +301,7 @@ with a clone, while \`runs/\` and \`free-runs/\` stay out of the repo through a
 choose when you create them.
 
 ## Finish the run and read what it wrote
+Where: the side panel
 Press **Finish run** and pick a verdict.
 
 ### Expected

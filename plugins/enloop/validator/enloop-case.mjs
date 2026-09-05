@@ -45,6 +45,7 @@ import {
   nextMajorId,
   nextMinorId,
   versionIdFromFileName,
+  withViewerComment,
   AGENT_PROTOCOL_VERSION,
   CURRENT_FORMAT_VERSION,
   environmentsFileSchema,
@@ -376,6 +377,12 @@ switch (command) {
     } catch (e) {
       die(`Cannot read ${file}: ${e.message}`);
     }
+    // The file lands with a viewer link inside it, so the person who asked
+    // for the case can open it in the next ten seconds with nothing
+    // installed. The parser strips the comment on every read, so the link
+    // is never part of the case.
+    raw = await withViewerComment(raw);
+    const viewer = /https:\/\/\S+#c=\S+/.exec(raw)?.[0] ?? "";
 
     let result;
     try {
@@ -463,6 +470,7 @@ switch (command) {
 
     console.log(`WROTE    ${versionFile}`);
     console.log(`landed   ${landed}`);
+    if (viewer) console.log(`viewer   ${viewer}`);
     console.log(coldLine(result.cold));
     console.log("It appears in the Library on the panel's next refresh (⟳).");
     process.exit(0);
@@ -484,15 +492,14 @@ switch (command) {
     const example = `# Example: Save a widget
 @version ${CURRENT_FORMAT_VERSION}
 @project Example
+@locations: localhost:3000, *.example.test
+Goal: An admin can save a widget and see it listed
+You will: fill in one form and check the table
 
 Verifies the widget save path — and the shape of a minimal case.
 
-# Domains
-
-## APP
-The web app under test.
-Match: *.example.test
-Default: https://staging.example.test
+# You will need
+- Nothing beyond the browser: the account is in the case.
 
 # Variables
 
@@ -500,14 +507,18 @@ Default: https://staging.example.test
 The QA account — provided per environment (environments.json).
 Default: qa.bot@example.test
 
+## QA_PASSWORD
+The QA account's password — provided per environment (environments.json).
+Default: qa-bot-staging
+
 # Prerequisites
-- Open %APP%/admin/widgets
-- Logged in as %QA_EMAIL% — password: vault item \`staging QA\`
+- Open %DOMAIN%/admin/widgets
+- Logged in as "**%QA_EMAIL%**", password "**%QA_PASSWORD%**"
 
 # Steps
 
 ## Save the widget
-Where: %APP%/admin/widgets
+Where: %DOMAIN%/admin/widgets
 Kind: quick
 Selector: [data-testid="save-widget"]
 Put "**Blue widget**" in the \`Name\` field and click \`Save\`.
@@ -528,12 +539,19 @@ ${example}
 
 The hard rules — the step contract in one breath:
 
+  0   A case is a goal. Goal: and You will: under the title, one line
+      each, required; # You will need lists what the tester must have in
+      hand before step 1.
   1   One step = one action = one verdict. No "then" in instructions.
-  2   Every place is an address: %APP%/route in Where:, prerequisites and
-      links. Declare every deployment the case touches under # Domains —
-      the first is the main one — with a Default: origin taken from the
-      project's environments (\`environments <folder> "<project>"\`). A
-      scenario may cross domains: %APP%/orders, then %ADMIN%/audit.
+  2   Every place is an address: %DOMAIN%/route in Where:, prerequisites
+      and links. %DOMAIN% needs no declaration — it follows the tab the
+      run starts from — and @locations: under the title names the hosts
+      the case is meant for (\`localhost:3000, *.example.test\`), taken
+      from the project's environments (\`environments <folder>
+      "<project>"\`). Declare a domain under # Domains only for a second
+      host the case touches: %DOMAIN%/orders, then %ADMIN%/audit.
+      A value the run itself produces — a created record's id — never
+      goes in an address: say where to click, give the shape in backticks.
   2d  Say who the tester is: account, role, and where the credential lives
       — a place to look, never a person to ask.
   3   Every UI step carries a Selector: read from this repo's source.

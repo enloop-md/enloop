@@ -33,7 +33,7 @@ An agent writes it, the side panel executes it step by step:
 
 ```markdown
 ## Sync the contact
-Where: %APP%/admin/sync-console
+Where: %DOMAIN%/admin/sync-console
 Selector: #sync-crm-mailer-btn
 Click `Sync CRM → Mailer`.
 
@@ -42,9 +42,15 @@ Click `Sync CRM → Mailer`.
 - A toast reports synced / skipped / failed counts.
 ```
 
-`Where:` is the screen to start on, `Selector:` is what the panel flashes for
-the tester, `"quoted values"` type themselves into fields, and a fenced code
-block in place of instructions makes the step automated. A complete worked
+The principle behind all of it is in [MANIFESTO.md](MANIFESTO.md): the human
+verifying a flow puts in zero effort — never asked to decide, to provide a
+value, or to look anything up. A case that would ask is a defective case.
+
+`Where:` is the screen to start on — `%DOMAIN%` is whatever tab you start the
+run from, so the same case runs against a branch, staging or a local server —
+`Selector:` is what the panel flashes for the tester, `"quoted values"` type
+themselves into fields, and a fenced code block in place of instructions makes
+the step automated. A complete worked
 example and the full grammar are in [docs/case-format.md](docs/case-format.md).
 
 Open source under the [MIT license](LICENSE) — the extension, the case parser,

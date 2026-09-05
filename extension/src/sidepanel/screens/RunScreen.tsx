@@ -5,6 +5,7 @@ import {
   COMMENT_AUDIENCES,
   describeCounts,
   hasCaptureSignal,
+  matchesLocations,
   newCommentId,
   QUICK_COMMENTS,
   renderBulletList,
@@ -34,7 +35,7 @@ import { useReadyStore } from "../store/DataStoreProvider.js";
 import { chainAutomatedFrom, markManualStep, runAutomatedStep } from "../../lib/run-engine.js";
 import { highlightSelectors } from "../../lib/highlight.js";
 import { getPageAccess, type PageAccess } from "../../lib/page-access.js";
-import { looksNavigable } from "../../lib/navigate.js";
+import { looksNavigable, whereAddress } from "../../lib/navigate.js";
 import { NavigateButton } from "../../components/NavigateButton.js";
 import { runCaptureKey } from "../../lib/capture.js";
 import { downloadTextFile, fileSlug } from "../../lib/download.js";
@@ -328,6 +329,16 @@ export function RunScreen({
         onSettings={onSettings}
         actions={<RunStatusBadge status={run.status} />}
       />
+      {/* The goal stays above whatever step is current, for the whole run:
+          nobody should wonder what the click they are about to make is for. */}
+      {run.goal.trim() && (
+        <p
+          className="border-b border-emerald-100 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-900"
+          title="What this case proves"
+        >
+          {run.goal}
+        </p>
+      )}
       <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2 text-xs text-slate-500">
         {run.tier === "quick" && (
           <span
@@ -389,9 +400,13 @@ export function RunScreen({
       )}
 
       <div className="flex-1 overflow-y-auto">
+        {(run.youWill.trim() || run.youWillNeed.length > 0) && (
+          <WhatToExpect youWill={run.youWill} youWillNeed={run.youWillNeed} locations={run.locations} />
+        )}
         <BeforeYouStart
           dependencies={run.dependencies}
           prerequisites={run.prerequisites}
+          locations={run.locations}
           onRunCommand={
             readOnly ? undefined : (command, field) => void handleRunCommand(command, null, field)
           }
@@ -722,6 +737,42 @@ function GroupHeader({
 }
 
 /**
+ * The shape of the work and what must be in hand, read before step 1. Open,
+ * never collapsed, unlike `BeforeYouStart`: a mailbox the confirmation code
+ * lands in is needed now, not discovered mid-step with the code expiring.
+ */
+function WhatToExpect({
+  youWill,
+  youWillNeed,
+  locations,
+}: {
+  youWill: string;
+  youWillNeed: string[];
+  locations: string[];
+}) {
+  return (
+    <div className="space-y-1.5 border-b border-slate-200 bg-white px-3 py-2 text-xs">
+      {youWill.trim() && (
+        <p className="text-slate-600">
+          <span className="font-medium text-slate-700">You will: </span>
+          {youWill}
+        </p>
+      )}
+      {youWillNeed.length > 0 && (
+        <div>
+          <span className="font-medium text-slate-700">You will need:</span>
+          <Markdown
+            text={renderBulletList(youWillNeed)}
+            className="text-xs text-slate-600"
+            locations={locations}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * What had to be true before step 1 — a service started, a fixture seeded,
  * a branch deployed. Collapsed by default and on every open: most runs
  * happen against an environment that is already up, so this is reference
@@ -732,10 +783,13 @@ function GroupHeader({
 function BeforeYouStart({
   dependencies,
   prerequisites,
+  locations,
   onRunCommand,
 }: {
   dependencies: string[];
   prerequisites: string[];
+  /** The case's `@locations`, so the entry-point link is coloured. */
+  locations: string[];
   /** Hands an authored command to the watching agent session; absent when
    * the run is read-only. */
   onRunCommand?: (command: string, field: "dependencies" | "prerequisites") => void;
@@ -765,6 +819,7 @@ function BeforeYouStart({
             <Markdown
               text={renderBulletList(prerequisites)}
               className="text-xs text-slate-600"
+              locations={locations}
               onRunCommand={onRunCommand && ((c) => onRunCommand(c, "prerequisites"))}
             />
           </div>
@@ -777,6 +832,7 @@ function BeforeYouStart({
             <Markdown
               text={renderBulletList(dependencies)}
               className="text-xs text-slate-600"
+              locations={locations}
               onRunCommand={onRunCommand && ((c) => onRunCommand(c, "dependencies"))}
             />
           </div>
@@ -1139,7 +1195,15 @@ function StepComments({
             placeholder="What did you see?"
             className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
           />
-          <div className="space-y-0.5">
+          {/* Who a comment is for is the check skill's question, not the
+              tester's: a comment with nobody ticked is stored as context and
+              routed at triage. The audience row stays for the tester who
+              knows — under a disclosure, closed by default. */}
+          <details className="group">
+            <summary className="cursor-pointer select-none text-[10px] text-slate-400 hover:text-slate-600">
+              Address it to someone (optional)
+            </summary>
+          <div className="space-y-0.5 pt-1">
             <div className="flex items-center justify-between text-[10px] text-slate-400">
               <span>This comment is for:</span>
               <button
@@ -1199,6 +1263,7 @@ function StepComments({
               </p>
             )}
           </div>
+          </details>
           {/* Pale while the box is empty, filled the moment it is not: the
               button's colour is the one cue that something is waiting to be
               added, on a panel where the box itself looks the same either
@@ -1227,6 +1292,13 @@ function StepComments({
     </div>
   );
 }
+
+/** A `Where:` address by where its host stands against `@locations`. */
+const WHERE_CLASS = {
+  unchecked: "text-slate-600",
+  match: "text-emerald-700",
+  mismatch: "text-red-600",
+} as const;
 
 function StepRow({
   numberLabel,
@@ -1287,6 +1359,17 @@ function StepRow({
   const [matchedSelector, setMatchedSelector] = useState<string | null>(null);
   const selectorKey = step.selectors.join("\n");
   const rowRef = useRef<HTMLDivElement>(null);
+  // The address this step's `Where:` would open, held against the case's
+  // `@locations`: green fits, red does not, and a placeholder the run could
+  // not fill is neither — it is a page the tester finds by hand.
+  const unresolvedWhere = /%[A-Za-z_][A-Za-z0-9_]*%/.test(step.where ?? "");
+  const whereStatus = matchesLocations(run.locations, whereAddress(step.where ?? "", run.mainOrigin));
+  const whereTitle =
+    whereStatus === "mismatch"
+      ? `Does not match this case's @locations: ${run.locations.join(", ")}`
+      : whereStatus === "match"
+        ? "Matches this case's @locations"
+        : undefined;
 
   async function highlight() {
     if (step.selectors.length === 0) return;
@@ -1422,12 +1505,21 @@ function StepRow({
             {step.where && (
               <div className="flex flex-wrap items-baseline gap-1.5 text-xs">
                 <span className="font-medium text-slate-500">Where:</span>
-                <code className="text-slate-600">{step.where}</code>
+                <code className={WHERE_CLASS[whereStatus]} title={whereTitle}>
+                  {step.where}
+                </code>
                 {looksNavigable(step.where) && (
                   <NavigateButton
                     where={step.where}
                     mainOrigin={run.mainOrigin}
+                    status={whereStatus}
                   />
+                )}
+                {unresolvedWhere && (
+                  <span className="text-[10px] text-amber-600">
+                    holds a value the run does not have — find the page by the
+                    instructions instead
+                  </span>
                 )}
               </div>
             )}
@@ -1476,6 +1568,7 @@ function StepRow({
               <Markdown
                 text={step.instructions}
                 insertValues
+                locations={run.locations}
                 className="text-sm text-slate-600"
                 onRunCommand={
                   !readOnly && step.type === "manual"
@@ -1492,7 +1585,12 @@ function StepRow({
             {step.expected && (
               <div className="text-xs text-slate-500">
                 <span className="font-medium text-slate-600">Expected:</span>
-                <Markdown text={step.expected} insertValues className="text-xs text-slate-500" />
+                <Markdown
+                  text={step.expected}
+                  insertValues
+                  locations={run.locations}
+                  className="text-xs text-slate-500"
+                />
               </div>
             )}
             {step.note && (
@@ -1501,6 +1599,7 @@ function StepRow({
                 <Markdown
                   text={step.note}
                   insertValues
+                  locations={run.locations}
                   className="text-[11px] text-slate-400"
                   onRunCommand={
                     !readOnly && step.type === "manual" ? (c) => onRunCommand(c, "note") : undefined

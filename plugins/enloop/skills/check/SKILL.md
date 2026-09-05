@@ -255,8 +255,9 @@ node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" validate "$DATA_DIR/test-cases/<
 
 The contract's mechanical half has grown since many cases were written —
 bare-route `Where:` lines, `BASE_URL` still written as a variable instead
-of a `# Domains` entry, a domain with no default, a variable the run would
-have to ask for, nothing saying who the tester is — and its findings on an old
+of the undeclared `%DOMAIN%`, a case with no `@locations:` line, a
+placeholder inside an address that nothing can fill, a variable the run
+would have to ask for, nothing saying who the tester is — and its findings on an old
 case are case defects like any stale selector. Read the `cold run` line it
 prints: a case a first-time runner cannot click through is exactly what
 these sweeps exist to catch.

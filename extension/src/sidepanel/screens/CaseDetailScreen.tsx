@@ -5,6 +5,8 @@ import {
   environmentsForProject,
   environmentValues,
   generateVariableValue,
+  mainDomainName,
+  matchesLocations,
   matchesPagePattern,
   missingEnvironmentValues,
   resolveRunValues,
@@ -62,6 +64,7 @@ export function CaseDetailScreen({
   // and ask — the values are already resolved and on screen.
   const [domains, setDomains] = useState<TestCaseDomain[]>([]);
   const [variables, setVariables] = useState<TestCaseVariable[]>([]);
+  const [locations, setLocations] = useState<string[]>([]);
   /** True once the run source has been parsed — distinguishes "no variables
    * declared" from "not looked yet", which the environment restore needs. */
   const [variablesLoaded, setVariablesLoaded] = useState(false);
@@ -146,6 +149,7 @@ export function CaseDetailScreen({
       });
       setDomains(doc.domains);
       setVariables(doc.variables);
+      setLocations(doc.locations);
       setVariablesLoaded(true);
       setRunStepCounts({ total: doc.steps.length, quick: doc.steps.filter((s) => s.quick).length });
     })().catch((e) => !cancelled && setError(e));
@@ -185,7 +189,7 @@ export function CaseDetailScreen({
   useEffect(() => {
     setPreviews((prev) => {
       const next = resolveRunValues(
-        { domains, variables },
+        { domains, variables, locations },
         {},
         { pageUrl, environment: envContext },
       );
@@ -224,7 +228,7 @@ export function CaseDetailScreen({
       if (raw && !matchesPagePattern(v.match, raw)) refused[v.name] = raw;
     }
     setPageRefused(refused);
-  }, [domains, variables, pageUrl, envContext]);
+  }, [domains, variables, locations, pageUrl, envContext]);
 
   /** The last choice is remembered per folder — "which deployment am I
    * testing" rarely changes between runs of cases from the same repo. */
@@ -282,8 +286,22 @@ export function CaseDetailScreen({
     return (previews[name] ?? "").trim() ? "default" : "no value";
   }
 
+  /** Names that would reach the run empty: the case is refused rather than
+   * run with literal placeholders, per MANIFESTO.md — a run never asks. */
+  const unresolvedNames = useMemo(
+    () =>
+      [...domains, ...variables]
+        .map((entry) => entry.name)
+        .filter((name) => !(edited[name] ?? previews[name] ?? "").trim()),
+    [domains, variables, edited, previews],
+  );
+
   async function startRun(tier: RunTier) {
     if (!meta) return;
+    if (unresolvedNames.length > 0) {
+      setValuesOpen(true);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -294,7 +312,7 @@ export function CaseDetailScreen({
       // through to the default. A value the tester typed wins outright,
       // which is also how a `Match:` refusal is overridden.
       const pageUrl = await getActivePageUrl().catch(() => undefined);
-      const values = resolveRunValues({ domains, variables }, edited, {
+      const values = resolveRunValues({ domains, variables, locations }, edited, {
         pageUrl,
         environment: envContext,
       });
@@ -379,14 +397,14 @@ export function CaseDetailScreen({
   /** The same page the HTML download produces, as a link instead of a file —
    * the case travels inside it, so there is nothing to host and nothing to
    * upload. */
-  async function copyViewerLink() {
+  async function copyViewerLink(simplified = false) {
     if (selectedVersion == null) return;
     setBusy(true);
     setError(null);
     setMenuOpen(false);
     try {
       const runSource = await store.getRunSource(testCaseId, selectedVersion);
-      await navigator.clipboard.writeText(await viewerLink(runSource));
+      await navigator.clipboard.writeText(await viewerLink(runSource, { simplified }));
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
     } catch (e) {
@@ -438,6 +456,33 @@ export function CaseDetailScreen({
             {version.author && <span>by {version.author}</span>}
             {version.formatVersion && <span>grammar {version.formatVersion}</span>}
           </div>
+        )}
+        {/* Goal, then the shape of the work, then what must be in hand —
+            the four lines a tester reads before Start, per MANIFESTO.md.
+            Above the description, which is background. */}
+        {version?.goal.trim() && (
+          <p className="mb-2 rounded border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-sm font-medium text-emerald-900">
+            {version.goal}
+          </p>
+        )}
+        {version?.youWill.trim() && (
+          <p className="mb-2 text-sm text-slate-600">
+            <span className="font-medium text-slate-700">You will: </span>
+            {version.youWill}
+          </p>
+        )}
+        {version && version.youWillNeed.length > 0 && (
+          <div className="mb-3">
+            <h2 className="mb-1 text-xs font-semibold uppercase text-slate-500">You will need</h2>
+            <Markdown text={renderBulletList(version.youWillNeed)} className="text-sm text-slate-600" />
+          </div>
+        )}
+        {version && version.groups.length > 0 && (
+          <ul className="mb-3 list-disc pl-5 text-sm text-slate-600">
+            {version.groups.map((g) => (
+              <li key={g.title}>{g.title}</li>
+            ))}
+          </ul>
         )}
         {meta.description && (
           <Markdown text={meta.description} className="mb-3 text-sm text-slate-600" />
@@ -588,6 +633,7 @@ export function CaseDetailScreen({
           <RunValues
             domains={domains}
             variables={variables}
+            locations={locations}
             previews={previews}
             edited={edited}
             refused={pageRefused}
@@ -612,28 +658,48 @@ export function CaseDetailScreen({
           className="border-b border-slate-100 bg-slate-50 px-3 py-2"
         />
         <div className="space-y-2 p-3">
-          <div className="flex gap-2">
-            <button
-              onClick={() => startRun("full")}
-              disabled={busy || meta.archived}
-              className="flex-1 rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
-            >
-              Start run
-            </button>
-            {/* Only a choice when the case draws the distinction: with no
-                quick steps, or with every step quick, the two tiers run the
-                same thing and the second button is a decision about nothing. */}
-            {runStepCounts.quick > 0 && runStepCounts.quick < runStepCounts.total && (
-              <button
-                onClick={() => startRun("quick")}
-                disabled={busy || meta.archived}
-                title={`Runs only the ${runStepCounts.quick} steps marked Kind: quick. A quick pass is not a full pass.`}
-                className="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
-              >
-                Quick ({runStepCounts.quick})
-              </button>
-            )}
-          </div>
+          {unresolvedNames.length > 0 && (
+            <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+              This run cannot start: {unresolvedNames.map((n) => `%${n}%`).join(", ")}{" "}
+              {unresolvedNames.length === 1 ? "has" : "have"} no value. See the values above —
+              each says where its value comes from.
+            </p>
+          )}
+          {/* One primary Start. When the case marks a quick path, that is the
+              run — the version a tester takes by default — and the full run is
+              a secondary control; with no quick steps, or with every step
+              quick, the two tiers are the same run and only one button shows.
+              A tester is never asked to choose a tier. */}
+          {(() => {
+            const hasQuick = runStepCounts.quick > 0 && runStepCounts.quick < runStepCounts.total;
+            const blocked = busy || meta.archived || unresolvedNames.length > 0;
+            return (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => startRun(hasQuick ? "quick" : "full")}
+                  disabled={blocked}
+                  title={
+                    hasQuick
+                      ? `Runs the ${runStepCounts.quick} steps marked Kind: quick — the core path.`
+                      : undefined
+                  }
+                  className="flex-1 rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+                >
+                  Start run{hasQuick ? ` (${runStepCounts.quick} steps)` : ""}
+                </button>
+                {hasQuick && (
+                  <button
+                    onClick={() => startRun("full")}
+                    disabled={blocked}
+                    title={`Every step — all ${runStepCounts.total}. A quick pass is not a full pass.`}
+                    className="rounded border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                  >
+                    Full ({runStepCounts.total})
+                  </button>
+                )}
+              </div>
+            );
+          })()}
           <div className="flex gap-2">
             <button
               onClick={onEdit}
@@ -663,7 +729,7 @@ export function CaseDetailScreen({
             onToggle={() => setMenuOpen((o) => !o)}
             onClose={() => setMenuOpen(false)}
             onDownload={(kind) => void download(kind)}
-            onCopyLink={() => void copyViewerLink()}
+            onCopyLink={(simplified) => void copyViewerLink(simplified)}
           />
         </div>
       </div>
@@ -721,7 +787,9 @@ function ShareMenu({
   onToggle: () => void;
   onClose: () => void;
   onDownload: (kind: DownloadKind) => void;
-  onCopyLink: () => void;
+  /** `simplified` opens the link the way a consumer reads it — no
+   * selectors, no scripts. The plain link is for another tester. */
+  onCopyLink: (simplified: boolean) => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
 
@@ -754,12 +822,20 @@ function ShareMenu({
         ⤓ Download <span className="text-[9px] text-slate-400">▾</span>
       </button>
       <button
-        onClick={onCopyLink}
+        onClick={() => onCopyLink(false)}
         disabled={busy}
         title="A link to the online viewer with this case inside it — nothing is uploaded"
         className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50"
       >
         {copied ? "✓ Copied" : "🔗 Copy link"}
+      </button>
+      <button
+        onClick={() => onCopyLink(true)}
+        disabled={busy}
+        title="The same link, opening the simplified view: no selectors, no scripts — for someone who will follow the case by hand"
+        className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+      >
+        🔗 Simple
       </button>
       {open && (
         <div
@@ -854,6 +930,13 @@ function EnvironmentPicker({
   );
 }
 
+/** A domain field's border by where its address stands against `@locations`. */
+const INPUT_TONE = {
+  unchecked: "border-slate-300",
+  match: "border-emerald-400",
+  mismatch: "border-red-400",
+} as const;
+
 /**
  * The values a run will substitute for `%NAME%`, folded into the screen you
  * start the run from. This used to be a screen of its own between "Start
@@ -869,6 +952,7 @@ function EnvironmentPicker({
 function RunValues({
   domains,
   variables,
+  locations,
   previews,
   edited,
   refused,
@@ -880,6 +964,9 @@ function RunValues({
 }: {
   domains: TestCaseDomain[];
   variables: TestCaseVariable[];
+  /** The case's `@locations` globs — each domain's address is judged
+   * against them below its field, before the run starts. */
+  locations: string[];
   previews: Record<string, string>;
   edited: Record<string, string>;
   refused: Record<string, string>;
@@ -911,12 +998,13 @@ function RunValues({
   const missing = rows.filter(
     (r) => !(edited[r.name] ?? previews[r.name] ?? "").trim(),
   );
-  const mainName = domains[0]?.name;
+  const mainName = mainDomainName({ domains }) ?? undefined;
 
   const renderRow = (row: (typeof rows)[number]) => {
     const isEdited = row.name in edited;
     const value = edited[row.name] ?? previews[row.name] ?? "";
     const source = sourceOf(row.name, row.kind);
+    const location = row.kind === "domain" ? matchesLocations(locations, value) : "unchecked";
     return (
       <div key={row.name} className="space-y-0.5">
         <div className="flex items-center justify-between gap-2">
@@ -950,8 +1038,17 @@ function RunValues({
           value={value}
           onChange={(e) => onChange(row.name, e.target.value)}
           placeholder={row.kind === "domain" ? "https://…" : undefined}
-          className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-sm"
+          className={`w-full rounded border bg-white px-2 py-1 text-sm ${INPUT_TONE[location]}`}
         />
+        {location === "mismatch" && (
+          <p className="text-[10px] text-red-600">
+            Not one of this case's locations ({locations.join(", ")}). The run will
+            still use it — check the tab you started from.
+          </p>
+        )}
+        {location === "match" && (
+          <p className="text-[10px] text-emerald-700">Matches this case's locations.</p>
+        )}
         {refused[row.name] && !isEdited && (
           <p className="text-[10px] text-amber-600">
             The open page (<code>{refused[row.name]}</code>) doesn't match{" "}
@@ -966,9 +1063,10 @@ function RunValues({
         )}
         {!value.trim() && (
           <p className="text-[10px] text-amber-600">
-            No value — steps keep the literal %{row.name}% rather than a blank.
-            {row.kind === "domain" &&
-              " Pick an environment, or open the app in this tab."}
+            No value — the run will not start with %{row.name}% empty.
+            {row.kind === "domain"
+              ? " Open the app in this tab, or pick an environment that has its address."
+              : " The case should carry a default or a generator, or an environment should provide it — a defect for the check skill."}
           </p>
         )}
       </div>

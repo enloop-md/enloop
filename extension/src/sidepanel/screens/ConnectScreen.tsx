@@ -66,8 +66,9 @@ export function ConnectScreen() {
     <Centered>
       <h1 className="text-lg font-semibold text-slate-800">Enloop</h1>
       <p className="text-sm text-slate-600">
-        Pick a folder on this machine. Enloop keeps your test cases and run reports there as
-        plain Markdown — no server, no account, nothing uploaded.
+        Pick a folder on this machine — or the repository that ships its cases; Enloop finds
+        the case folder inside it. Cases and run reports are plain Markdown there — no server,
+        no account, nothing uploaded.
       </p>
       <div className="w-full rounded border border-slate-200 bg-slate-50 p-2.5 text-left text-xs text-slate-500">
         <p className="mb-1 font-medium text-slate-600">It creates three folders inside:</p>

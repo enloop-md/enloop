@@ -68,6 +68,12 @@ export const testCaseDomainSchema = z.object({
    * domain (`Match: admin.*.example.test`). With several domains it is what
    * lets the panel tell which one the tester has open. */
   match: z.string().optional(),
+  /** Not declared in the text: the parser synthesizes this entry when the
+   * document uses `%DOMAIN%` (or the legacy `%BASE_URL%`) without a
+   * `# Domains` section naming it. It is the deployment under test, empty
+   * until a run reads the open tab — see `IMPLICIT_DOMAIN_NAMES`. Never
+   * written back out by `renderCaseMarkdown`. */
+  implicit: z.boolean().optional(),
 });
 
 /**
@@ -146,9 +152,31 @@ export const testCaseVersionSchema = z.object({
   project: z.string(),
   changeNote: z.string(),
   title: z.string().min(1),
+  /** `Goal:` — one plain line saying what the case proves, for someone who
+   * has never seen the app. Pinned on screen for the whole run. Empty in
+   * documents written before it existed; the linter requires it. */
+  goal: z.string(),
+  /** `You will:` — one line on the shape of the work ahead: "log in and
+   * out several times, change the primary email". Read before Start so
+   * nothing mid-run is a surprise. */
+  youWill: z.string(),
+  /** `# You will need` — what must be in the tester's hands before step 1:
+   * a mailbox that receives codes, a second browser, a phone. Distinct
+   * from `# Prerequisites` (where the run begins, who the tester is, what
+   * to start), and rendered open above Start, never collapsed. */
+  youWillNeed: z.array(z.string()),
   description: z.string(),
   tags: z.array(z.string()),
-  /** `# Domains`, in declaration order — the first is the main domain. */
+  /** `@locations: localhost:8080, *.acme.com` — host globs naming where
+   * this case is meant to run. Never gates anything: an address a run
+   * builds is shown green when its host fits one of these and red when it
+   * fits none, so a tester on the wrong tab sees it before clicking. The
+   * first entry with no wildcard is also what a run with no page behind it
+   * (the viewer, a downloaded copy) uses for `%DOMAIN%`. Empty when the
+   * document declares none. */
+  locations: z.array(z.string()),
+  /** `# Domains`, in declaration order — the first is the main domain.
+   * Includes the implicit `DOMAIN` entry when the text uses it undeclared. */
   domains: z.array(testCaseDomainSchema),
   variables: z.array(testCaseVariableSchema),
   dependencies: z.array(z.string()),
@@ -441,9 +469,17 @@ export const runSchema = z.object({
    * execution state only. */
   dependencies: z.array(z.string()),
   prerequisites: z.array(z.string()),
+  /** The frozen `case.md`'s goal, shape of the work, and needs — pinned in
+   * the run header and shown before the first step. Composed. */
+  goal: z.string(),
+  youWill: z.string(),
+  youWillNeed: z.array(z.string()),
   /** The frozen `case.md`'s step groups, so the panel can head each group's
    * steps with its goal. Composed, like the two lists above. */
   groups: z.array(stepGroupSchema),
+  /** The frozen `case.md`'s `@locations` globs, so the run screen can colour
+   * every address it shows by whether the host fits. Composed. */
+  locations: z.array(z.string()),
   /** The address the run's main domain resolved to — what a bare-route
    * `Where:` opens against. Composed from the frozen `case.md`'s first
    * domain and `run.json`'s value snapshot; "" when the case declares no

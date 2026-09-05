@@ -1,5 +1,12 @@
 import { useState } from "react";
+import type { LocationStatus } from "@tcm/shared";
 import { openWhere } from "../lib/navigate.js";
+
+const TONE: Record<LocationStatus, string> = {
+  unchecked: "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100",
+  match: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+  mismatch: "border-red-200 bg-red-50 text-red-700 hover:bg-red-100",
+};
 
 /**
  * "Go there" for a step's `Where:`. Navigates the tab the run is executed
@@ -12,7 +19,17 @@ import { openWhere } from "../lib/navigate.js";
  * persistent until dismissed by the next attempt — not a toast that
  * vanishes before it is read.
  */
-export function NavigateButton({ where, mainOrigin = "" }: { where: string; mainOrigin?: string }) {
+export function NavigateButton({
+  where,
+  mainOrigin = "",
+  status = "unchecked",
+}: {
+  where: string;
+  mainOrigin?: string;
+  /** Where the address stands against the case's `@locations` — tints the
+   * control so a wrong-tab run is visible on the button itself. */
+  status?: LocationStatus;
+}) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -35,7 +52,7 @@ export function NavigateButton({ where, mainOrigin = "" }: { where: string; main
         onClick={go}
         disabled={busy}
         title={`Open ${where} in the tab this run is using`}
-        className="inline-flex items-baseline gap-0.5 rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[11px] font-medium text-sky-700 transition-colors hover:bg-sky-100 disabled:opacity-60"
+        className={`inline-flex items-baseline gap-0.5 rounded border px-1.5 py-0.5 text-[11px] font-medium transition-colors disabled:opacity-60 ${TONE[status]}`}
       >
         <span aria-hidden="true">↗</span>
         Go

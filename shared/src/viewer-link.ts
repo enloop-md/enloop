@@ -34,6 +34,12 @@ export const VIEWER_BASE_URL = "https://enloop-md.github.io/enloop/";
 /** The fragment parameter the viewer reads the case out of. */
 export const VIEWER_CASE_PARAM = "c";
 
+/** The fragment parameter that asks the viewer for a view: `v=simplified`
+ * opens the case the way a consumer reads it — no selectors, no scripts,
+ * defaults filled in — which is the right first sight for someone handed
+ * a link who will never install anything. */
+export const VIEWER_VIEW_PARAM = "v";
+
 /**
  * Longest link worth embedding in a file. Chrome itself handles megabytes,
  * but links get pasted into tickets, chat clients and email, and several of
@@ -161,12 +167,13 @@ export async function decodeCaseParam(param: string): Promise<string> {
 /** A viewer link carrying `markdown`. */
 export async function viewerLink(
   markdown: string,
-  opts: { baseUrl?: string } = {},
+  opts: { baseUrl?: string; simplified?: boolean } = {},
 ): Promise<string> {
   // Any fragment already on the base goes: the case is the fragment now, and
   // a URL only gets one.
   const base = (opts.baseUrl ?? VIEWER_BASE_URL).replace(/#.*$/, "");
-  return `${base}#${VIEWER_CASE_PARAM}=${await encodeCaseParam(markdown)}`;
+  const view = opts.simplified ? `&${VIEWER_VIEW_PARAM}=simplified` : "";
+  return `${base}#${VIEWER_CASE_PARAM}=${await encodeCaseParam(markdown)}${view}`;
 }
 
 /**

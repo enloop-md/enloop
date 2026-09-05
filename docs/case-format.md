@@ -12,15 +12,16 @@ A complete case, end to end:
 @author Your Name
 @project Careerminds
 Tags: sync-console, integrations, manual
+@locations: localhost:8000, staging.careerminds.test, *.careerminds.com
+Goal: A contact synced from the CRM appears in the mailer
+You will: press one sync button and check two admin screens
 
 Verifies the single-contact sync path added in PROJ-1234.
 
-# Domains
+# You will need
+- Access to the mailer's admin (the QA account is in the case)
 
-## APP
-The web app under test.
-Match: *.careerminds.test
-Default: https://staging.careerminds.test
+# Domains
 
 ## MAILER
 The mailer's own admin, where the synced contact shows up.
@@ -34,13 +35,13 @@ Email of a contact present in both the CRM and the mailer.
 Default: qa.bot@example.com
 
 # Prerequisites
-- Open %APP%/admin/sync-console
+- Open %DOMAIN%/admin/sync-console
 - Logged in as a super-admin — password: vault item `staging admin`
 
 # Steps
 
 ## Check the account picker
-Where: %APP%/admin/sync-console
+Where: %DOMAIN%/admin/sync-console
 Selector: #account-tabs
 Read the tabs across the top of the console.
 
@@ -49,7 +50,7 @@ Read the tabs across the top of the console.
 - Each tab shows the account name with its sync purpose beneath it.
 
 ## Sync the contact
-Where: %APP%/admin/sync-console
+Where: %DOMAIN%/admin/sync-console
 Selector: [data-testid="sync-crm-mailer"]
 Selector: #sync-crm-mailer-btn
 Click `Sync CRM → Mailer`.
@@ -76,6 +77,13 @@ and what you commit next to the code it tests.
 
 ## The fields
 
+Under the title: `Goal:` (one plain line — what finishing the case proves,
+pinned on screen for the whole run), `You will:` (one line on the shape of
+the work, read before Start), and `# You will need` (what must be in the
+tester's hands before step 1, rendered open above Start). The description
+is background; the goal is its own line. See [MANIFESTO.md](../MANIFESTO.md)
+for why a tester reads these four things before pressing Start.
+
 Key fields: `Where:` (the route or screen the tester starts from), `Selector:`
 (the extension scrolls it into view and flashes it), `### Expected` (pass
 criteria only), `### Note` (background, rendered dimmed). A fenced code block
@@ -101,15 +109,17 @@ the one written first.
 
 ## `Where:` and the Go control
 
-A `Where:` that names an address — `%APP%/admin/sync`, an absolute URL, or
-a local address — gets a **Go** control in the run screen that navigates the
-tab the run is using — the same tab Highlight and automated steps act on, so
-opening the page leaves you where the next step expects. The `%APP%/…` form
-— a declared domain plus the route — is the standard one: substituted before
-the run starts, it works from a blank tab and links in the viewer, and it
-says which deployment the step is on. A bare route (`/admin/sync`) resolves
-against the case's main domain, or, for a case declaring none, against
-whatever page is open — the legacy form, kept working for older cases.
+A `Where:` that names an address — `%DOMAIN%/admin/sync`, an absolute URL,
+or a local address — gets a **Go** control in the run screen that navigates
+the tab the run is using — the same tab Highlight and automated steps act
+on, so opening the page leaves you where the next step expects. The
+`%DOMAIN%/…` form is the standard one: substituted before the run starts,
+it works from a blank tab and links in the viewer, and the panel colours it
+by the case's `@locations`. A bare route (`/admin/sync`) resolves against
+the case's main domain, or, for a case declaring none, against whatever
+page is open — the legacy form, kept working for older cases. An address
+still holding a `%NAME%` the run could not fill gets no Go control: the
+panel will not open `/user.php?user=%USER_ID%` literally.
 
 The contract's wider rule is that **every place a case names carries its
 address** — never "navigate to the Reports page" with the path left to memory.
@@ -220,7 +230,7 @@ fixture, never a person to ask) for the second; the command for each of the
 rest. The entry point lives here rather than in a step, because a tester is
 usually already in the app and a step spent on arriving is a Pass/Fail on
 something that was already true. An address here is absolute or
-`%APP%`-built: unlike a step's `Where:`, this block has no open page to
+`%DOMAIN%`-built: unlike a step's `Where:`, this block has no open page to
 resolve a bare route against. The run screen renders Prerequisites and
 Dependencies together in a **"Before you start"** block, collapsed by default —
 most runs happen against an environment that is already up, so it stays out of
@@ -232,28 +242,61 @@ makes a case findable in the side panel, which lists cases **most recently
 updated first**. It is also what scopes environments: a project's staging is
 offered to that project's cases.
 
-### Domains: the deployments a case touches
+### `%DOMAIN%` and `@locations`: where a case runs
+
+Every address in a case is `%DOMAIN%` plus a route — `Where:
+%DOMAIN%/orders`, `- Open %DOMAIN%/admin`, a link in prose. `%DOMAIN%` is
+the deployment under test and needs no declaration. It is **empty by
+default, and when empty a run takes the tab you start it from** — scheme,
+host and port — so one case runs against your branch, a review app, a
+local dev server or a customer's instance without being edited. Typing an
+address under **Start run**, or picking an environment, overrides the tab.
+A case guesses no host, so a wrong guess can never make it unrunnable.
+
+What a case does say is where it is *meant* to run, in one line under the
+title:
+
+```markdown
+@locations: localhost:8080, staging.acme.test, *.acme.com
+```
+
+Comma-separated host globs: `*` matches any run of characters,
+case-insensitively; a port is compared when the pattern names one; a
+pattern containing `/` is checked against the whole address. The line
+gates nothing. Every address the run screen, the online viewer and a
+downloaded page build is shown **green** when its host fits one of the
+globs and **red** when it fits none — and it still opens either way,
+because a tester on an unusual tab may mean it. The `DOMAIN` field on the
+case screen shows the same verdict before the run starts. The first entry
+with no `*` is also what `%DOMAIN%` resolves to where there is no tab to
+read: the viewer, a downloaded copy, the linter's cold run. Leave the line
+out and nothing is coloured.
+
+`%BASE_URL%` is the older spelling and keeps working: undeclared it
+behaves exactly like `%DOMAIN%`; declared as a variable with
+`Generator: page-origin` it resolves as it always did, and the linter asks
+for `%DOMAIN%`.
+
+### Domains: a second host
 
 ```markdown
 # Domains
 
-## APP
-The web app under test.
-Match: app.*.example.test
-Default: https://staging.example.test
-
-## ADMIN
-The admin console.
-Match: admin.*.example.test
-Default: https://admin.staging.example.test
+## MAILER
+The mailer's own admin, where the synced contact shows up.
+Match: mailer.*
+Default: https://mailer.staging.example.test
 ```
 
-A domain is a host the case visits, named once and used as an address prefix
-everywhere else — `Where: %APP%/orders`, `- Open %ADMIN%/tenants`, a link in
-prose. A case may declare several, and a scenario walks between them: *place
-the order at `%APP%/orders`, then check the audit trail at `%ADMIN%/audit`*.
-The first declared domain is the **main** one; a bare route resolves against
-it.
+`# Domains` is for a deployment **other than** the one under test — an
+admin console on its own host, a second tenant, the site a flow signs in
+from. A declared domain is used the same way, as an address prefix
+(`Where: %MAILER%/contacts`), and a scenario walks between hosts: *place
+the order at `%DOMAIN%/orders`, then check the audit trail at
+`%ADMIN%/audit`*. `DOMAIN` itself may be declared here to give it a
+description or a `Default:`; declared or not, it is the **main** domain,
+the one a bare route resolves against. A case from before `DOMAIN` existed
+that declares `## APP` first keeps `APP` as its main domain.
 
 A domain is not a variable. It has no generator, and its address is decided
 per run by the **environment** the tester picks on the case screen — local,
@@ -261,22 +304,23 @@ staging, prod, or any custom set of addresses — recorded in the connected
 folder's `environments.json` (**Settings → Environments** in the panel, or
 `enloop-case.mjs environments` from a skill). Resolution, first hit wins:
 
-1. a value typed on the case screen under **Start run**;
+1. a value typed on the case screen under **Start run** (a blank field
+   counts as nothing typed);
 2. the picked environment's address for that domain;
-3. with **no** environment picked, the open tab's origin — for the main
-   domain, or for any domain whose `Match:` glob accepts the tab's host;
+3. with **no** environment picked, the open tab's origin — for `DOMAIN`,
+   for the main domain, or for any domain whose `Match:` glob accepts the
+   tab's host;
 4. the `Default:`;
-5. nothing, in which case `%APP%` stays literal in the run.
+5. for `DOMAIN`, the first concrete `@locations` entry;
+6. nothing, in which case `%ADMIN%` stays literal in the run.
 
 `Default:` is what a run from a blank tab, the online viewer and a
-downloaded page use, so every domain carries one — the address of the
+downloaded page use, so a declared domain carries one — the address of the
 deployment the project normally tests against, which the skills copy from
 the default environment. `Match:` is what lets you start a run from
 whichever tab you have open without the panel taking the admin console's
-tab for the app: `*` matches any run of characters, case-insensitively; a
-pattern containing `/` is checked against the whole origin rather than the
-host. The run screen names the environment in its header, and the report
-lists the address each domain resolved to.
+tab for the app. The run screen names the environment in its header, and
+the report lists the address each domain resolved to.
 
 ### Variables: everything else, resolved by Enloop
 
@@ -311,13 +355,24 @@ when the run starts. `page-domain` (the bare host, no scheme and no port) is
 for a value that is *about* a host — a tenant name, an email suffix — not for
 an address; addresses are domains.
 
-### Before domains existed
+A value **the run itself produces** — the id of a user created in step 2,
+the URL of a record that does not exist until the case makes it — is not a
+variable, and never goes into an address. `Where: %DOMAIN%/user.php?user=%USER_ID%`
+is a link nobody can fill; a `Default:` invented to satisfy the linter opens
+a wrong page that reads right. The case says where the tester clicks and
+gives the address shape as help in backticks, which no renderer links:
+*Click the new user's row in `[data-testid="users-table"]` (opens
+`/user.php?user=<id>`)*. The linter refuses a valueless placeholder inside
+an address, and the panel refuses to open one.
+
+### Before `%DOMAIN%` existed
 
 A case written against an older format declares `BASE_URL` under
-`# Variables` with `Generator: page-origin` and a `Default:`. It still parses
-and still runs exactly as before; the linter asks for it to become the main
-domain, and the **check** skill's sweep rewrites it. In the panel, a legacy
-`BASE_URL` counts as the main domain for bare routes.
+`# Variables` with `Generator: page-origin` and a `Default:`, or declares
+the app as `## APP` under `# Domains`. Both still parse and still run
+exactly as before; the linter asks for `BASE_URL` to become `%DOMAIN%`, and
+the **check** skill's sweep rewrites it. In the panel, a legacy `BASE_URL`
+counts as the main domain for bare routes.
 
 ## Suites
 
@@ -335,10 +390,12 @@ The rules, in brief:
 
 1. One step is one action with one observable result. If it contains "then",
    split it.
-2. Every place is an address, written `%APP%/route` — a declared domain
-   plus the route, one domain per deployment the case touches. The entry
-   point is a `# Prerequisites` bullet, not a first step; every step states
-   where it starts via `Where:`; a place named in prose carries a link.
+2. Every place is an address, written `%DOMAIN%/route` — the undeclared
+   domain of the tab the run starts from, with `@locations:` naming the
+   hosts the case is meant for; a declared domain only for a second host.
+   The entry point is a `# Prerequisites` bullet, not a first step; every
+   step states where it starts via `Where:`; a place named in prose
+   carries a link. A value the run produces never goes in an address.
 3. Every UI step carries a `Selector:`, taken from source — never invented,
    never a structural path. Repeat the line for ordered fallbacks when the
    element can genuinely move (a modal, a portal, a handle not yet deployed),

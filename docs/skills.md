@@ -209,7 +209,7 @@ one.
 
 `/enloop:check case <id-or-title>` needs no run at all: it sweeps a stored
 case against current source and the current contract — stale selectors,
-bare-route addresses, a domain with no default or `BASE_URL` still written as a variable, a value the tester would be asked for, an unstated account —
+bare-route addresses, `BASE_URL` still written as a variable instead of `%DOMAIN%`, a missing `@locations:` line, a placeholder in an address nothing can fill, a value the tester would be asked for, an unstated account —
 and writes the fixes as `v<n+1>`, reporting the `cold run` line before and
 after. It is the cheap upgrade path for cases written before the
 cold-runner bar existed.

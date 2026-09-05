@@ -36,7 +36,7 @@ following the rest of this list.
 
 The grammar lives as a doc comment at the top of `shared/src/markdown.ts`
 and evolves over time — don't rely on memory of what fields exist
-(`@version`/`@author`/`@project`, `# Domains`, `# Variables`, `Selector:` — which may
+(`@version`/`@author`/`@project`/`@locations`, the undeclared `%DOMAIN%`, `# Domains` for a second host, `# Variables`, `Selector:` — which may
 repeat for ordered fallbacks — `### Expected`, fenced code = automated
 step, etc.). Read it fresh every time.
 
