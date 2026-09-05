@@ -4,6 +4,74 @@ Versions are the extension's; the plugin and the case grammar carry their
 own numbers and are listed where they moved. Store uploads are the
 `enloop-extension-v<version>.zip` attached to each GitHub release.
 
+## 0.14.0 — 2026-09-05
+
+Extension 0.14.0 · plugin 0.17.0 · grammar 0.0.11 · daemon 0.1.0
+
+### The manifesto
+
+`MANIFESTO.md` states the principle everything else serves: a human
+verifying a flow puts in zero effort — never asked to decide, provide a
+value, or look anything up. `PLAN-MANIFESTO.md` is the alignment plan;
+this release carries its first pass.
+
+### Writing cases
+
+- **A case is a goal.** `Goal:` and `You will:` are header lines, one
+  line each and required by the linter; `# You will need` lists what must
+  be in the tester's hands before step 1. The case screen shows all three
+  above Start, the run screen pins the goal under its title for the whole
+  run, and the viewer, the downloaded page and the readable export carry
+  them.
+- **The contract is enforced.** Missing `### Expected`, a UI step with no
+  `Selector:`, no entry point in a case that names addresses, and
+  `%DOMAIN%` with no `@locations` are errors now, not warnings. A vault
+  reference in a prerequisite warns: a test account's password is an
+  environment value typed by the panel. The shipped example passes.
+- **Every skill run ends with a link.** The `write` command appends the
+  viewer-link comment to the case and prints the link; the report gives
+  it first, then the two extension steps. The project name is derived
+  from the repo's manifest before anyone is asked.
+
+- **`%DOMAIN%` needs no declaration.** Every app address is written
+  `%DOMAIN%/route`. The placeholder is empty by default and a run fills it
+  with the tab it starts from — a branch, a review app, a local server —
+  unless the tester types an address or picks an environment; a case
+  guesses no host, so a wrong guess can no longer make it unrunnable.
+  `%BASE_URL%` keeps working as an alias, and a declared `## APP` main
+  domain from the previous convention runs unchanged. `# Domains` is now
+  for a second host only. The skills write `%DOMAIN%` in new cases and
+  record the app under test as `DOMAIN` in `environments.json`.
+- **`@locations:` says where a case is meant to run.** A header line of
+  comma-separated host globs — `localhost:8080, *.acme.com`. It gates
+  nothing: every address the run screen, the online viewer and a
+  downloaded page build is shown green when its host fits one and red
+  when it fits none, and the link opens either way. The `DOMAIN` field on
+  the case screen shows the same verdict before the run starts. The first
+  entry without a `*` is what the viewer and a downloaded copy use for
+  `%DOMAIN%`, so they stay clickable with no `Default:` line.
+- **A value the run produces never goes in an address.** A placeholder
+  nobody can fill — `%DOMAIN%/user.php?user=%USER_ID%` for a user the
+  case creates — is a linter error with a specific answer: say where the
+  tester clicks and give the address shape in backticks. The run screen no
+  longer offers Go on an address still holding a placeholder, and the
+  downloaded page does not link it. The step contract gains the rule and
+  the by-eye check for a `Default:` invented to pass the linter.
+
+### Running cases
+
+- **A run never asks.** Start is one button — the quick path when the
+  case marks one, Full beside it — and it stays disabled while any value
+  is empty, with the values block saying where each one comes from.
+  Comment audiences and the step rating sit under a closed disclosure;
+  a comment with nobody ticked is routed at triage.
+- **Point the extension at the repo.** Connecting a directory with no
+  `test-cases/` finds the case folder up to two levels down, so "install
+  and point it at the repo" is the whole instruction.
+- **Simplified links.** The share row gains a second link that opens the
+  viewer in the simplified view — no selectors, no scripts — for someone
+  who will follow the case by hand.
+
 ## 0.13.0 — 2026-09-02
 
 Extension 0.13.0 · plugin 0.15.0 · grammar 0.0.9 · daemon 0.1.0
