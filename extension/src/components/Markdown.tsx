@@ -2,7 +2,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { HighlightLink } from "./HighlightLink.js";
 import { ValueChip } from "./ValueChip.js";
-import { looksLikeSelector, selectorFromHref } from "@tcm/shared";
+import { looksLikeSelector, matchesLocations, selectorFromHref } from "@tcm/shared";
 import { rehypeQuotedValues } from "../lib/quoted-values.js";
 
 /**
@@ -35,6 +35,10 @@ import { rehypeQuotedValues } from "../lib/quoted-values.js";
  * Pass `highlightSelectors={false}` where a page to highlight against is not
  * the point — free-run notes, say — to render everything as plain text.
  *
+ * `locations` — the case's `@locations` globs — colours every absolute link
+ * green when its host fits one and red when it fits none. The link still
+ * opens either way: the colour is a warning, not a gate.
+ *
  * Where `onRunCommand` is set (the run screen's dependencies, prerequisites
  * and manual-step prose), inline code that reads as a shell command gets a
  * Run button — the command is handed to the agent session watching the data
@@ -48,12 +52,14 @@ export function Markdown({
   highlightSelectors = true,
   insertValues = false,
   onRunCommand,
+  locations,
 }: {
   text: string;
   className?: string;
   highlightSelectors?: boolean;
   insertValues?: boolean;
   onRunCommand?: (command: string) => void;
+  locations?: string[];
 }) {
   return (
     <div className={className}>
@@ -68,13 +74,21 @@ export function Markdown({
               const label = typeof children === "string" ? children : selector;
               return <HighlightLink selector={selector} label={label} />;
             }
+            const status = locations ? matchesLocations(locations, href ?? "") : "unchecked";
             return (
               <a
                 {...props}
                 href={href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-600 underline hover:text-blue-700"
+                className={LINK_CLASS[status]}
+                title={
+                  status === "mismatch"
+                    ? `Does not match this case's @locations: ${locations?.join(", ")}`
+                    : status === "match"
+                      ? "Matches this case's @locations"
+                      : undefined
+                }
               >
                 {children}
               </a>
@@ -120,6 +134,13 @@ export function Markdown({
     </div>
   );
 }
+
+/** A link's colour by where its host stands against `@locations`. */
+const LINK_CLASS = {
+  unchecked: "text-blue-600 underline hover:text-blue-700",
+  match: "text-emerald-700 underline hover:text-emerald-800",
+  mismatch: "text-red-600 underline decoration-wavy hover:text-red-700",
+} as const;
 
 /** What marks inline code as runnable: it starts like a command someone
  * would author into Dependencies ("node scripts/seed.js --org …"), not like

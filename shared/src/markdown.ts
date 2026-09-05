@@ -9,6 +9,7 @@ import {
 import { COMMENT_AUDIENCES, VARIABLE_GENERATORS } from "./schemas.js";
 import { describeRating, isExemplaryRating, isPoorRating } from "./rating.js";
 import { stripViewerComment } from "./viewer-link.js";
+import { IMPLICIT_DOMAIN_NAMES, coldLocation, isMainDomainName } from "./variables.js";
 import type {
   CommentAudience,
   FreeRunFile,
@@ -32,7 +33,7 @@ import type {
  * v1.md/v2.md version history, which tracks edits to a case's *content*
  * under this same grammar.
  */
-export const CURRENT_FORMAT_VERSION = "0.0.9";
+export const CURRENT_FORMAT_VERSION = "0.0.11";
 
 /**
  * Grammar. There is no separate spec by design: this comment is it, sitting
@@ -54,50 +55,100 @@ export const CURRENT_FORMAT_VERSION = "0.0.9";
  *                                                opening the file cold knows
  *                                                what they are looking at)
  *   Tags: auth, smoke
- *   Change note: Added SSO redirect check      (all five lines optional)
+ *   @locations: localhost:8080, *.acme.com     (host globs — where this
+ *                                                case is meant to run; see
+ *                                                `%DOMAIN%` below)
+ *   Goal: A user can sign in with either of      (one plain line — what the
+ *   their two email addresses                     case proves; pinned on
+ *                                                 screen for the whole run)
+ *   You will: log in and out several times,     (one line — the shape of
+ *   change the primary and secondary email        the work, read before
+ *                                                 Start so nothing mid-run
+ *                                                 is a surprise)
+ *   Change note: Added SSO redirect check      (the header lines may come
+ *                                                 in any order; all are
+ *                                                 optional to the parser,
+ *                                                 and the linter requires
+ *                                                 `Goal:` and `You will:`)
  *
- *   Free text description.
+ *   Free text description.                      (background: why the case
+ *                                                 exists, which ticket —
+ *                                                 not the goal, which has
+ *                                                 its own line)
  *
- *   # Domains                                   (optional)
+ *   A case is a **goal**, and its steps are how the goal is proved. The
+ *   goal is one line a person who has never seen the app understands on
+ *   sight, and the run screen keeps it above whatever step is current.
+ *   A large goal falls into subgoals — `# Steps: <title>` groups, below,
+ *   each with a one-line goal of its own. Before Start the tester also
+ *   reads `You will:` and `# You will need`, so they know the shape of
+ *   the next few minutes and have everything in hand before step 1.
  *
- *   ## APP
- *   The web app under test.                      (free text description)
- *   Default: https://staging.example.test        (the origin a cold run
- *                                                 uses — required in
- *                                                 practice, see below)
- *   Match: app.*.example.test                    (optional glob — which
+ *   Every address in a case is written as a domain plus a route —
+ *   `%DOMAIN%/admin/reports` — never as a literal host. `%DOMAIN%` is the
+ *   deployment under test and needs no declaration: it is **empty by
+ *   default, and when empty a run takes the open tab's origin** (scheme,
+ *   host, port), so the same case runs against a branch, a review app, a
+ *   local dev server or a customer's instance by starting it from that
+ *   tab. A value typed on the case screen or a picked environment's
+ *   address overrides the tab; nothing in the case has to change.
+ *
+ *   `@locations:` says where the case is *meant* to run: a comma-separated
+ *   list of host globs (`localhost:8080`, `*.acme.com`, `app.*.test`; `*`
+ *   matches any run of characters, case-insensitively; a port is compared
+ *   when the pattern spells one; a pattern with `/` is checked against the
+ *   whole address). It gates nothing. Every address the panel, the viewer
+ *   or a downloaded page shows is coloured **green** when its host fits
+ *   one of the globs and **red** when it fits none — the link still opens,
+ *   because a tester on an unusual tab may mean it, but they see it first.
+ *   The first entry with no `*` also serves as `%DOMAIN%`'s address where
+ *   no tab exists to read: the online viewer, a downloaded copy, the
+ *   linter's cold run. Omit `@locations` and nothing is coloured.
+ *
+ *   `%BASE_URL%` is the pre-`DOMAIN` spelling of the same thing and keeps
+ *   working: undeclared it behaves exactly like `%DOMAIN%`; declared as a
+ *   variable with `Generator: page-origin` (the oldest form) it still
+ *   resolves as before. New cases write `%DOMAIN%`.
+ *
+ *   # Domains                                   (optional — only for a
+ *                                                 case that touches more
+ *                                                 than one host)
+ *
+ *   ## ADMIN
+ *   The admin console, a separate deployment.   (free text description)
+ *   Default: https://admin.staging.example.test  (the origin a cold run
+ *                                                 uses)
+ *   Match: admin.*.example.test                  (optional glob — which
  *                                                 open tabs count as this
  *                                                 domain)
  *
- *   ## ADMIN
- *   The admin console, a separate deployment.
- *   Default: https://admin.staging.example.test
- *
- *   A domain is a deployment the case touches, named once here and used
- *   as an address prefix everywhere else: `Where: %APP%/admin/reports`,
- *   `- Open %ADMIN%/tenants`, a link in prose. A case may declare several
- *   — the app and its admin console, a marketing site and the app it
- *   signs into, two tenants of one product — and a scenario walks between
- *   them: "do X at %APP%/orders, then check Y at %ADMIN%/audit". The
- *   **first** declared domain is the *main* domain: a bare route
- *   (`Where: /admin/reports`) resolves against it.
+ *   A declared domain is a *second* deployment the case touches — the app
+ *   and its admin console, a marketing site and the app it signs into,
+ *   two tenants of one product — named once here and used as an address
+ *   prefix everywhere else: `- Open %ADMIN%/tenants`, `Where:
+ *   %ADMIN%/audit`, a link in prose. A scenario walks between hosts: "do X
+ *   at %DOMAIN%/orders, then check Y at %ADMIN%/audit". `DOMAIN` itself
+ *   may be declared here too, to give it a description, a `Default:` or a
+ *   `Match:`; declared or not, it is the *main* domain, the one a bare
+ *   route (`Where: /admin/reports`) resolves against. Without a `DOMAIN`
+ *   entry, the first declared domain is the main one — the pre-`DOMAIN`
+ *   convention (`## APP`), still honoured.
  *
  *   A domain is not a variable. It has no generator, and its value is
  *   decided per run by the **environment** the tester picks — local,
  *   staging, prod, or a custom set of addresses — which the extension
- *   keeps in `environments.json` beside the cases, one value per declared
- *   domain per environment. Resolution, first hit wins: a value typed on
- *   the case screen; the picked environment's value; when no environment
- *   is picked, the open tab's origin — for the main domain, or for any
- *   domain whose `Match:` glob accepts the tab's host; the `Default:`;
- *   nothing, in which case `%APP%` stays literal. `Default:` is what a
+ *   keeps in `environments.json` beside the cases, one value per domain
+ *   per environment. Resolution, first hit wins: a value typed on the
+ *   case screen; the picked environment's value; when no environment is
+ *   picked, the open tab's origin — for `DOMAIN`, for the main domain, or
+ *   for any domain whose `Match:` glob accepts the tab's host; the
+ *   `Default:`; for `DOMAIN`, the first concrete `@locations` entry;
+ *   nothing, in which case `%ADMIN%` stays literal. `Default:` is what a
  *   run from a blank tab, the online viewer and a downloaded page use, so
- *   every domain should carry one — the address of the deployment the
- *   project normally tests against. `Match:` is what lets a tester start
- *   from whichever tab they have open without the panel guessing the
- *   admin console's tab is the app: `*` matches any run of characters,
- *   case-insensitively; a pattern containing `/` is checked against the
- *   whole origin instead of the host.
+ *   a declared domain should carry one — the address of the deployment
+ *   the project normally tests against. `Match:` is what lets a tester
+ *   start from whichever tab they have open without the panel guessing
+ *   the admin console's tab is the app.
  *
  *   # Variables                                 (optional)
  *
@@ -119,14 +170,24 @@ export const CURRENT_FORMAT_VERSION = "0.0.9";
  *   differ between staging and prod). A variable with none of the three is
  *   a linter error, not a question the panel asks.
  *
+ *   A value the run itself produces — the id of a user created in step 2,
+ *   the URL of a record that does not exist until the case makes it — is
+ *   not a variable, and **never goes into an address**. An address with a
+ *   placeholder nobody can fill (`%DOMAIN%/user.php?user=%USER_ID%`) is
+ *   a link that opens the wrong page, and a made-up `Default:` to satisfy
+ *   the linter is worse: it opens a wrong page that looks right. Write
+ *   where the tester clicks, and give the address *shape* as help, in
+ *   backticks so no renderer links it: "Click the new user's row in
+ *   `[data-testid="users-table"]` (opens `/user.php?user=<id>`)".
+ *
  *   Generators, given as `Generator: <name> [arg]`: `timestamp` (epoch ms,
  *   or ISO text with arg `iso`), `random-number` (arg `min-max`, default
  *   `0-999999`), `random-string` (arg = length, default 8), and the page
  *   generators `page-url`, `page-origin`, `page-domain`, which read the
- *   active tab when the run starts. The page generators predate `# Domains`:
+ *   active tab when the run starts. The page generators predate `%DOMAIN%`:
  *   a `## BASE_URL` variable with `Generator: page-origin` is the legacy way
  *   to say "the deployment I have open", still parsed and still resolved,
- *   and the linter asks for it to become the main domain instead.
+ *   and the linter asks for it to become `%DOMAIN%` instead.
  *   `page-domain` (host only, no scheme, no port) remains right for a
  *   value that is *about* a host — a tenant name, an email suffix — never
  *   for an address prefix. `Match:` on a page generator works as it does
@@ -147,6 +208,17 @@ export const CURRENT_FORMAT_VERSION = "0.0.9";
  *   # Dependencies                              (optional, bullet list)
  *   - Seeded test user
  *
+ *   # You will need                             (optional, bullet list)
+ *   - Access to a mailbox that receives the confirmation codes
+ *   - A second browser, signed out
+ *
+ *   What must be in the tester's **hands** before step 1 — a mailbox, a
+ *   device, a second browser, a colleague's approval — as distinct from
+ *   what must be true (`# Dependencies`) and what to do first
+ *   (`# Prerequisites`). Rendered open above Start everywhere, never
+ *   collapsed, so a tester gets these things now rather than halfway
+ *   through a step with a code expiring.
+ *
  *   # Prerequisites                             (optional, bullet list)
  *   - Open https://app.example.com/admin/reports
  *   - API running locally: `npm run dev` in the app repo,
@@ -164,7 +236,7 @@ export const CURRENT_FORMAT_VERSION = "0.0.9";
  *   earns a bullet here rather than a first step that spends a verdict on
  *   arriving. This block is rendered Markdown with no page behind it,
  *   unlike a step's `Where:`, so an address in it is absolute or built from
- *   a domain (`%APP%/admin/reports`) — a bare route has no origin to
+ *   a domain (`%DOMAIN%/admin/reports`) — a bare route has no origin to
  *   resolve against here. Dependencies is for what must
  *   already be true and is not the tester's to arrange: a deployed branch,
  *   a migration, an access level. The run screen renders both in one
@@ -227,13 +299,15 @@ export const CURRENT_FORMAT_VERSION = "0.0.9";
  *   A `Where:` that is a route (`/admin/x`), an absolute URL, or a local
  *   address (`localhost:3000/admin`) gets a Go control in the run screen
  *   that navigates the tab the run is using. The standard form is
- *   `Where: %APP%/admin/x` — a declared domain plus the route — which
+ *   `Where: %DOMAIN%/admin/x` — the domain plus the route — which
  *   substitutes to an absolute URL before the run starts and so works from
- *   a blank tab, in the viewer and in a downloaded copy. A bare route
- *   resolves against the main domain when the case declares one, and
- *   otherwise against whatever page is open — refusing to guess when there
- *   is none. Prose (`the CRM's web console → Contacts`) is left alone; it
- *   names a place, not an address.
+ *   a blank tab, in the viewer and in a downloaded copy, coloured by
+ *   `@locations`. A bare route resolves against the main domain, and for
+ *   a case with none against whatever page is open — refusing to guess
+ *   when there is none. An address still holding a placeholder after
+ *   substitution gets no Go control: the panel will not open
+ *   `/user.php?user=%USER_ID%`. Prose (`the CRM's web console →
+ *   Contacts`) is left alone; it names a place, not an address.
  *
  *   A single `Selector:` line is always one selector, even when it contains
  *   commas — `a, b` is a CSS selector *group*, and `querySelector` returns
@@ -341,13 +415,21 @@ export function parseCaseDocument(
   let author = "";
   let project = "";
   let tags: string[] = [];
+  let locations: string[] = [];
+  let goal = "";
+  let youWill = "";
   let changeNote = "";
   while (i < lines.length) {
     const line = lines[i];
+    const goalMatch = /^Goal:\s*(.*)$/i.exec(line);
+    const youWillMatch = /^You will:\s*(.*)$/i.exec(line);
     const versionMatch = /^@version\s+(.*)$/i.exec(line);
     const authorMatch = /^@author\s+(.*)$/i.exec(line);
     const projectMatch = /^@project\s+(.*)$/i.exec(line);
     const tagsMatch = /^Tags:\s*(.*)$/i.exec(line);
+    // With or without the colon: `@locations:` reads as a list the way
+    // `Tags:` does, and `@locations` matches the other `@` lines.
+    const locationsMatch = /^@locations:?\s*(.*)$/i.exec(line);
     const noteMatch = /^Change note:\s*(.*)$/i.exec(line);
     if (versionMatch) {
       formatVersion = versionMatch[1].trim();
@@ -372,6 +454,24 @@ export function parseCaseDocument(
       i++;
       continue;
     }
+    if (locationsMatch) {
+      locations = locationsMatch[1]
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
+      i++;
+      continue;
+    }
+    if (goalMatch) {
+      goal = goalMatch[1].trim();
+      i++;
+      continue;
+    }
+    if (youWillMatch) {
+      youWill = youWillMatch[1].trim();
+      i++;
+      continue;
+    }
     if (noteMatch) {
       changeNote = noteMatch[1].trim();
       i++;
@@ -388,6 +488,7 @@ export function parseCaseDocument(
   let variables: TestCaseVariable[] = [];
   let dependencies: string[] = [];
   let prerequisites: string[] = [];
+  let youWillNeed: string[] = [];
   const groups: StepGroup[] = [];
   const steps: Step[] = [];
 
@@ -399,6 +500,7 @@ export function parseCaseDocument(
     else if (name === "dependencies") dependencies = parseBulletList(section.content);
     else if (name === "prerequisites" || name === "prerequirements")
       prerequisites = parseBulletList(section.content);
+    else if (name === "you will need") youWillNeed = parseBulletList(section.content);
     else if (stepsHeading) {
       // Every `# Steps` / `# Steps: <group>` section contributes steps, in
       // document order, numbered as one list — a group is a heading over a
@@ -419,6 +521,8 @@ export function parseCaseDocument(
     throw new Error('No steps found — add a "# Steps" section with "## " step headings.');
   }
 
+  domains = withImplicitDomain(domains, variables, `${title}\n${rest}`);
+
   return {
     version: fallback.version,
     createdAt: fallback.createdAt,
@@ -427,8 +531,12 @@ export function parseCaseDocument(
     project,
     changeNote,
     title,
+    goal,
+    youWill,
+    youWillNeed,
     description,
     tags,
+    locations,
     domains,
     variables,
     dependencies,
@@ -441,6 +549,36 @@ export function parseCaseDocument(
 /** `# Steps`, or `# Steps: <group title>` — the heading of a section that
  * holds steps. Group 1 is the title, absent on the plain form. */
 const STEPS_HEADING_RE = /^Steps(?::\s*(.*))?$/i;
+
+/** The description the panel and the viewer show for the implicit entry,
+ * since the text has none. */
+export const IMPLICIT_DOMAIN_DESCRIPTION =
+  "The deployment under test. Empty by default: a run takes the open tab's address unless an environment or a value typed here says otherwise.";
+
+/**
+ * `domains` plus the undeclared `%DOMAIN%` (or legacy `%BASE_URL%`) the
+ * text uses, as an entry flagged `implicit`, so the rest of the model —
+ * resolution, the values form, the report — needs no special case. It goes
+ * **first** when nothing else is declared, which makes it the main domain;
+ * behind explicit entries otherwise, so a case that put `## APP` first
+ * keeps the main domain it chose — `tabOriginFor` reads the tab for it
+ * either way. A name declared as a variable (the oldest `BASE_URL` form)
+ * is left to the variable.
+ */
+function withImplicitDomain(
+  domains: TestCaseDomain[],
+  variables: TestCaseVariable[],
+  text: string,
+): TestCaseDomain[] {
+  const declared = new Set([...domains.map((d) => d.name), ...variables.map((v) => v.name)]);
+  const implicit: TestCaseDomain[] = [];
+  for (const name of IMPLICIT_DOMAIN_NAMES) {
+    if (declared.has(name) || !text.includes(`%${name}%`)) continue;
+    implicit.push({ name, description: IMPLICIT_DOMAIN_DESCRIPTION, implicit: true });
+  }
+  if (implicit.length === 0) return domains;
+  return domains.length === 0 ? implicit : [...domains, ...implicit];
+}
 
 function splitTopSections(
   text: string,
@@ -745,6 +883,9 @@ export function renderCaseMarkdown(doc: TestCaseVersion): string {
   if (doc.author.trim()) out.push(`@author ${doc.author.trim()}`);
   if (doc.project.trim()) out.push(`@project ${doc.project.trim()}`);
   if (doc.tags.length > 0) out.push(`Tags: ${doc.tags.join(", ")}`);
+  if (doc.locations.length > 0) out.push(`@locations: ${doc.locations.join(", ")}`);
+  if (doc.goal.trim()) out.push(`Goal: ${doc.goal.trim()}`);
+  if (doc.youWill.trim()) out.push(`You will: ${doc.youWill.trim()}`);
   if (doc.changeNote.trim()) out.push(`Change note: ${doc.changeNote.trim()}`);
 
   if (doc.description.trim()) {
@@ -752,10 +893,13 @@ export function renderCaseMarkdown(doc: TestCaseVersion): string {
     out.push(doc.description.trim());
   }
 
-  if (doc.domains.length > 0) {
+  // The implicit entry was never in the text; writing it out would turn
+  // every save into a `# Domains` section the author did not write.
+  const declaredDomains = doc.domains.filter((d) => !d.implicit);
+  if (declaredDomains.length > 0) {
     out.push("");
     out.push("# Domains");
-    for (const domain of doc.domains) {
+    for (const domain of declaredDomains) {
       out.push("");
       out.push(`## ${domain.name.trim()}`);
       if (domain.description.trim()) out.push(domain.description.trim());
@@ -784,6 +928,7 @@ export function renderCaseMarkdown(doc: TestCaseVersion): string {
   }
 
   for (const [heading, items] of [
+    ["You will need", doc.youWillNeed],
     ["Dependencies", doc.dependencies],
     ["Prerequisites", doc.prerequisites],
   ] as const) {
@@ -855,19 +1000,25 @@ export function starterCaseTemplate(): string {
 @author
 @project
 Tags:
+@locations:
+Goal: One line: what a tester proves by finishing this case
+You will: One line: the shape of the work — log in twice, change a setting
 
-Describe what this test case covers.
+Describe why this test case exists.
+
+# You will need
+-
 
 # Dependencies
 -
 
 # Prerequisites
--
+- Open %DOMAIN%/
 
 # Steps
 
 ## First step
-Where:
+Where: %DOMAIN%/
 Selector:
 Describe the single action the tester should take.
 
@@ -1647,7 +1798,10 @@ export function renderReadableCase(
   const resolved: Record<string, string> = {};
   const undecided: Array<Pick<TestCaseVariable, "name" | "description">> = [];
   for (const entry of [...doc.domains, ...doc.variables]) {
-    if (entry.defaultValue?.trim()) resolved[entry.name] = entry.defaultValue.trim();
+    const cold =
+      entry.defaultValue?.trim() ||
+      (isMainDomainName(entry.name) ? coldLocation(doc.locations) : "");
+    if (cold) resolved[entry.name] = cold;
     else undecided.push(entry);
   }
   const prose = (text: string) => proseForReader(text, resolved);
@@ -1655,6 +1809,10 @@ export function renderReadableCase(
   const lines: string[] = [];
   lines.push(`# ${prose(doc.title)}`);
   lines.push("");
+  if (doc.goal.trim()) {
+    lines.push(`**Goal:** ${prose(doc.goal.trim())}`);
+    lines.push("");
+  }
   if (doc.project) lines.push(`- Project: ${doc.project}`);
   if (doc.author) lines.push(`- Author: ${doc.author}`);
   if (doc.tags.length > 0) lines.push(`- Tags: ${doc.tags.join(", ")}`);
@@ -1668,6 +1826,21 @@ export function renderReadableCase(
   if (doc.description.trim()) {
     lines.push(prose(doc.description.trim()));
     lines.push("");
+  }
+
+  if (doc.youWill.trim() || doc.youWillNeed.length > 0) {
+    lines.push("## What to expect");
+    lines.push("");
+    if (doc.youWill.trim()) {
+      lines.push(`**You will:** ${prose(doc.youWill.trim())}`);
+      lines.push("");
+    }
+    if (doc.youWillNeed.length > 0) {
+      lines.push("**You will need:**");
+      lines.push("");
+      lines.push(renderBulletList(doc.youWillNeed.map(prose)));
+      lines.push("");
+    }
   }
 
   if (doc.dependencies.length > 0 || doc.prerequisites.length > 0) {
@@ -1891,6 +2064,7 @@ export function buildRunSource(caseMarkdown: string, suiteMarkdown: string | nul
   const suiteVariables = extractSectionRaw(normalizedSuite, "Variables");
   const suiteDependencies = extractSectionRaw(normalizedSuite, "Dependencies");
   const suitePrerequisites = extractSectionRaw(normalizedSuite, "Prerequisites");
+  const suiteYouWillNeed = extractSectionRaw(normalizedSuite, "You will need");
 
   let result = normalizedCase;
 
@@ -1952,6 +2126,10 @@ export function buildRunSource(caseMarkdown: string, suiteMarkdown: string | nul
 
   if (suitePrerequisites?.trim()) {
     result = mergeTopLevelSection(result, "Prerequisites", suitePrerequisites, "prepend");
+  }
+
+  if (suiteYouWillNeed?.trim()) {
+    result = mergeTopLevelSection(result, "You will need", suiteYouWillNeed, "prepend");
   }
 
   return result;

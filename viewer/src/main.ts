@@ -22,6 +22,7 @@ import {
   renderCaseBody,
   renderCasePage,
   VIEWER_CASE_PARAM,
+  VIEWER_VIEW_PARAM,
   viewerLink,
   type TestCaseVersion,
 } from "@tcm/shared";
@@ -69,7 +70,11 @@ function linkFor(markdown: string): Promise<string> {
  * still read for the links written before that. */
 function readParam(): string | null {
   const hash = location.hash.startsWith("#") ? location.hash.slice(1) : "";
-  const fromHash = new URLSearchParams(hash).get(VIEWER_CASE_PARAM);
+  const params = new URLSearchParams(hash);
+  // A link may ask for the simplified view up front — the sender chose it
+  // for a reader who should never see selectors or scripts.
+  if (params.get(VIEWER_VIEW_PARAM) === "simplified") simplified = true;
+  const fromHash = params.get(VIEWER_CASE_PARAM);
   if (fromHash) return fromHash;
   return new URLSearchParams(location.search).get(VIEWER_CASE_PARAM);
 }

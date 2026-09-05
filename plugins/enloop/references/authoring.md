@@ -77,8 +77,11 @@ order:
 1. `$ENLOOP_PROJECT`, if set.
 2. An `## Enloop` section in the repo's agent instructions file — what
    the **setup** skill writes. Read the `Project:` line there.
-3. Ask the user, offering the repo directory name as the default, and tell
-   them the **setup** skill records it once so this question stops recurring.
+3. Derive it and say so: the `name` in `package.json` / `composer.json` /
+   `pyproject.toml` (the last path segment, without a scope), else the
+   repo directory name, title-cased. State the choice in the report and
+   offer the **setup** skill, which records it once. Ask only when the
+   repo has no manifest and no directory name worth using.
 
 Use it verbatim, including capitalisation. It goes in two places in the
 finished case (step 8): the `@project` line and the title prefix.
@@ -119,9 +122,10 @@ node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" environments "$DATA_DIR" "<proje
 The deployments this project's cases run against — `environments.json` in
 the data folder, the same file the panel's Environments screen edits and
 its run picker reads. It prints the **domain names** the project declares
-(`APP`, `ADMIN`, …; the first is the main domain), the **variable names**
-environments provide, every environment for this project with its values,
-and a `defaults` line: the addresses that become each domain's `Default:`
+(`DOMAIN` for the app under test; `ADMIN` and the like only for a second
+host), the **variable names** environments provide, every environment for
+this project with its values, and a `defaults` line: the addresses that
+become the case's `@locations:` hosts and any declared domain's `Default:`
 in step 8.
 
 `(none declared)` is the normal answer for a project nobody has set up yet.
@@ -136,14 +140,14 @@ and the panel — finds it:
 
 ```bash
 node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" environments "$DATA_DIR" "<project name>" \
-  --domain APP --env local --set APP=http://localhost:3000
+  --domain DOMAIN --env local --set DOMAIN=http://localhost:3000
 node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" environments "$DATA_DIR" "<project name>" \
-  --env staging --set APP=https://staging.example.test --default
+  --env staging --set DOMAIN=https://staging.example.test --default
 ```
 
-One domain per deployment the case touches: the app is `APP`; an admin
-console on its own host, a second tenant, a marketing site the flow signs
-in from, each get their own name. Mark the deployment the project normally
+The app under test is `DOMAIN` — the name every case uses undeclared; an
+admin console on its own host, a second tenant, a marketing site the flow
+signs in from, each get a name of their own. Mark the deployment the project normally
 tests against `--default`; when nothing says which, staging beats local
 beats prod, and say so in the report. A value that differs per deployment
 and is not an address — a QA account, a tenant id — is recorded the same
@@ -259,12 +263,15 @@ Practically, for each step you intend to write:
 - Route → the router config or route attribute. A route is the address of a
   place, and contract rule 2 wants one for every place the case names: the
   entry point in `# Prerequisites`, every step's `Where:`, and any screen or
-  record mentioned in prose. Write every one of them `%<DOMAIN>%/<route>` —
-  `Where:` included — using the domain name from step 2b that the route
-  belongs to (`%APP%/orders`, `%ADMIN%/audit`), so the address works from a
-  cold start and the panel knows which deployment it is on. A scenario may
-  walk between domains step by step; a literal absolute URL is only for a
-  page of a system the case does not otherwise declare.
+  record mentioned in prose. Write every one of them `%DOMAIN%/<route>` —
+  `Where:` included — so the address follows the tab the run starts from
+  and the panel can colour it by `@locations`; a route on a second host
+  uses that host's declared name (`%ADMIN%/audit`). A scenario may walk
+  between hosts step by step; a literal absolute URL is only for a page of
+  a system the case does not otherwise declare. A route that carries a
+  value the run produces (`/user.php?user=<id>`) is not an address at all:
+  `Where:` is the page it is reached from, and the shape goes in backticks
+  in the instructions (contract rule 2, last section).
 - Visible label → the JSX/template/i18n entry. Quote it exactly, including
   capitalisation, in backticks.
 - Value the tester types → as `"**value**"`, quoted *and* bolded, exactly
@@ -301,30 +308,48 @@ not say, and this skill does:
   the raw Markdown, and is what the run report and `feedback.md` carry back
   to the repo. Both, always. `@version` is the format version from step 3;
   `Tags:` takes the ticket id, the feature area, and `manual`.
-- **Description** — what this verifies and why it exists now (which branch
-  or ticket). Two or three sentences.
-- **`# Domains`** — one entry per deployment the case touches, the main
-  one first, each with a `Default:` copied from the `defaults` line of
-  step 2b and a `Match:` glob when the project has more than one domain:
+- **`Goal:`** — one plain line under the title: what finishing this case
+  proves, for someone who has never seen the app. Required. It is pinned
+  on the run screen for the whole run, so it is short: `Goal: A user can
+  sign in with either of their two email addresses`.
+- **`You will:`** — one line on the shape of the work, read before Start:
+  `You will: log in and out several times, change the primary and
+  secondary email`. Required.
+- **`# You will need`** — what must be in the tester's hands before step
+  1: a mailbox that receives codes, a second browser, a phone. Omit the
+  section when the answer is nothing; never put entry points or services
+  here — those are `# Prerequisites`.
+- **Description** — why this case exists now (which branch or ticket) and
+  any background. Two or three sentences. Not the goal; that has its line.
+- **`@locations:`** — under the title, the hosts this case is meant to run
+  on, as comma-separated globs taken from the environments of step 2b:
+  the local port, the staging host, prod as a wildcard when the case may
+  run there. The first entry without a `*` is what a cold reader starts
+  from, so put the default environment's host first:
+
+      @locations: localhost:3000, staging.example.test, *.example.com
+
+  Nothing in the case names an address beyond this line: `%DOMAIN%` is
+  filled from the tab the run starts from (or the environment the tester
+  picks), and the panel shows every address green when it fits one of
+  these hosts and red when it does not.
+- **`# Domains`** — only when the case touches a **second** host: an
+  admin console on its own host, a second tenant, the site the flow signs
+  in from. One entry each, with a `Default:` copied from the `defaults`
+  line of step 2b and a `Match:` glob so a run started from that host's
+  tab fills it:
 
       # Domains
-
-      ## APP
-      The web app under test.
-      Match: app.*.example.test
-      Default: https://staging.example.test
 
       ## ADMIN
       The admin console.
       Match: admin.*.example.test
       Default: https://admin.staging.example.test
 
-  The picked environment sets every one of them at run time; the default
-  is what a blank tab, the shared viewer and a downloaded page resolve;
-  the `Match:` is what lets a run started from the admin console's tab
-  fill `ADMIN` rather than `APP`. A domain is not a variable: no
-  `Generator:` line, and never `BASE_URL` under `# Variables` — that is
-  the pre-domains spelling, and the linter flags it.
+  A path under the app's own host is a route on `%DOMAIN%`, never a
+  domain. A domain is not a variable: no `Generator:` line, and never
+  `BASE_URL` under `# Variables` — that is the pre-`DOMAIN` spelling, and
+  the linter flags it.
 - **`# Variables`** — only values that are not addresses, and every one
   resolved by you: a `Default:` read from the repo (a seeded record, a
   fixture value, the rules file's *Accounts and data* section), a
@@ -333,7 +358,10 @@ not say, and this skill does:
   ask the user for a value, and never leave one for the tester** — a
   variable with none of the three is a linter error. When the repo cannot
   tell you, write the best candidate you found as the `Default:` and mark
-  it as an assumption in the report.
+  it as an assumption in the report. A value the run itself produces — a
+  created record's id — is not a variable and gets no invented default:
+  refer to the record by what the tester can see, and keep the value out
+  of every address (contract rule 6).
 - **`# Prerequisites`** — the entry point first (contract rule 2a), then
   **who the tester is in the app** (contract rule 2d) — account, role, and
   where the credential lives, copied from the rules file's *Accounts and
@@ -341,7 +369,7 @@ not say, and this skill does:
   **every service the tester has to start themselves**, each with the
   command and the directory to run it in:
 
-      - Open %APP%/admin/integrations
+      - Open %DOMAIN%/admin/integrations
       - Logged in as %QA_EMAIL% (role `Administrator`) — password: vault
         item `staging QA bot`
       - API running locally: `npm run dev` in the app repo
@@ -490,8 +518,14 @@ Tell the user:
 
 Do not claim the case was executed. It was parsed and linted, not run.
 
-Finish by telling them the next step: run it in the extension, then
-the **check** skill, back here, to triage what it found. If any step had to go
+Finish with how to run it — in this order, because the first needs
+nothing installed. The `write` command printed a `viewer` line: give
+that link first ("open this in any browser to read and tick off the
+case"). Then the extension: install it from the Chrome Web Store
+(https://chromewebstore.google.com/detail/enloopmd-managing-human-a/fnpjeaabeckcihomnmeoapclokikanod),
+open the side panel, and connect `<the data folder, or the repo that
+holds it>` — the case is already in the Library. Then the **check**
+skill, back here, to triage what the run found. If any step had to go
 without a `Selector:`, offer the **instrument** skill first — Highlight is
 dead weight on those steps until the elements have handles. If you had to
 ask for the project name in step 1, offer the **setup** skill so the next case

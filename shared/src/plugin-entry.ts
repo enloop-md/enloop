@@ -15,6 +15,7 @@ export type { LintResult, LintFinding } from "./lint.js";
 export { newTestCaseId } from "./id.js";
 export { CURRENT_FORMAT_VERSION, parseCaseDocument, stepNumberLabels } from "./markdown.js";
 export { runFileSchema } from "./schemas.js";
+export { viewerLink, withViewerComment, stripViewerComment } from "./viewer-link.js";
 export { describeRating, isExemplaryRating, isPoorRating, ratingStars } from "./rating.js";
 export {
   compareVersionIds,

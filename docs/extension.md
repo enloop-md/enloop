@@ -107,6 +107,17 @@ switched on for Enloop at `chrome://extensions`.
 If you are upgrading from a build that requested `<all_urls>` at install
 time, Chrome keeps what it already granted — nothing to re-approve.
 
+## Panel colour
+
+Hover the ⚙ in any header and a row of swatches drops down: slate (the
+default), paper, sage, sky, lavender, rose, graphite and dark. One tap
+changes the whole panel and remembers the choice in this browser, without
+leaving the run you are on. Every light theme is the same grey scale
+re-tinted — the lightness of every text and background is unchanged, so
+nothing becomes harder to read than the default; dark inverts the scale
+and switches native inputs to dark too. Clicking the ⚙ still opens
+Settings.
+
 ## During a run
 
 A case written in **groups** (`# Steps: <title>` sections — see [the case
@@ -344,9 +355,12 @@ missing the setup it assumes.
 
 ## Environments and domains
 
-A case names the deployments it touches as **domains** — `%APP%/orders`,
-`%ADMIN%/audit` — and leaves their addresses to the run. **Settings →
-Environments** on a connected folder is where those addresses live: the
+A case builds its addresses on `%DOMAIN%` — the tab you start the run from,
+unless you say otherwise — and declares a domain only for a second host
+(`%ADMIN%/audit`). Its `@locations:` line names the hosts it is meant for,
+and every address the run screen shows is green when it fits one of them
+and red when it does not; the link opens either way. **Settings →
+Environments** on a connected folder is where the addresses live: the
 domain and variable names every environment provides, then one card per
 deployment — local, staging, prod, a customer's instance — with an address
 per domain and a value per variable. A card may be scoped to a `@project`,
@@ -356,15 +370,23 @@ one card per project can be marked **default**. Everything writes through to
 fill in when they derive the deployments from the repo — so the screen is
 often already populated the first time you open it.
 
+A case screen opens with the case's **goal**, then **You will** and **You
+will need** — the four things a tester reads before Start — and the run
+screen keeps the goal pinned under its title for the whole run. **Start
+run** is one button: the quick path when the case marks one, with **Full**
+beside it. A run does not start while any value is empty; the values block
+opens and says where each missing value comes from.
+
 On a case screen, the **Environment** picker sits above **Start run**. Picking
 one sets every domain and every environment-provided variable at once; the
 values below stay editable, and each shows where it came from — the
 environment's name, *open tab*, *default*, or a generator. The picker starts
 on the environment you used last in that folder, else the project's default.
-**No environment** is always on the list: then the main domain follows the tab
+**No environment** is always on the list: then `%DOMAIN%` follows the tab
 you have open (and any other domain whose `Match:` fits it), which is the
 answer for a per-PR preview whose address exists nowhere but in your address
-bar. The run header names the environment for the whole run, and the report
+bar — the `DOMAIN` field under **Start run** shows in green or red whether
+that tab is one the case names. The run header names the environment for the whole run, and the report
 lists the address each domain resolved to. The screen never stops the run to
 ask for a value: a case that would need to is refused by the skills'
 validator before it reaches the folder.

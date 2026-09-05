@@ -15,18 +15,39 @@ const LOCAL_HOST = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:\d+)?(\/|$)/i;
 
 const ABSOLUTE = /^https?:\/\//i;
 
+/** A `%NAME%` the run could not fill. An address still carrying one is not
+ * an address — opening `/user.php?user=%USER_ID%` literally is worse than
+ * offering nothing — so it gets no Go control and no colour. */
+const UNRESOLVED = /%[A-Za-z_][A-Za-z0-9_]*%/;
+
 /** Shape-only test, so the UI can decide whether to offer a Navigate control
  * without first going and asking the browser what tab is active. A `/path`
  * says yes here and may still fail to resolve later — see
  * `resolveNavigationTarget`. */
 export function looksNavigable(where: string): boolean {
   const value = where.trim();
+  if (UNRESOLVED.test(value)) return false;
   if (!value || /\s/.test(value.split("?")[0].split("#")[0].trim())) {
     // A route has no spaces in it. Anything that does is prose describing a
     // place, not an address — "the CRM's web console → Contacts".
     return ABSOLUTE.test(value) && !/\s/.test(value);
   }
   return ABSOLUTE.test(value) || LOCAL_HOST.test(value) || value.startsWith("/");
+}
+
+/**
+ * The absolute URL a `Where:` would open, decided from its shape and the
+ * run's main domain alone — no tab consulted — or "" when that is not
+ * enough (a bare route with no main domain, prose). What the run screen
+ * colours by `@locations` before anyone clicks Go.
+ */
+export function whereAddress(where: string, mainOrigin = ""): string {
+  const value = where.trim();
+  if (!looksNavigable(value)) return "";
+  if (ABSOLUTE.test(value)) return value;
+  if (LOCAL_HOST.test(value)) return `http://${value}`;
+  const resolved = resolveNavigationTarget(value, undefined, mainOrigin);
+  return "url" in resolved ? resolved.url : "";
 }
 
 /**

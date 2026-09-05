@@ -64,9 +64,14 @@ interface VariableDraft {
 
 interface Draft {
   title: string;
+  goal: string;
+  youWill: string;
+  youWillNeed: string;
   project: string;
   author: string;
   tags: string;
+  /** `@locations:` — comma-separated host globs, kept as typed. */
+  locations: string;
   description: string;
   dependencies: string;
   prerequisites: string;
@@ -94,9 +99,13 @@ function emptyStep(): StepDraft {
 function emptyDraft(): Draft {
   return {
     title: "",
+    goal: "",
+    youWill: "",
+    youWillNeed: "",
     project: "",
     author: "",
     tags: "",
+    locations: "",
     description: "",
     dependencies: "",
     prerequisites: "",
@@ -144,11 +153,20 @@ function toDocument(draft: Draft): TestCaseVersion {
     project: draft.project,
     changeNote: "",
     title: draft.title,
+    goal: draft.goal,
+    youWill: draft.youWill,
+    youWillNeed: bulletItems(draft.youWillNeed),
     description: draft.description,
     tags: draft.tags
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean),
+    locations: draft.locations
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean),
+    // The implicit `DOMAIN` is the parser's to add back; writing it out
+    // would put a `# Domains` section in a file whose author typed none.
     domains: draft.domains
       .filter((d) => d.name.trim())
       .map((d) => ({
@@ -209,14 +227,18 @@ function fromMarkdown(markdown: string): Draft {
   );
   return {
     title: doc.title,
+    goal: doc.goal,
+    youWill: doc.youWill,
+    youWillNeed: bulletText(doc.youWillNeed),
     project: doc.project,
     author: doc.author,
     tags: doc.tags.join(", "),
+    locations: doc.locations.join(", "),
     description: doc.description,
     dependencies: bulletText(doc.dependencies),
     prerequisites: bulletText(doc.prerequisites),
     groups: doc.groups.map((g) => ({ title: g.title, goal: g.goal })),
-    domains: doc.domains.map((d) => ({
+    domains: doc.domains.filter((d) => !d.implicit).map((d) => ({
       name: d.name,
       description: d.description,
       defaultValue: d.defaultValue ?? "",
@@ -354,11 +376,29 @@ export function renderBuilder(
       hint: "The app under test. Groups cases in the Library.",
     }),
   );
+  about.appendChild(
+    field("Goal", draft.goal, (v) => set("goal", v), {
+      placeholder: "A user can sign in with either of their two email addresses",
+      hint: "One plain line: what finishing this case proves. Pinned on screen for the whole run.",
+    }),
+  );
+  about.appendChild(
+    field("You will", draft.youWill, (v) => set("youWill", v), {
+      placeholder: "log in and out several times, change the primary and secondary email",
+      hint: "One line on the shape of the work, read before Start.",
+    }),
+  );
   about.appendChild(field("Author", draft.author, (v) => set("author", v)));
   about.appendChild(
     field("Tags", draft.tags, (v) => set("tags", v), {
       placeholder: "auth, smoke",
       hint: "Comma separated.",
+    }),
+  );
+  about.appendChild(
+    field("Locations", draft.locations, (v) => set("locations", v), {
+      placeholder: "localhost:8080, *.example.com",
+      hint: "Hosts this case is meant to run on, comma separated; * matches anything. Addresses built from %DOMAIN% show green when they fit one and red when they don't. The first one without * is where a reader with no open app starts.",
     }),
   );
   about.appendChild(
@@ -373,6 +413,14 @@ export function renderBuilder(
   // ---- before you start
   const before = el("section", "bsection");
   before.appendChild(el("h2", undefined, "Before you start"));
+  before.appendChild(
+    field("You will need", draft.youWillNeed, (v) => set("youWillNeed", v), {
+      area: true,
+      rows: 2,
+      placeholder: "Access to a mailbox that receives the confirmation codes.",
+      hint: "One per line — what must be in the tester's hands before step 1. Shown open above Start.",
+    }),
+  );
   before.appendChild(
     field("Prerequisites", draft.prerequisites, (v) => set("prerequisites", v), {
       area: true,
@@ -452,7 +500,7 @@ export function renderBuilder(
     el(
       "p",
       "bhint",
-      "The deployments the case touches — the app, its admin console, a second tenant. The first is the main domain; an environment picked before a run sets every one of them.",
+      "Write app addresses as %DOMAIN%/route — DOMAIN needs no entry here; it follows the tab a run starts from. Declare a domain only for a second deployment the case touches — an admin console, a second tenant — and an environment picked before a run sets every one of them.",
     ),
   );
   domains.appendChild(domainsList);
@@ -619,7 +667,7 @@ export function renderBuilder(
           step.where = v;
           refreshPreview();
         }, {
-          placeholder: "%BASE_URL%/sign-in",
+          placeholder: "%DOMAIN%/sign-in",
           hint: "The screen to start on. A URL or route gets a Go button.",
         }),
       );

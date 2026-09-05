@@ -23,6 +23,7 @@
  */
 
 import { looksLikeSelector } from "./selector-text.js";
+import { coldLocation, isMainDomainName, mainDomainName } from "./variables.js";
 import type { Step, TestCaseVariable, TestCaseVersion } from "./types.js";
 
 export interface CasePageOptions {
@@ -312,7 +313,10 @@ function renderWhere(where: string, values: Record<string, string>, mainDomain: 
       ? `%${mainDomain}%${where.trim()}`
       : where;
   const resolved = resolveText(template, values);
-  const openable = ABSOLUTE_URL.test(resolved) && !/\s/.test(resolved);
+  // A placeholder left in the address is a value nobody had — linking it
+  // would open `/user.php?user=%USER_ID%` literally.
+  const openable =
+    ABSOLUTE_URL.test(resolved) && !/\s/.test(resolved) && !HAS_VARIABLE.test(resolved);
   const target = openable
     ? `<a href="${escapeAttr(resolved)}" data-href="${escapeAttr(template)}" target="_blank" rel="noopener noreferrer">${withVariableSpans(escapeHtml(where), values)}</a>`
     : withVariableSpans(escapeHtml(where), values);
@@ -391,7 +395,16 @@ function renderStep(
  */
 export function renderCaseBody(doc: TestCaseVersion, opts: CasePageOptions = {}): string {
   const values = initialValues([...doc.domains, ...doc.variables]);
-  const mainDomain = doc.domains[0]?.name ?? (doc.variables.some((v) => v.name === "BASE_URL") ? "BASE_URL" : "");
+  // The implicit `DOMAIN` has no `Default:`; with no tab to read, the first
+  // concrete `@locations` entry is the address a cold reader starts from.
+  const cold = coldLocation(doc.locations);
+  for (const domain of doc.domains) {
+    if (cold && isMainDomainName(domain.name) && !(values[domain.name] ?? "").trim()) {
+      values[domain.name] = cold;
+    }
+  }
+  const mainDomain =
+    mainDomainName(doc) ?? (doc.variables.some((v) => v.name === "BASE_URL") ? "BASE_URL" : "");
   const shown = opts.simplified ? doc.steps.filter((s) => s.type !== "automated") : doc.steps;
   const omitted = opts.simplified ? doc.steps.filter((s) => s.type === "automated") : [];
   const quickCount = doc.steps.filter((s) => s.quick).length;
@@ -403,11 +416,14 @@ export function renderCaseBody(doc: TestCaseVersion, opts: CasePageOptions = {})
     // would mean tick 4 of the full case landing on whatever step 4 is once
     // the automated ones are gone.
     `<article class="case" data-case-key="${escapeAttr(caseKey(doc))}${opts.simplified ? "s" : ""}"` +
-      `${opts.simplified ? " data-simplified" : ""}>`,
+      `${opts.simplified ? " data-simplified" : ""}` +
+      // The page colours its links by these — see `attachCasePage`.
+      `${doc.locations.length > 0 ? ` data-locations="${escapeAttr(doc.locations.join(", "))}"` : ""}>`,
   );
 
   parts.push("<header class=\"case-head\">");
   parts.push(`<h1>${renderInline(doc.title, values)}</h1>`);
+  if (doc.goal.trim()) parts.push(`<p class="goal">${renderInline(doc.goal.trim(), values)}</p>`);
   const meta: string[] = [];
   if (doc.project) meta.push(`<span class="project">${escapeHtml(doc.project)}</span>`);
   if (doc.author) meta.push(`<span>by ${escapeHtml(doc.author)}</span>`);
@@ -451,12 +467,12 @@ export function renderCaseBody(doc: TestCaseVersion, opts: CasePageOptions = {})
     parts.push('<div class="var-grid">');
     // Domains first: the addresses decide which deployment every link
     // below opens, so they are the values a reader changes first.
-    doc.domains.forEach((domain, index) => {
+    doc.domains.forEach((domain) => {
       const value = values[domain.name] ?? "";
       parts.push('<div class="var-row">');
       parts.push(
         `<label for="var-${escapeAttr(domain.name)}">%${escapeHtml(domain.name)}%` +
-          `<span class="hint"> — ${index === 0 ? "main domain" : "domain"}</span></label>`,
+          `<span class="hint"> — ${domain.name === mainDomain ? "main domain" : "domain"}</span></label>`,
       );
       parts.push(
         `<input id="var-${escapeAttr(domain.name)}" class="var-input" ` +
@@ -488,6 +504,28 @@ export function renderCaseBody(doc: TestCaseVersion, opts: CasePageOptions = {})
       parts.push("</div>");
     }
     parts.push("</div></section>");
+  }
+
+  // Read before the first step: the shape of the work and what must be in
+  // hand. Open, never collapsed — the mailbox a code lands in is needed
+  // now, not discovered halfway through a step.
+  if (doc.youWill.trim() || doc.youWillNeed.length > 0) {
+    parts.push('<section class="panel expect">');
+    parts.push("<h2>What to expect</h2>");
+    if (doc.youWill.trim()) {
+      parts.push(`<p><strong>You will:</strong> ${renderInline(doc.youWill.trim(), values)}</p>`);
+    }
+    if (doc.youWillNeed.length > 0) {
+      parts.push("<p><strong>You will need:</strong></p>");
+      parts.push(`<ul class="checklist">`);
+      for (const item of doc.youWillNeed) {
+        parts.push(
+          `<li><label><input type="checkbox" class="pre-check"> <span>${renderInline(item, values).replace(/\n/g, "<br>")}</span></label></li>`,
+        );
+      }
+      parts.push("</ul>");
+    }
+    parts.push("</section>");
   }
 
   if (doc.prerequisites.length > 0 || doc.dependencies.length > 0) {
@@ -654,6 +692,7 @@ button.ghost:hover { background: var(--bg); color: var(--ink); }
 .step.done .step-head h3 { text-decoration: line-through; }
 .step-body { padding-left: 39px; }
 .step-body > *:first-child { margin-top: 6px; }
+.goal { margin: 4px 0 10px; font-size: 1.05rem; color: var(--ink); }
 .where { margin: 6px 0; font-size: 0.85rem; color: var(--muted); }
 .where-label { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--faint); margin-right: 7px; }
@@ -683,6 +722,10 @@ code.sel { color: var(--amber); border-color: var(--amber-soft); cursor: pointer
 .var { background: var(--violet-soft); color: var(--violet); border-radius: 4px; padding: 0 3px; }
 .var[data-unset] { background: var(--amber-soft); color: var(--amber); }
 a { color: var(--link); }
+/* Coloured by @locations: green fits the case's hosts, red does not — still
+   a link either way, since the reader may mean the unusual host. */
+a[data-location="match"] { color: var(--accent); }
+a[data-location="mismatch"] { color: #b91c1c; text-decoration-style: wavy; }
 .case-foot { margin-top: 32px; padding-top: 14px; border-top: 1px solid var(--line);
   font-size: 0.78rem; color: var(--faint); }
 .case-foot a { color: var(--muted); }
@@ -823,9 +866,53 @@ export function attachCasePage(root: Document | HTMLElement): void {
       const template = target.dataset.copyTemplate;
       if (template) target.dataset.copy = resolve(template);
     }
+    paintLocations();
+  }
+
+  // Every address on the page against the case's `@locations` globs. The
+  // glob rule is `matchesPagePattern`'s, restated here because this
+  // function travels alone into the downloaded file: `*` is any run of
+  // characters, a pattern naming a port compares host and port, one with a
+  // `/` compares the whole address, all case-insensitively.
+  const locations = (article.dataset.locations ?? "")
+    .split(",")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  function fitsLocation(pattern: string, href: string): boolean {
+    let subject = href;
+    if (!pattern.includes("/")) {
+      try {
+        const url = new URL(href);
+        subject = /:\d+$/.test(pattern) ? url.host : url.hostname;
+      } catch {
+        return false;
+      }
+    }
+    const source = pattern
+      .split("*")
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join(".*");
+    return new RegExp("^" + source + "$", "i").test(subject);
+  }
+  function paintLocations(): void {
+    if (locations.length === 0) return;
+    for (const anchor of Array.from(scope.querySelectorAll<HTMLAnchorElement>("a[href]"))) {
+      if (anchor.closest(".case-foot")) continue;
+      const href = anchor.getAttribute("href") ?? "";
+      if (!/^https?:\/\//i.test(href) || /%[A-Za-z_][A-Za-z0-9_]*%/.test(href)) {
+        anchor.removeAttribute("data-location");
+        continue;
+      }
+      const fits = locations.some((pattern) => fitsLocation(pattern, href));
+      anchor.setAttribute("data-location", fits ? "match" : "mismatch");
+      anchor.title = fits
+        ? "Matches this case's @locations"
+        : "Does not match this case's @locations: " + locations.join(", ");
+    }
   }
   for (const input of inputs) input.addEventListener("input", applyValues);
   if (inputs.length > 0) applyValues();
+  else paintLocations();
 
   // Copying: values, selectors, scripts. `navigator.clipboard` is missing on
   // an insecure origin and on some file:// setups, so the textarea fallback

@@ -4,7 +4,7 @@ import {
   substituteVariables,
   CURRENT_FORMAT_VERSION,
 } from "./markdown.js";
-import { resolveRunValues } from "./variables.js";
+import { MAIN_DOMAIN_NAME, mainDomainName, resolveRunValues } from "./variables.js";
 import type { TestCaseVersion } from "./types.js";
 
 /**
@@ -152,6 +152,29 @@ export function lintCase(raw: string, options: LintOptions = {}): LintResult {
   if (!doc.title.trim()) {
     errors.push({ rule: "7", message: "No `# ` title line — the first heading is the case title." });
   }
+  // A case is a goal with steps that prove it; a tester reads the goal before
+  // Start and sees it for the whole run. Without one the steps are a list of
+  // clicks with nothing to judge them against — and "what am I doing this
+  // for?" is a question the tester must never have to ask.
+  if (!doc.goal.trim()) {
+    errors.push({
+      rule: "0",
+      message:
+        "No `Goal:` line under the title. One plain sentence a tester who has never seen the app understands on sight — `Goal: A user can sign in with either of their two email addresses`.",
+    });
+  } else if (doc.goal.trim().length > 140) {
+    warnings.push({
+      rule: "0",
+      message: `\`Goal:\` is ${doc.goal.trim().length} characters. It is pinned on screen for the whole run — one short line, background goes in the description.`,
+    });
+  }
+  if (!doc.youWill.trim()) {
+    errors.push({
+      rule: "0",
+      message:
+        "No `You will:` line under the title. One line on the shape of the work, read before Start — `You will: log in and out several times, change the primary and secondary email` — so nothing mid-run is a surprise.",
+    });
+  }
   if (doc.steps.length === 0) {
     errors.push({ rule: "1", message: "No steps parsed. Check that `# Steps` (or `# Steps: <group>`) is a top-level heading and each step is `## `." });
   }
@@ -221,6 +244,7 @@ export function lintCase(raw: string, options: LintOptions = {}): LintResult {
     }
   }
   for (const domain of declared.domains) {
+    if (domain.implicit) continue;
     const def = domain.defaultValue?.trim() ?? "";
     if (!def) {
       warnings.push({
@@ -242,8 +266,27 @@ export function lintCase(raw: string, options: LintOptions = {}): LintResult {
       });
     }
   }
+  if (declared.domains.some((d) => d.implicit) && declared.locations.length === 0) {
+    errors.push({
+      rule: "2b",
+      at: "Locations",
+      message:
+        "`%DOMAIN%` follows the open tab, and nothing says which tabs are right: add `@locations: <host>, *.<domain>` under the title so a run started from the wrong page shows its addresses in red, and so the viewer and a downloaded copy have an address at all.",
+    });
+  }
+  for (const location of declared.locations) {
+    if (/\s/.test(location) || location.includes("://")) {
+      errors.push({
+        rule: "2b",
+        at: "Locations",
+        message: `\`@locations\` entry \`${location}\` is not a host glob. Write hosts only — \`localhost:8080\`, \`*.acme.com\` — separated by commas, no scheme.`,
+      });
+    }
+  }
   if (declared.domains.length > 1) {
-    const unmatched = declared.domains.filter((d) => !d.match?.trim()).map((d) => d.name);
+    const unmatched = declared.domains
+      .filter((d) => !d.match?.trim() && !d.implicit)
+      .map((d) => d.name);
     if (unmatched.length > 0) {
       warnings.push({
         rule: "2b",
@@ -265,19 +308,25 @@ export function lintCase(raw: string, options: LintOptions = {}): LintResult {
     // telling the tester where to look used to pass here; it no longer
     // does, because "look it up before you start" is still a question.
     if (!variable.defaultValue?.trim() && !variable.generator && !environmentNames.has(variable.name)) {
+      // Inside an address the missing value is a different defect: a
+      // default cannot fix `/user.php?user=%USER_ID%` when the id does not
+      // exist until the run creates it, and an invented one opens a wrong
+      // page that reads right.
+      const inAddress = new RegExp(`[/?=&]%${variable.name}%`).test(everyField);
       errors.push({
         rule: "6",
         at: variable.name,
-        message:
-          "No `Default:`, no `Generator:`, and no environment provides it — the run would have to ask. Give it a default (a fixture from the repo, a value from the rules file), a generator, or record it per environment: `enloop-case.mjs environments <data folder> \"<project>\" --variable NAME --env <name> --set NAME=value`." +
-          (environmentsKnown ? "" : " (Pass --data-dir so environments.json is consulted.)"),
+        message: inAddress
+          ? `%${variable.name}% sits inside an address and has no value — no \`Default:\`, no \`Generator:\`, no environment. If the run itself produces it (a record created in an earlier step), the address cannot be written: drop the variable, say where the tester clicks, and give the address shape in backticks as help — \`/user.php?user=<id>\`. If it is fixed data, give it a real default read from the repo.`
+          : "No `Default:`, no `Generator:`, and no environment provides it — the run would have to ask. Give it a default (a fixture from the repo, a value from the rules file), a generator, or record it per environment: `enloop-case.mjs environments <data folder> \"<project>\" --variable NAME --env <name> --set NAME=value`." +
+            (environmentsKnown ? "" : " (Pass --data-dir so environments.json is consulted.)"),
       });
     }
     if (variable.name === "BASE_URL" || (variable.generator === "page-origin" && everyField.includes(`%${variable.name}%/`))) {
       warnings.push({
         rule: "2b",
         at: variable.name,
-        message: `\`${variable.name}\` is an address written as a variable — the pre-domains form. Declare it under \`# Domains\` (first entry = main domain; \`Default:\` and \`Match:\` carry over, drop \`Generator:\`) so environments can set it and the panel treats it as an address.`,
+        message: `\`${variable.name}\` is an address written as a variable — the pre-\`%DOMAIN%\` form. Write \`%DOMAIN%\` instead: it needs no declaration, follows the open tab, and \`@locations:\` under the title says which tabs are right. (A \`Match:\` becomes an \`@locations\` entry; a \`Default:\` becomes its first concrete entry.)`,
       });
     }
     if (variable.match && !variable.generator?.startsWith("page-")) {
@@ -315,10 +364,24 @@ export function lintCase(raw: string, options: LintOptions = {}): LintResult {
       rule: "2b",
       at: "Domains",
       message:
-        "The case names addresses but declares no `# Domains`. Declare the deployment(s) it touches — `## APP` with a `Default:` origin — and build app addresses as `%APP%/…`; a literal absolute URL is right only for a page of a system the case does not otherwise name.",
+        "The case names addresses without a domain. Build app addresses as `%DOMAIN%/…` — no declaration needed; it follows the open tab — and add `@locations:` under the title; a literal absolute URL is right only for a page of a system the case does not otherwise name.",
     });
   }
-  const mainDomain = declared.domains[0]?.name ?? (declaredNames.has("BASE_URL") ? "BASE_URL" : "APP");
+  const mainDomain =
+    mainDomainName(declared) ?? (declaredNames.has("BASE_URL") ? "BASE_URL" : MAIN_DOMAIN_NAME);
+  // A credential the tester must go and find is a lookup, and the manifesto
+  // allows none: a test account's password is a value the environment
+  // provides, written as a typeable "**%QA_PASSWORD%**". A vault survives
+  // only for a deployment an environment must not hold — prod.
+  for (const item of doc.prerequisites) {
+    if (/\b(vault|1password|bitwarden|keychain|password manager)\b/i.test(item) && !/\*\*[^*]*\*\*/.test(item)) {
+      warnings.push({
+        rule: "2d",
+        at: "Prerequisites",
+        message: `"${item.trim().slice(0, 60)}…" sends the tester to a vault. A test account's password is an environment value — declare \`QA_PASSWORD\` and write it as "**%QA_PASSWORD%**" so the panel types it. Keep a vault reference only for a deployment whose credentials must not be recorded.`,
+      });
+    }
+  }
   const saysWho =
     doc.prerequisites.some((p) => LOGIN_HINT.test(p)) ||
     declared.variables.some((v) => LOGIN_HINT.test(`${v.name} ${v.description}`)) ||
@@ -335,8 +398,11 @@ export function lintCase(raw: string, options: LintOptions = {}): LintResult {
   // --- where the run begins ------------------------------------------------
 
   const entryPoint = doc.prerequisites.find((p) => OPENS_SOMEWHERE.test(p));
+  // An error when the case names addresses at all: a tester who has never
+  // opened the app cannot start without one. A case with no address anywhere
+  // (a terminal-only procedure) keeps the warning.
   if (!entryPoint) {
-    warnings.push({
+    (namesAddresses ? errors : warnings).push({
       rule: "2a",
       at: "Prerequisites",
       message: "No prerequisite says where the run begins. The entry point belongs here as an absolute address, not in a first step spent on arriving.",
@@ -400,7 +466,11 @@ export function lintCase(raw: string, options: LintOptions = {}): LintResult {
       });
     }
     if (step.type === "manual" && step.selectors.length === 0) {
-      warnings.push({
+      // A step on a web address is a UI step, and a UI step without a
+      // selector leaves the tester hunting — an error. A step whose `Where:`
+      // is prose (a terminal, a mailbox) may genuinely have nothing to flash.
+      const onPage = ADDRESS.test(where);
+      (onPage ? errors : warnings).push({
         rule: "3",
         at: step.title,
         message: "No `Selector:`. Every UI step carries one, taken from source — or a `### Note` saying the element has no stable handle.",
@@ -418,7 +488,7 @@ export function lintCase(raw: string, options: LintOptions = {}): LintResult {
 
     const expected = step.expected?.trim() ?? "";
     if (!expected) {
-      warnings.push({ rule: "4", at: step.title, message: "No `### Expected` block, so nothing says what Pass means." });
+      errors.push({ rule: "4", at: step.title, message: "No `### Expected` block, so nothing says what Pass means." });
     } else {
       if (!expected.split("\n").some((line) => /^\s*[-*]\s+/.test(line))) {
         errors.push({ rule: "4", at: step.title, message: "`### Expected` is prose rather than bullets." });
@@ -465,7 +535,7 @@ export function lintCase(raw: string, options: LintOptions = {}): LintResult {
           warnings.push({
             rule: "2c",
             at: step.title,
-            message: `Bare route in ${label} ("${bare[0].trim()}") — a bare route is not a link anywhere the case renders. Make it \`%BASE_URL%\`-absolute.`,
+            message: `Bare route in ${label} ("${bare[0].trim()}") — a bare route is not a link anywhere the case renders. Make it \`%${mainDomain}%\`-absolute — or, if it is only the *shape* of an address the run produces, put it in backticks.`,
           });
         }
       }

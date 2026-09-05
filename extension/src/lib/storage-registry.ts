@@ -119,7 +119,8 @@ export class DuplicateStorageError extends Error {}
  * in it twice, under two ids, with two independent run histories.
  */
 export async function addFsaStorage(): Promise<StorageEntry> {
-  const handle = await window.showDirectoryPicker({ mode: "readwrite" });
+  const picked = await window.showDirectoryPicker({ mode: "readwrite" });
+  const handle = await caseFolderWithin(picked);
   const entries = await readList();
 
   for (const entry of entries) {
@@ -142,6 +143,44 @@ export async function addFsaStorage(): Promise<StorageEntry> {
   await writeList([...entries, entry]);
   await ensureGitignore(handle);
   return entry;
+}
+
+/**
+ * The Enloop folder inside a picked directory, when the pick was the repo
+ * rather than the folder. A QA engineer told "install the extension and
+ * point it at the repo" should not also have to know that the cases sit
+ * in `enloop/` two levels down: if the picked directory has no
+ * `test-cases/` of its own, the first subdirectory (two levels deep,
+ * skipping the usual noise) that has one is the folder they meant. A
+ * directory with nothing recognisable is returned as picked — an empty
+ * folder is a fine place to start.
+ */
+async function caseFolderWithin(root: FileSystemDirectoryHandle): Promise<FileSystemDirectoryHandle> {
+  const SKIP = new Set(["node_modules", ".git", "vendor", "dist", "build", "target", ".next"]);
+  const hasCases = async (dir: FileSystemDirectoryHandle) => {
+    try {
+      await dir.getDirectoryHandle("test-cases");
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (await hasCases(root)) return root;
+  const subdirs = async (dir: FileSystemDirectoryHandle) => {
+    const out: FileSystemDirectoryHandle[] = [];
+    for await (const entry of dir.values()) {
+      if (entry.kind === "directory" && !SKIP.has(entry.name) && !entry.name.startsWith(".")) {
+        out.push(entry as FileSystemDirectoryHandle);
+      }
+    }
+    return out;
+  };
+  const children = await subdirs(root);
+  for (const child of children) if (await hasCases(child)) return child;
+  for (const child of children) {
+    for (const grandchild of await subdirs(child)) if (await hasCases(grandchild)) return grandchild;
+  }
+  return root;
 }
 
 export async function renameStorage(id: string, label: string): Promise<void> {

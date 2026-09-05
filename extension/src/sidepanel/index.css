@@ -16,3 +16,116 @@ body {
     Roboto,
     sans-serif;
 }
+
+/* Panel colour. Every surface and every grey in the panel is a Tailwind
+   slate or white utility, and Tailwind v4 resolves those through the
+   `--color-*` variables — so a theme is a re-tinted slate scale, nothing
+   more. Each light theme keeps slate's lightness step for step and moves
+   only hue and a little chroma, which is what keeps every text/background
+   pair at the contrast it was designed with. Dark inverts the scale with
+   a mid grey (400) that still reads on the dark surface. See lib/theme.ts
+   for the list the picker offers. */
+body {
+  background-color: var(--color-white);
+  color: var(--color-slate-800);
+}
+
+html[data-theme="paper"] {
+  --color-white: oklch(99.2% 0.012 90);
+  --color-slate-50: oklch(98.4% 0.0048 85);
+  --color-slate-100: oklch(96.8% 0.0112 85);
+  --color-slate-200: oklch(92.9% 0.0208 85);
+  --color-slate-300: oklch(86.9% 0.0352 85);
+  --color-slate-400: oklch(70.4% 0.06 85);
+  --color-slate-500: oklch(55.4% 0.06 85);
+  --color-slate-600: oklch(44.6% 0.06 85);
+  --color-slate-700: oklch(37.2% 0.06 85);
+  --color-slate-800: oklch(27.9% 0.06 85);
+  --color-slate-900: oklch(20.8% 0.06 85);
+  --color-slate-950: oklch(12.9% 0.06 85);
+}
+html[data-theme="sage"] {
+  --color-white: oklch(99.3% 0.008 150);
+  --color-slate-50: oklch(98.4% 0.0039 150);
+  --color-slate-100: oklch(96.8% 0.0091 150);
+  --color-slate-200: oklch(92.9% 0.0169 150);
+  --color-slate-300: oklch(86.9% 0.0286 150);
+  --color-slate-400: oklch(70.4% 0.052 150);
+  --color-slate-500: oklch(55.4% 0.0598 150);
+  --color-slate-600: oklch(44.6% 0.0559 150);
+  --color-slate-700: oklch(37.2% 0.0572 150);
+  --color-slate-800: oklch(27.9% 0.0533 150);
+  --color-slate-900: oklch(20.8% 0.0546 150);
+  --color-slate-950: oklch(12.9% 0.0546 150);
+}
+html[data-theme="sky"] {
+  --color-white: oklch(99.3% 0.008 235);
+  --color-slate-50: oklch(98.4% 0.0051 235);
+  --color-slate-100: oklch(96.8% 0.0119 235);
+  --color-slate-200: oklch(92.9% 0.0221 235);
+  --color-slate-300: oklch(86.9% 0.0374 235);
+  --color-slate-400: oklch(70.4% 0.06 235);
+  --color-slate-500: oklch(55.4% 0.06 235);
+  --color-slate-600: oklch(44.6% 0.06 235);
+  --color-slate-700: oklch(37.2% 0.06 235);
+  --color-slate-800: oklch(27.9% 0.06 235);
+  --color-slate-900: oklch(20.8% 0.06 235);
+  --color-slate-950: oklch(12.9% 0.06 235);
+}
+html[data-theme="lavender"] {
+  --color-white: oklch(99.3% 0.009 305);
+  --color-slate-50: oklch(98.4% 0.0042 300);
+  --color-slate-100: oklch(96.8% 0.0098 300);
+  --color-slate-200: oklch(92.9% 0.0182 300);
+  --color-slate-300: oklch(86.9% 0.0308 300);
+  --color-slate-400: oklch(70.4% 0.056 300);
+  --color-slate-500: oklch(55.4% 0.06 300);
+  --color-slate-600: oklch(44.6% 0.06 300);
+  --color-slate-700: oklch(37.2% 0.06 300);
+  --color-slate-800: oklch(27.9% 0.0574 300);
+  --color-slate-900: oklch(20.8% 0.0588 300);
+  --color-slate-950: oklch(12.9% 0.0588 300);
+}
+html[data-theme="rose"] {
+  --color-white: oklch(99.3% 0.008 15);
+  --color-slate-50: oklch(98.4% 0.0039 15);
+  --color-slate-100: oklch(96.8% 0.0091 15);
+  --color-slate-200: oklch(92.9% 0.0169 15);
+  --color-slate-300: oklch(86.9% 0.0286 15);
+  --color-slate-400: oklch(70.4% 0.052 15);
+  --color-slate-500: oklch(55.4% 0.0598 15);
+  --color-slate-600: oklch(44.6% 0.0559 15);
+  --color-slate-700: oklch(37.2% 0.0572 15);
+  --color-slate-800: oklch(27.9% 0.0533 15);
+  --color-slate-900: oklch(20.8% 0.0546 15);
+  --color-slate-950: oklch(12.9% 0.0546 15);
+}
+html[data-theme="graphite"] {
+  --color-white: #fff;
+  --color-slate-50: oklch(98.4% 0.0 0);
+  --color-slate-100: oklch(96.8% 0.0 0);
+  --color-slate-200: oklch(92.9% 0.0 0);
+  --color-slate-300: oklch(86.9% 0.0 0);
+  --color-slate-400: oklch(70.4% 0.0 0);
+  --color-slate-500: oklch(55.4% 0.0 0);
+  --color-slate-600: oklch(44.6% 0.0 0);
+  --color-slate-700: oklch(37.2% 0.0 0);
+  --color-slate-800: oklch(27.9% 0.0 0);
+  --color-slate-900: oklch(20.8% 0.0 0);
+  --color-slate-950: oklch(12.9% 0.0 0);
+}
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --color-white: oklch(21% 0.025 260);
+  --color-slate-50: oklch(25% 0.02 255);
+  --color-slate-100: oklch(29% 0.02 255);
+  --color-slate-200: oklch(36% 0.02 255);
+  --color-slate-300: oklch(46% 0.02 255);
+  --color-slate-400: oklch(68% 0.012 255);
+  --color-slate-500: oklch(76% 0.012 255);
+  --color-slate-600: oklch(83% 0.012 255);
+  --color-slate-700: oklch(88% 0.012 255);
+  --color-slate-800: oklch(93% 0.012 255);
+  --color-slate-900: oklch(97% 0.012 255);
+  --color-slate-950: oklch(99% 0.012 255);
+}
