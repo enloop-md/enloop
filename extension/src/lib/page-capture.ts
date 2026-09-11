@@ -1,4 +1,4 @@
-import { getPageAccess } from "./page-access.js";
+import { getPageAccess, pageAccessMessage } from "./page-access.js";
 
 /**
  * What a question can carry along: the page as pixels, and the page as
@@ -76,20 +76,65 @@ export async function capturePageSnapshot(): Promise<{ html: string; url: string
 
 /** PNG of the visible viewport of the active tab. */
 export async function captureScreenshot(): Promise<Uint8Array | null> {
+  const result = await captureScreenshotDetailed();
+  return result.ok ? result.png : null;
+}
+
+export type CaptureResult =
+  | { ok: true; png: Uint8Array }
+  /** `needsGesture`: Chrome refused because this tab has not granted
+   * `activeTab` yet — a per-origin grant does not count for captures.
+   * The tester fixes it with a gesture on the tab: the shortcut, the
+   * page's context-menu item, or the toolbar icon. */
+  | { ok: false; error: string; needsGesture: boolean };
+
+/** Chrome's exact refusal when neither `activeTab` nor all-sites access
+ * covers the tab. */
+const PERMISSION_REFUSAL = /activeTab|all_urls/;
+
+/** What to tell a tester when Chrome refuses a capture on this tab. */
+export const GESTURE_HINT =
+  "Chrome lets Enloop photograph a tab only after you invoke it there: press Alt+Shift+S on the page, or right-click it and choose “Take an Enloop screenshot”. After that, this tab stays photographable until it moves to another site.";
+
+/**
+ * The same capture, with Chrome's reason when it refuses — a screenshot
+ * button that says "could not be captured" and nothing else sends the
+ * tester guessing between a missing grant, a protected page and a rate
+ * limit (Chrome allows two captures a second).
+ */
+export async function captureScreenshotDetailed(): Promise<CaptureResult> {
   const access = await getPageAccess();
-  if (access.status !== "ready") return null;
-  try {
-    const tab = await chrome.tabs.get(access.tabId);
-    if (tab.windowId === undefined) return null;
-    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
-    const base64 = dataUrl.split(",")[1] ?? "";
-    const bytes = atob(base64);
-    const out = new Uint8Array(bytes.length);
-    for (let i = 0; i < bytes.length; i++) out[i] = bytes.charCodeAt(i);
-    return out;
-  } catch {
-    return null;
+  if (access.status !== "ready") {
+    return { ok: false, error: pageAccessMessage(access) ?? "no page to capture", needsGesture: false };
   }
+  let lastError = "";
+  // With the tab's window first; without one (the current window) as the
+  // fallback, since the two disagree in some multi-window arrangements.
+  const attempts: (() => Promise<string>)[] = [
+    async () => {
+      const tab = await chrome.tabs.get(access.tabId);
+      if (tab.windowId === undefined) throw new Error("the tab has no window");
+      return chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+    },
+    () => chrome.tabs.captureVisibleTab({ format: "png" }),
+  ];
+  for (const attempt of attempts) {
+    try {
+      const dataUrl = await attempt();
+      const base64 = dataUrl.split(",")[1] ?? "";
+      const bytes = atob(base64);
+      const out = new Uint8Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) out[i] = bytes.charCodeAt(i);
+      return { ok: true, png: out };
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : String(chrome.runtime.lastError?.message ?? e);
+    }
+  }
+  return {
+    ok: false,
+    error: lastError || "Chrome refused the capture",
+    needsGesture: PERMISSION_REFUSAL.test(lastError),
+  };
 }
 
 /** The active page's URL, for a question sent without a snapshot. Unlike

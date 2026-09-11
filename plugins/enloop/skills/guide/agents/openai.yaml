@@ -1,0 +1,5 @@
+interface:
+  display_name: "Enloop: user guide"
+  short_description: Write a user guide as a runnable case; the runner takes the screenshots.
+policy:
+  allow_implicit_invocation: false

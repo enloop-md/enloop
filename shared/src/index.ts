@@ -15,3 +15,6 @@ export * from "./version-id.js";
 export * from "./lint.js";
 export * from "./capture.js";
 export * from "./html.js";
+export * from "./fix-prompt.js";
+export * from "./project-file.js";
+export * from "./guide.js";

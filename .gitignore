@@ -15,3 +15,6 @@ dist-*/
 .claude.json
 /backups/
 /cache/
+
+# A stray nested checkout / in-repo data folder — never source.
+/enloop/

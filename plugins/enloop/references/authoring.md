@@ -1,21 +1,23 @@
 # Authoring a test case
 
-<!-- Shared by the quick and full skills. One procedure, two tiers: the skill
-     that sent you here has already told you which one you are writing, and
-     that is the only thing that differs. Both must resolve the folder, derive
-     every specific from source, and validate with the real parser. -->
+<!-- Shared by the quick, full and guide skills. One procedure, three tiers:
+     the skill that sent you here has already told you which one you are
+     writing, and that is the only thing that differs. All three must resolve
+     the folder, derive every specific from source, and validate with the
+     real parser. -->
 
-This is the procedure. **The tier — quick or full — comes from the skill that
-sent you here**, and it changes three things and nothing else:
+This is the procedure. **The tier — quick, full or guide — comes from the
+skill that sent you here**, and it changes four things and nothing else:
 
-| | quick | full |
-| --- | --- | --- |
-| Coverage | the happy path only | edge cases, error states, cleanup |
-| App map (§6) | read only the screens the path touches; do not build or refresh the cached map | build or refresh it |
-| `Kind: quick` | on every step | on the core path only |
+| | quick | full | guide |
+| --- | --- | --- | --- |
+| Coverage | the happy path only | edge cases, error states, cleanup | the happy path, plus every screen the reader passes through on the way |
+| App map (§6) | read only the screens the path touches; do not build or refresh the cached map | build or refresh it | read only the screens the path touches; no app map |
+| `Kind: quick` | on every step | on the core path only | never |
+| `### Photo` specs (§8b) | none | none | on every step that changes the screen; the prose rules are in the guide skill |
 
-Everything below applies to both. Two failure modes the procedure exists to
-prevent, whichever tier you are in:
+Everything below applies to all three. Two failure modes the procedure exists
+to prevent, whichever tier you are in:
 
 1. **Invented specifics.** A route, button label, or selector recalled from
    conversation rather than read from the app's source. These look
@@ -272,6 +274,12 @@ Practically, for each step you intend to write:
   value the run produces (`/user.php?user=<id>`) is not an address at all:
   `Where:` is the page it is reached from, and the shape goes in backticks
   in the instructions (contract rule 2, last section).
+- Menu path → the navigation component or route tree. Every step that
+  moves to a new page carries `Via: <the path through the app's own
+  menus>` beside its `Where:` (contract rule 2b), read from the nav
+  source the way a label is — `Via: Settings → Users → the row`. When the
+  page is only reachable by a link (an email, a redirect), write
+  `Via: link only` and say in the step where the link comes from.
 - Visible label → the JSX/template/i18n entry. Quote it exactly, including
   capitalisation, in backticks.
 - Value the tester types → as `"**value**"`, quoted *and* bolded, exactly
@@ -394,6 +402,26 @@ not say, and this skill does:
 Write it to a scratch file first. It is not going into the cases folder
 until it parses clean and passes the by-eye list.
 
+### 8b. Photo specs
+
+A step may say what the runner should photograph, as one or more `### Photo`
+subsections after `### Expected`: `Crop:` the container to cut to, `Mark:`
+a box, `Point:` an arrow, `Callout:` a numbered disc with a legend, `Blur:`
+a region to pixelate — each a selector, resolved on the live page when the
+photo is taken — plus `Take:` (before / after / manual), `Mode:` (auto /
+confirm), `Color:` and `Caption:`. The n-th block fills `%PHOTO_n%`
+wherever that is written in the step; `PHOTO_` is reserved and never a
+variable. The exact keys and their defaults are in `grammar.md` — read them
+there, not from memory.
+
+A **guide** carries one on every step that changes what is on screen; the
+guide skill's photo rules say what to crop, mark and blur. A quick or full
+case usually carries none — a photo is not a pass criterion — but may add
+one where a run report is better for having the picture. The linter's rule
+`10` checks the specs: a `%PHOTO_n%` with no n-th block, a selector both
+blurred and called out, a colour outside the palette are errors; a bare
+full-viewport photo is a warning.
+
 ## 9. Validate — never skip this
 
 ### 9a. Parse with the real parser
@@ -472,6 +500,9 @@ revision always moves past them to the next whole number — put a `Change note:
 line under the title describing the delta. Previous versions are never
 edited; the history is the audit trail.
 
+A guide (`@kind guide`) lands the same way; the header line is part of the
+file, and the panel reads it from there.
+
 **Never build the layout by hand.** The id shape, the `test-cases/` level
 and `meta.json` are this command's job, and a case assembled manually is
 how files land where no Library looks. Placeholders stay literal in the
@@ -512,9 +543,8 @@ Tell the user:
   If it prints `WATCHING`, say nothing — everything in the panel just
   works. If it prints `NONE`, relay one line: authoring and running cases
   need no agent, but the panel's **Ask the agent** and command **Run**
-  buttons will sit waiting until the enloopd daemon is started
-  (docs/daemon.md in the Enloop repo) or `/enloop:serve` is run manually
-  when something is pending.
+  buttons will sit waiting until `/enloop:serve` is run, from the repo
+  under test, when something is pending.
 
 Do not claim the case was executed. It was parsed and linted, not run.
 

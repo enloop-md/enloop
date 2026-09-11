@@ -20,7 +20,7 @@ claude -p "/enloop:quick the coupon banner" --model <m> --dangerously-skip-permi
 Then four deterministic assertions:
 
 1. **Landed** — exactly one case sits where `FsaDataStore` reads
-   (`enloop/test-cases/<id>/versions/v1.md`).
+   (`enloop.md/test-cases/<id>/versions/v1.md`).
 2. **Validates** — `enloop-case.mjs validate` exits clean.
 3. **Real handles** — every `data-testid` the case names greps in the
    fixture's `src/`. A selector that greps nowhere was recalled, not read;

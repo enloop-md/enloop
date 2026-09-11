@@ -19,15 +19,4 @@ export function downloadTextFile(filename: string, text: string, type = "text/ma
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
-/** A case title as a filename: lowercase, punctuation collapsed to dashes,
- * and short enough that the version suffix stays visible in a downloads
- * list. Falls back to `case` so an untitled document still saves. */
-export function fileSlug(title: string): string {
-  const slug = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60)
-    .replace(/-+$/g, "");
-  return slug || "case";
-}
+export { fileSlug } from "@tcm/shared";

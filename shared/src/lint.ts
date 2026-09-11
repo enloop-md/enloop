@@ -3,7 +3,11 @@ import {
   filterToQuickSteps,
   substituteVariables,
   CURRENT_FORMAT_VERSION,
+  VIA_LINK_ONLY_RE,
+  isPhotoPlaceholder,
+  photoPlaceholders,
 } from "./markdown.js";
+import { SHOT_COLORS } from "./schemas.js";
 import { MAIN_DOMAIN_NAME, mainDomainName, resolveRunValues } from "./variables.js";
 import type { TestCaseVersion } from "./types.js";
 
@@ -220,7 +224,7 @@ export function lintCase(raw: string, options: LintOptions = {}): LintResult {
   const undeclared = new Set(
     [...everyField.matchAll(/%([A-Za-z_][A-Za-z0-9_]*)%/g)]
       .map((m) => m[1])
-      .filter((name) => !declaredNames.has(name)),
+      .filter((name) => !declaredNames.has(name) && !isPhotoPlaceholder(name)),
   );
   for (const name of undeclared) {
     errors.push({
@@ -429,10 +433,54 @@ export function lintCase(raw: string, options: LintOptions = {}): LintResult {
 
   // --- per step ------------------------------------------------------------
 
+  // The page a step is on, for telling a move from a stay: the address
+  // with its query and fragment dropped, case-folded, trailing slash gone.
+  // Prose is no page. Compared on the *declared* text so `%DOMAIN%` matches
+  // itself on both sides.
+  const pageOf = (text: string | undefined): string | null => {
+    const value = (text ?? "").trim();
+    if (!value || !ADDRESS.test(value) || /\s/.test(value)) return null;
+    return value.split(/[?#]/)[0].replace(/\/+$/, "").toLowerCase();
+  };
+  // The run's starting page is the entry-point prerequisite's address; the
+  // first step on that same page has not moved.
+  const entryAddress = declared.prerequisites
+    .filter((p) => OPENS_SOMEWHERE.test(p))
+    .map((p) => /(%[A-Za-z_][A-Za-z0-9_]*%\S*|https?:\/\/\S+|(?<=\s|^)\/\S+)/.exec(stripCode(p))?.[1] ?? "")
+    .find(Boolean);
+  let previousPage: string | null = pageOf(entryAddress);
+
   let quickMarked = 0;
   for (const [index, step] of doc.steps.entries()) {
     const where = step.where?.trim() ?? "";
     if (step.quick) quickMarked++;
+
+    // `Where:` is never the only way to a page: a step that moves says how
+    // the UI gets there, or says outright that the UI cannot.
+    const page = pageOf(declared.steps[index]?.where);
+    const moved = page !== null && page !== previousPage;
+    if (page !== null) previousPage = page;
+    const via = step.via?.trim() ?? "";
+    if (moved && !via) {
+      errors.push({
+        rule: "2b",
+        at: step.title,
+        message: `\`Where: ${where}\` is a new page and nothing says how to reach it from the app. Add \`Via: <menu path>\` — \`Via: Settings → Users → the row\` — or \`Via: link only\` when the UI genuinely has no path (a deep link, a redirect target). The address may point at another environment; the tester must still be able to get there.`,
+      });
+    } else if (via && !moved && index > 0 && page !== null) {
+      warnings.push({
+        rule: "2b",
+        at: step.title,
+        message: `\`Via: ${via}\` on a step that stays on the previous step's page — the tester is already there. Drop it unless the step genuinely re-navigates.`,
+      });
+    }
+    if (VIA_LINK_ONLY_RE.test(via) && !/\b(link|redirect|email|mail|url|qr|only)\b/i.test(`${step.instructions ?? ""} ${step.note ?? ""}`)) {
+      warnings.push({
+        rule: "2b",
+        at: step.title,
+        message: "`Via: link only` — say in the instructions or a `### Note` where the link comes from (an email, a redirect, a QR code), so the tester knows why there is no menu to look for.",
+      });
+    }
 
     if (!where) {
       errors.push({ rule: "2b", at: step.title, message: "No `Where:` line." });
@@ -575,6 +623,74 @@ export function lintCase(raw: string, options: LintOptions = {}): LintResult {
     });
   }
 
+  // --- photos ----------------------------------------------------------------
+
+  // A `### Photo` is a promise the runner keeps at capture time; what can be
+  // checked now is that the prose and the spec agree with each other.
+  for (const step of doc.steps) {
+    const placeholders = photoPlaceholders(`${step.instructions ?? ""}\n${step.expected ?? ""}`);
+    for (const n of placeholders) {
+      if (n > step.photos.length) {
+        errors.push({
+          rule: "10",
+          at: step.title,
+          message: `%PHOTO_${n}% is used but the step has ${step.photos.length === 0 ? "no" : `only ${step.photos.length}`} \`### Photo\` block${step.photos.length === 1 ? "" : "s"}. Add the block, or renumber the placeholder.`,
+        });
+      }
+    }
+    const notePlaceholders = photoPlaceholders(step.note ?? "");
+    if (notePlaceholders.length > 0) {
+      warnings.push({
+        rule: "10",
+        at: step.title,
+        message: "A %PHOTO_n% in `### Note` is never exported — the note is not part of a guide. Put it in the instructions or `### Expected`.",
+      });
+    }
+    step.photos.forEach((photo, i) => {
+      const at = `${step.title} — photo ${i + 1}`;
+      const marked = [
+        ...photo.marks,
+        ...photo.points,
+        ...photo.callouts.map((c) => c.selector),
+      ];
+      if (!(SHOT_COLORS as readonly string[]).includes(photo.color.toUpperCase())) {
+        errors.push({
+          rule: "10",
+          at,
+          message: `\`Color: ${photo.color}\` is not in the palette: ${SHOT_COLORS.join(", ")}.`,
+        });
+      }
+      for (const selector of marked) {
+        if (photo.blurs.includes(selector)) {
+          errors.push({
+            rule: "10",
+            at,
+            message: `\`${selector}\` is both blurred and marked. An element cannot be pointed at and hidden in the same photo.`,
+          });
+        }
+      }
+      if (photo.take !== "manual" && !photo.crop && marked.length === 0 && photo.blurs.length === 0) {
+        warnings.push({
+          rule: "10",
+          at,
+          message: "An unmarked, uncropped photo of the whole viewport. Say what it shows with `Crop:` or a `Mark:`/`Callout:`; a reader cannot tell what to look at in a full page.",
+        });
+      }
+      const specSelectors = [photo.crop, ...marked, ...photo.blurs].filter(Boolean);
+      if (
+        step.selectors.length > 0 &&
+        specSelectors.length > 0 &&
+        !specSelectors.some((s) => step.selectors.includes(s))
+      ) {
+        warnings.push({
+          rule: "10",
+          at,
+          message: "None of the photo's selectors is one of the step's `Selector:` lines. Fine when the photo shows a container around the element; check it is on the right step.",
+        });
+      }
+    });
+  }
+
   // --- the quick subset is a document of its own ---------------------------
 
   let quickParses = true;
@@ -593,7 +709,9 @@ export function lintCase(raw: string, options: LintOptions = {}): LintResult {
       errors.push({ rule: "3b", message: `The quick subset fails to parse on its own: ${String(e)}` });
     }
   }
-  if (quickMarked === 0 && doc.steps.length > 1) {
+  if (doc.kind === "guide") {
+    // A guide is run whole by its reader; the quick/full dial does not apply.
+  } else if (quickMarked === 0 && doc.steps.length > 1) {
     warnings.push({
       rule: "3b",
       message: "No step carries `Kind: quick`, so this case is full-only. Correct for a case that is all edge cases; otherwise mark the core path.",

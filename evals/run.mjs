@@ -80,7 +80,7 @@ for (const model of models) {
   if (session.error) {
     row.cold = `claude CLI failed: ${session.error.message}`;
   } else {
-    const casesDir = path.join(tmp, "enloop", "test-cases");
+    const casesDir = path.join(tmp, "enloop.md", "test-cases");
     const landedIds = existsSync(casesDir)
       ? readdirSync(casesDir).filter((d) => existsSync(path.join(casesDir, d, "versions", "v1.md")))
       : [];

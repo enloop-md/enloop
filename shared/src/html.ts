@@ -22,8 +22,14 @@
  * degrades to escaped text, which is safe and legible rather than broken.
  */
 
+import { isPhotoPlaceholder } from "./markdown.js";
 import { looksLikeSelector } from "./selector-text.js";
-import { coldLocation, isMainDomainName, mainDomainName } from "./variables.js";
+import {
+  coldLocation,
+  isMainDomainName,
+  joinResolvedValue,
+  mainDomainName,
+} from "./variables.js";
 import type { Step, TestCaseVariable, TestCaseVersion } from "./types.js";
 
 export interface CasePageOptions {
@@ -65,9 +71,15 @@ const VARIABLE_TOKEN = /%([A-Za-z_][A-Za-z0-9_]*)%/g;
 
 /** `text` with every `%NAME%` that has a value replaced by it, leaving the
  * rest literal — `substituteVariables`' rule, applied where a span cannot go
- * (attributes). */
+ * (attributes). Slashes at the seam collapse the same way too, so a link
+ * built from a `Default:` that ends in `/` is still one slash deep. */
 function resolveText(text: string, values: Record<string, string>): string {
-  return text.replace(VARIABLE_TOKEN, (match, name: string) => values[name]?.trim() || match);
+  return text.replace(VARIABLE_TOKEN, (match, name: string, offset: number, whole: string) => {
+    if (isPhotoPlaceholder(name)) return match;
+    const value = values[name];
+    if (!value?.trim()) return match;
+    return joinResolvedValue(value, whole.slice(offset + match.length));
+  });
 }
 
 /**
@@ -95,6 +107,8 @@ const HAS_VARIABLE = /%[A-Za-z_][A-Za-z0-9_]*%/;
  */
 function withVariableSpans(escapedText: string, values: Record<string, string>): string {
   return escapedText.replace(VARIABLE_TOKEN, (match, name: string) => {
+    // A photo placeholder is not a value anyone fills in.
+    if (isPhotoPlaceholder(name)) return match;
     const value = values[name]?.trim();
     return (
       `<span class="var" data-var="${escapeAttr(name)}"${value ? "" : " data-unset"}>` +
@@ -301,7 +315,12 @@ function initialValues(
 
 const ABSOLUTE_URL = /^https?:\/\//i;
 
-function renderWhere(where: string, values: Record<string, string>, mainDomain: string): string {
+function renderWhere(
+  where: string,
+  values: Record<string, string>,
+  mainDomain: string,
+  via?: string,
+): string {
   // A bare route is only half an address; the case's main domain is the
   // other half. Joining them as a *template* — `%APP%/admin/x` in
   // data-href — is what turns a bare Where into a link, and keeps it live
@@ -320,7 +339,12 @@ function renderWhere(where: string, values: Record<string, string>, mainDomain: 
   const target = openable
     ? `<a href="${escapeAttr(resolved)}" data-href="${escapeAttr(template)}" target="_blank" rel="noopener noreferrer">${withVariableSpans(escapeHtml(where), values)}</a>`
     : withVariableSpans(escapeHtml(where), values);
-  return `<p class="where"><span class="where-label">Where</span>${target}</p>`;
+  // The UI path beside the address: the address may be for another
+  // deployment or incomplete, and this is how the page is found regardless.
+  const path = via?.trim()
+    ? `<p class="where via"><span class="where-label">Via</span>${renderInline(via.trim(), values)}</p>`
+    : "";
+  return `<p class="where"><span class="where-label">Where</span>${target}</p>${path}`;
 }
 
 function renderStep(
@@ -350,7 +374,7 @@ function renderStep(
   parts.push("</div>");
 
   parts.push('<div class="step-body">');
-  if (step.where) parts.push(renderWhere(step.where, values, mainDomain));
+  if (step.where) parts.push(renderWhere(step.where, values, mainDomain, step.via));
   if (step.instructions?.trim()) {
     parts.push(`<div class="prose">${renderMarkdown(step.instructions.trim(), values)}</div>`);
   }
@@ -851,9 +875,19 @@ export function attachCasePage(root: Document | HTMLElement): void {
       if (value) span.removeAttribute("data-unset");
       else span.setAttribute("data-unset", "");
     }
+    // `substituteVariables`' rule, restated because this function travels
+    // alone into the downloaded file: a value only replaces its placeholder
+    // when it has one, and a value ending in `/` drops it when a `/`
+    // follows — otherwise typing `https://app.test/` into the BASE_URL field
+    // rewrites every link on the page to `https://app.test//admin`.
     const resolve = (text: string) =>
-      text.replace(/%([A-Za-z_][A-Za-z0-9_]*)%/g, (match, name: string) =>
-        values[name] ? values[name] : match,
+      text.replace(
+        /%([A-Za-z_][A-Za-z0-9_]*)%/g,
+        (match, name: string, offset: number, whole: string) => {
+          const value = values[name];
+          if (!value) return match;
+          return whole.charAt(offset + match.length) === "/" ? value.replace(/\/+$/, "") : value;
+        },
       );
     for (const anchor of Array.from(scope.querySelectorAll<HTMLAnchorElement>("a[data-href]"))) {
       const template = anchor.dataset.href;

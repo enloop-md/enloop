@@ -6,6 +6,7 @@ import {
   type SuiteSummary,
   type TestCaseSummary,
 } from "@tcm/shared";
+import { DropCase } from "../../components/DropCase.js";
 import { ErrorNotice } from "../../components/ErrorNotice.js";
 import { Header } from "../../components/Header.js";
 import { useDataStore, useReadyStore, useWorkspace } from "../store/DataStoreProvider.js";
@@ -87,10 +88,13 @@ function ProjectHeader({ group }: { group: ProjectGroup }) {
 function CaseRow({
   testCase,
   indented = false,
+  guide = false,
   onOpen,
 }: {
   testCase: TestCaseSummary;
   indented?: boolean;
+  /** The current version is `@kind guide`. */
+  guide?: boolean;
   onOpen: () => void;
 }) {
   // Which folder this came from. Only shown when more than one is connected —
@@ -110,6 +114,14 @@ function CaseRow({
     >
       <div className="flex items-center gap-2">
         <span className="truncate text-sm font-medium text-slate-800">{testCase.title}</span>
+        {guide && (
+          <span
+            className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-700"
+            title="A user guide: written for an end user, run like a case, exported with its screenshots"
+          >
+            guide
+          </span>
+        )}
         {testCase.archived && (
           <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
             archived
@@ -265,6 +277,7 @@ export function LibraryScreen({
 }) {
   const store = useReadyStore();
   const { storages, degraded, reconnect } = useWorkspace();
+  const { importCase } = useDataStore();
   const { refresh } = useDataStore();
   const [refreshing, setRefreshing] = useState(false);
   // "Switching" storage is filtering, not disconnecting: everything stays
@@ -272,6 +285,11 @@ export function LibraryScreen({
   const [storageFilter, setStorageFilter] = useState<string>("all");
   const [cases, setCases] = useState<TestCaseSummary[] | null>(null);
   const [suites, setSuites] = useState<SuiteSummary[] | null>(null);
+  // Which cases are guides. The summary does not say — `kind` lives in the
+  // version document — so each current version is read once the list is
+  // up, and the badge appears when it is known. A read that fails costs a
+  // badge, not the row.
+  const [guideIds, setGuideIds] = useState<Set<string>>(() => new Set());
   const [unfinished, setUnfinished] = useState<Unfinished | null>(null);
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
@@ -330,6 +348,24 @@ export function LibraryScreen({
       cancelled = true;
     };
   }, [store]);
+
+  useEffect(() => {
+    if (!cases) return;
+    let cancelled = false;
+    Promise.all(
+      cases.map((c) =>
+        store
+          .getVersion(c.id, c.currentVersion)
+          .then((v) => (v.kind === "guide" ? c.id : null))
+          .catch(() => null),
+      ),
+    ).then((ids) => {
+      if (!cancelled) setGuideIds(new Set(ids.filter((id): id is string => id !== null)));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [store, cases]);
 
   // A run left open. Loaded separately from the library itself so a slow or
   // broken runs folder cannot keep the case list from rendering.
@@ -563,6 +599,15 @@ export function LibraryScreen({
       )}
 
       <div className="flex-1 overflow-y-auto">
+        {/* Always here, above whatever the Library holds: a case handed to
+            you as a file is one drop away from a run, with nothing to set up. */}
+        <DropCase
+          compact={!libraryEmpty}
+          onImport={async (md) => {
+            const id = await importCase(md);
+            onOpenCase(id);
+          }}
+        />
         <ErrorNotice error={error} className="p-3" />
         {error == null && groups === null && <p className="p-3 text-sm text-slate-400">Loading…</p>}
         {error == null && noMatches && (
@@ -600,7 +645,12 @@ export function LibraryScreen({
                 <ul className="divide-y divide-slate-100">
                   {suiteCases.map((c) => (
                     <li key={c.id}>
-                      <CaseRow testCase={c} indented onOpen={() => onOpenCase(c.id)} />
+                      <CaseRow
+                        testCase={c}
+                        indented
+                        guide={guideIds.has(c.id)}
+                        onOpen={() => onOpenCase(c.id)}
+                      />
                     </li>
                   ))}
                 </ul>
@@ -616,7 +666,7 @@ export function LibraryScreen({
             <ul className="divide-y divide-slate-100">
               {project.ungrouped.map((c) => (
                 <li key={c.id}>
-                  <CaseRow testCase={c} onOpen={() => onOpenCase(c.id)} />
+                  <CaseRow testCase={c} guide={guideIds.has(c.id)} onOpen={() => onOpenCase(c.id)} />
                 </li>
               ))}
             </ul>

@@ -23,12 +23,14 @@ import {
   parseCaseDocument,
   renderCaseMarkdown,
   VARIABLE_GENERATORS,
+  type PhotoSpec,
   type TestCaseVersion,
 } from "@tcm/shared";
 
 interface StepDraft {
   title: string;
   where: string;
+  via: string;
   selectors: string;
   quick: boolean;
   extra: boolean;
@@ -36,6 +38,9 @@ interface StepDraft {
   script: string;
   expected: string;
   note: string;
+  /** `### Photo` blocks, carried through untouched — the form has no fields
+   * for them yet, and dropping them on edit would silently strip a guide. */
+  photos: PhotoSpec[];
   /** Title of the group this step sits in — one of `Draft.groups`, or empty
    * for a step under the plain `# Steps`. */
   group: string;
@@ -68,6 +73,8 @@ interface Draft {
   youWill: string;
   youWillNeed: string;
   project: string;
+  /** `@kind` — carried through so editing a guide keeps it one. */
+  kind: TestCaseVersion["kind"];
   author: string;
   tags: string;
   /** `@locations:` — comma-separated host globs, kept as typed. */
@@ -85,6 +92,7 @@ function emptyStep(): StepDraft {
   return {
     title: "",
     where: "",
+    via: "",
     selectors: "",
     quick: false,
     extra: false,
@@ -92,6 +100,7 @@ function emptyStep(): StepDraft {
     script: "",
     expected: "",
     note: "",
+    photos: [],
     group: "",
   };
 }
@@ -103,6 +112,7 @@ function emptyDraft(): Draft {
     youWill: "",
     youWillNeed: "",
     project: "",
+    kind: "case",
     author: "",
     tags: "",
     locations: "",
@@ -152,6 +162,7 @@ function toDocument(draft: Draft): TestCaseVersion {
     author: draft.author,
     project: draft.project,
     changeNote: "",
+    kind: draft.kind,
     title: draft.title,
     goal: draft.goal,
     youWill: draft.youWill,
@@ -210,9 +221,11 @@ function toDocument(draft: Draft): TestCaseVersion {
       script: s.script.trim() || undefined,
       selectors: lines(s.selectors),
       where: s.where.trim() || undefined,
+      via: s.via.trim() || undefined,
       quick: s.quick,
       extra: s.extra,
       note: s.note.trim() || undefined,
+      photos: s.photos,
       group: s.group.trim() || undefined,
     })),
   };
@@ -231,6 +244,7 @@ function fromMarkdown(markdown: string): Draft {
     youWill: doc.youWill,
     youWillNeed: bulletText(doc.youWillNeed),
     project: doc.project,
+    kind: doc.kind,
     author: doc.author,
     tags: doc.tags.join(", "),
     locations: doc.locations.join(", "),
@@ -257,6 +271,7 @@ function fromMarkdown(markdown: string): Draft {
         ? doc.steps.map((s) => ({
             title: s.title,
             where: s.where ?? "",
+            via: s.via ?? "",
             selectors: s.selectors.join("\n"),
             quick: s.quick,
             extra: s.extra,
@@ -264,6 +279,7 @@ function fromMarkdown(markdown: string): Draft {
             script: s.script ?? "",
             expected: s.expected ?? "",
             note: s.note ?? "",
+            photos: s.photos,
             group: s.group ?? "",
           }))
         : [emptyStep()],
@@ -669,6 +685,15 @@ export function renderBuilder(
         }, {
           placeholder: "%DOMAIN%/sign-in",
           hint: "The screen to start on. A URL or route gets a Go button.",
+        }),
+      );
+      card.appendChild(
+        field("Via", step.via, (v) => {
+          step.via = v;
+          refreshPreview();
+        }, {
+          placeholder: "Settings → Users → the row for the account",
+          hint: "How the page is reached in the app's own menus, for when the address is for another environment. Required when the step moves to a new page; \"link only\" if the UI has no path.",
         }),
       );
       card.appendChild(

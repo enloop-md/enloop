@@ -91,6 +91,55 @@ export const stepGroupSchema = z.object({
   goal: z.string(),
 });
 
+export const PHOTO_TAKE = ["before", "after", "manual"] as const;
+export const PHOTO_MODE = ["auto", "confirm"] as const;
+
+/** The palette a photo spec's `Color:` and the editor's swatches share —
+ * red first, since it is the default. */
+export const SHOT_COLORS = [
+  "#E5484D",
+  "#F76B15",
+  "#30A46C",
+  "#0090FF",
+  "#8E4EC6",
+  "#1C2024",
+  "#FFFFFF",
+] as const;
+export const DEFAULT_SHOT_COLOR = SHOT_COLORS[0];
+export const DEFAULT_PHOTO_PAD = 24;
+
+/**
+ * A `### Photo` block of a step — what the runner should capture, and how
+ * to mark it up, without the tester doing anything. Every selector is
+ * resolved on the page at capture time; one that matches nothing is skipped
+ * and listed in the screenshot record's `missing`. The n-th block of a step
+ * fills the `%PHOTO_n%` placeholder in that step's prose on export.
+ */
+export const photoSpecSchema = z.object({
+  /** Selector of the container to crop to; empty = the whole viewport. */
+  crop: z.string(),
+  /** CSS px of padding around `crop`. */
+  pad: z.number().int().nonnegative(),
+  /** Rectangles around these. */
+  marks: z.array(z.string()),
+  /** Arrows pointing at these. */
+  points: z.array(z.string()),
+  /** Numbered discs beside these, in order; `text` is the legend line
+   * printed under the figure on export (may be empty). */
+  callouts: z.array(z.object({ selector: z.string(), text: z.string() })),
+  /** Pixelated. */
+  blurs: z.array(z.string()),
+  /** `before`: when the step becomes current. `after`: when the verdict is
+   * given (or the script finishes). `manual`: a preloaded button. */
+  take: z.enum(PHOTO_TAKE),
+  /** `auto` keeps the photo silently; `confirm` shows Keep / Retake /
+   * Edit / Discard. Ignored for `manual`. */
+  mode: z.enum(PHOTO_MODE),
+  /** One of `SHOT_COLORS`. */
+  color: z.string(),
+  caption: z.string(),
+});
+
 /** A step as parsed from a case document's `# Steps` section (one `## `). */
 export const stepSchema = z.object({
   id: z.string(),
@@ -121,6 +170,14 @@ export const stepSchema = z.object({
    * screen name, or other surface, e.g. `Where: /admin/sync-console`.
    * Keeps "which app/tab am I in?" out of the instructions prose. */
   where: z.string().optional(),
+  /** How the page in `where` is reached through the app's own UI —
+   * `Via: Settings → Users → the row` — so the address is never the only
+   * way to find it: a link may point at another environment, or be
+   * incomplete, and a tester must still be able to get there. Required by
+   * the linter whenever a step moves to a new page; `Via: link only`
+   * states explicitly that the UI offers no path (a deep link, an emailed
+   * link, a redirect target). */
+  via: z.string().optional(),
   /** Background a tester may want but must not have to read to judge
    * pass/fail — rationale, regression history, caveats. Parsed from a
    * `### Note` subsection so `expected` can stay purely the pass criteria. */
@@ -129,7 +186,11 @@ export const stepSchema = z.object({
    * matching an entry in the document's `groups`. Absent for a step under a
    * plain `# Steps`. */
   group: z.string().optional(),
+  /** `### Photo` blocks in document order — see `photoSpecSchema`. */
+  photos: z.array(photoSpecSchema),
 });
+
+export const CASE_KINDS = ["case", "guide"] as const;
 
 /**
  * A fully self-contained version of a test case. Parsed from the Markdown
@@ -151,6 +212,12 @@ export const testCaseVersionSchema = z.object({
    * selectors below refer to. Empty when the document declares none. */
   project: z.string(),
   changeNote: z.string(),
+  /** `@kind guide` — a user guide: the same grammar and the same run,
+   * written for an end user rather than a tester, exported with its
+   * screenshots by `export-guide`. Absent line = `case`. A guide's run
+   * labels verdicts Done / Could not and Expected "You should see"; the
+   * linter drops the quick-mark warnings. Nothing else differs. */
+  kind: z.enum(CASE_KINDS),
   title: z.string().min(1),
   /** `Goal:` — one plain line saying what the case proves, for someone who
    * has never seen the app. Pinned on screen for the whole run. Empty in
@@ -384,6 +451,51 @@ export const runStatusSchema = z.enum(["in_progress", "passed", "failed", "abort
  * because "it passed" means different things for each. */
 export const runTierSchema = z.enum(["quick", "full"]);
 
+/** One drawn operation on a screenshot, in the source PNG's pixel space
+ * (device pixels, as Chrome captured them). Render order is blurs, then
+ * the other shapes in list order, then the crop — so a callout over a
+ * blurred field stays crisp, and shapes are addressed against the uncropped
+ * capture and survive the crop being changed. There is at most one crop.
+ * Geometry lives in the extension's `lib/screenshot-render.ts`. */
+export const screenshotOpSchema = z.discriminatedUnion("tool", [
+  z.object({ tool: z.literal("crop"), x: z.number(), y: z.number(), w: z.number().positive(), h: z.number().positive() }),
+  z.object({ tool: z.literal("blur"), x: z.number(), y: z.number(), w: z.number().positive(), h: z.number().positive() }),
+  z.object({ tool: z.literal("line"), x1: z.number(), y1: z.number(), x2: z.number(), y2: z.number(), color: z.string() }),
+  z.object({ tool: z.literal("arrow"), x1: z.number(), y1: z.number(), x2: z.number(), y2: z.number(), color: z.string() }),
+  z.object({ tool: z.literal("rect"), x: z.number(), y: z.number(), w: z.number().positive(), h: z.number().positive(), color: z.string() }),
+  z.object({ tool: z.literal("callout"), x: z.number(), y: z.number(), n: z.number().int().positive(), color: z.string() }),
+]);
+
+/** One screenshot taken during a run or a free run. The bytes are
+ * `screenshots/<seq>.png` (rendered with `ops`) and
+ * `screenshots/<seq>.source.png` (exactly as captured, never modified)
+ * beside `run.json` / `free-run.json`; this record is what the JSON
+ * carries. */
+export const runScreenshotSchema = z.object({
+  id: z.string(),
+  /** 1-based capture order; the file stem, zero-padded to two digits.
+   * Never reused within a run. */
+  seq: z.number().int().positive(),
+  /** The step it illustrates, or null for the run as a whole (always null
+   * in a free run). */
+  stepId: z.string().nullable(),
+  /** Which `### Photo` of that step it fills (1-based), null when taken by
+   * hand. One screenshot per slot; retaking replaces. Moving to another
+   * step clears it. */
+  slot: z.number().int().positive().nullable(),
+  takenAt: z.string(),
+  /** Bumped on every edit; the panel keys its thumbnail cache on it. */
+  updatedAt: z.string(),
+  pageUrl: z.string(),
+  caption: z.string(),
+  /** Source PNG dimensions. */
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  ops: z.array(screenshotOpSchema),
+  /** Spec selectors that matched nothing when the runner took it. */
+  missing: z.array(z.string()),
+});
+
 /** On-disk shape of `run.json` — run-level status plus per-step state only.
  * `testCaseTitle` is a denormalized convenience copy for cheap listing;
  * `case.md` next to it remains the source of truth for step definitions. */
@@ -427,6 +539,14 @@ export const runFileSchema = z.object({
   /** Audit trail of mid-run hot-swaps, oldest first. Empty for the common
    * run that finishes on the version it started with. */
   swaps: z.array(runSwapSchema).default([]),
+  /** Every screenshot of the run, in capture order — see
+   * `runScreenshotSchema`. Defaulted so runs recorded before screenshots
+   * existed still parse. */
+  screenshots: z.array(runScreenshotSchema).default([]),
+  /** The highest `seq` ever handed out, so a removed or retaken screenshot's
+   * number (and file stem) is never reused — a stale `%PHOTO_n%` must not
+   * quietly point at a different picture. Defaulted for older files. */
+  screenshotSeq: z.number().int().nonnegative().default(0),
   steps: z.array(runStepStateSchema),
 });
 
@@ -488,6 +608,11 @@ export const runSchema = z.object({
   /** From `run.json` — the panel needs it to tell a patch offer it already
    * loaded from one still open. */
   swaps: z.array(runSwapSchema),
+  /** From `run.json`; the panel groups them by `stepId`. */
+  screenshots: z.array(runScreenshotSchema),
+  /** The frozen `case.md`'s kind — a guide's run words its verdicts
+   * differently. Composed. */
+  kind: z.enum(CASE_KINDS),
   steps: z.array(runStepSchema),
 });
 
@@ -498,6 +623,12 @@ export const freeRunFileSchema = z.object({
   title: z.string(),
   startedAt: z.string(),
   finishedAt: z.string().nullable(),
+  /** Screenshots taken during the session, `stepId` and `slot` always
+   * null; `notes.md` places them with `%PHOTO_<seq>%`. Defaulted so free
+   * runs from before screenshots existed still parse. */
+  screenshots: z.array(runScreenshotSchema).default([]),
+  /** See `runFileSchema.screenshotSeq`. */
+  screenshotSeq: z.number().int().nonnegative().default(0),
 });
 
 /** All fields optional by design — a partial update applied to one run step. */

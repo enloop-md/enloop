@@ -82,10 +82,13 @@ export function useAgentChannel(
     return () => clearInterval(timer);
   }, [active, waiting, refresh]);
 
+  // Returns the question as written, so the caller can tie browser-session
+  // facts (which tab it was asked from) to its id.
   const ask = useCallback(
-    async (draft: AskDraft) => {
-      await store.askQuestion(testCaseId, runId, draft);
+    async (draft: AskDraft): Promise<AgentQuestion> => {
+      const question = await store.askQuestion(testCaseId, runId, draft);
       await refresh();
+      return question;
     },
     [store, testCaseId, runId, refresh],
   );

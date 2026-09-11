@@ -138,6 +138,7 @@ Click the \`Login\` button.
 
 ## Check the flash message
 Where: %DOMAIN%/secure
+Via: the Login button lands you here
 Kind: quick
 \`\`\`js
 const flash = document.querySelector("#flash");

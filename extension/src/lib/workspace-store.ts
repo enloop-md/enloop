@@ -29,15 +29,20 @@ import {
   type AgentPresence,
   type AgentQuestion,
   type CapturedEntry,
+  type CaseContext,
   type CompatResult,
   type DataStore,
   type EnvironmentsFile,
   type FreeRun,
   type FreeRunFile,
   type Run,
+  type RunScreenshot,
   type RunStatus,
   type RunSummary,
   type RunTier,
+  type ScreenshotInput,
+  type ScreenshotPatch,
+  type ScreenshotVariant,
   type StepPatch,
   type SuiteSummary,
   type TestCaseMeta,
@@ -186,6 +191,11 @@ export class WorkspaceStore implements DataStore {
   async getTestCase(id: string): Promise<TestCaseMeta> {
     const { store, storageId, localId } = this.route(id);
     return this.tagMeta(storageId, await store.getTestCase(localId));
+  }
+
+  async getCaseContext(id: string): Promise<CaseContext | null> {
+    const { store, localId } = this.route(id);
+    return store.getCaseContext(localId);
   }
 
   async listVersions(id: string): Promise<VersionSummary[]> {
@@ -385,9 +395,39 @@ export class WorkspaceStore implements DataStore {
     return store.appendConsole(localId, splitId(runId).localId, entries);
   }
 
+  async readRunConsole(testCaseId: string, runId: string): Promise<CapturedEntry[]> {
+    const { store, localId } = this.route(testCaseId);
+    return store.readRunConsole(localId, splitId(runId).localId);
+  }
+
   async finishRun(testCaseId: string, runId: string, status: RunStatus): Promise<Run> {
     const { store, storageId, localId } = this.route(testCaseId);
     return this.tagRun(storageId, await store.finishRun(localId, splitId(runId).localId, status));
+  }
+
+  async addScreenshot(
+    testCaseId: string,
+    runId: string,
+    input: ScreenshotInput,
+  ): Promise<{ run: Run; screenshot: RunScreenshot }> {
+    const { store, storageId, localId } = this.route(testCaseId);
+    const result = await store.addScreenshot(localId, splitId(runId).localId, input);
+    return { run: this.tagRun(storageId, result.run), screenshot: result.screenshot };
+  }
+
+  async updateScreenshot(testCaseId: string, runId: string, id: string, patch: ScreenshotPatch): Promise<Run> {
+    const { store, storageId, localId } = this.route(testCaseId);
+    return this.tagRun(storageId, await store.updateScreenshot(localId, splitId(runId).localId, id, patch));
+  }
+
+  async removeScreenshot(testCaseId: string, runId: string, id: string): Promise<Run> {
+    const { store, storageId, localId } = this.route(testCaseId);
+    return this.tagRun(storageId, await store.removeScreenshot(localId, splitId(runId).localId, id));
+  }
+
+  async readScreenshot(testCaseId: string, runId: string, id: string, which: ScreenshotVariant): Promise<Uint8Array> {
+    const { store, localId } = this.route(testCaseId);
+    return store.readScreenshot(localId, splitId(runId).localId, id, which);
   }
 
   // ---- AgentChannelStore ----
@@ -510,5 +550,29 @@ export class WorkspaceStore implements DataStore {
   async finishFreeRun(id: string): Promise<FreeRun> {
     const { store, storageId, localId } = this.route(id);
     return this.tagFreeRun(storageId, await store.finishFreeRun(localId));
+  }
+
+  async addFreeRunScreenshot(
+    id: string,
+    input: ScreenshotInput,
+  ): Promise<{ freeRun: FreeRun; screenshot: RunScreenshot }> {
+    const { store, storageId, localId } = this.route(id);
+    const result = await store.addFreeRunScreenshot(localId, input);
+    return { freeRun: this.tagFreeRun(storageId, result.freeRun), screenshot: result.screenshot };
+  }
+
+  async updateFreeRunScreenshot(id: string, shotId: string, patch: ScreenshotPatch): Promise<FreeRun> {
+    const { store, storageId, localId } = this.route(id);
+    return this.tagFreeRun(storageId, await store.updateFreeRunScreenshot(localId, shotId, patch));
+  }
+
+  async removeFreeRunScreenshot(id: string, shotId: string): Promise<FreeRun> {
+    const { store, storageId, localId } = this.route(id);
+    return this.tagFreeRun(storageId, await store.removeFreeRunScreenshot(localId, shotId));
+  }
+
+  async readFreeRunScreenshot(id: string, shotId: string, which: ScreenshotVariant): Promise<Uint8Array> {
+    const { store, localId } = this.route(id);
+    return store.readFreeRunScreenshot(localId, shotId, which);
   }
 }

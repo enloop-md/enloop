@@ -16,9 +16,13 @@ the extension. It owns this layout:
 
 ```
 <data folder>/
+├── project.json    what the folder is called: { "name": "<project>" }
 ├── test-cases/     one directory per case: <caseId>/meta.json + versions/v<n>.md
 ├── runs/           <caseId>/<runId>/{case.md, run.json, report.md, feedback.md}
-└── free-runs/      <freeRunId>/{free-run.json, notes.md, feedback.md}
+│                   + screenshots/<NN>.source.png and <NN>.png — git-ignored, like the run
+├── free-runs/      <freeRunId>/{free-run.json, notes.md, feedback.md} + screenshots/
+└── guides/         <slug>/README.md + images/, or index.html — what export-guide
+                    writes from a finished run; the deliverable, committed
 ```
 
 Cases go in `<data folder>/test-cases/<caseId>/`, **never** directly in the
@@ -53,6 +57,27 @@ of the layout the path names, and prints one of three verdicts:
 State the folder you resolved and how you got there, in one line, before you
 write anything. It is the cheapest possible correction point.
 
+## Name the folder
+
+Chrome hands the extension a folder's name and never its path, and the layout
+this recommends puts an `enloop.md/` in every repo — so a tester with four
+projects connected sees four identical rows, in the storage picker and in the
+reconnect list after every Chrome restart. `project.json` at the data folder
+root is the fix, and `data-folder` prints a `name` line whenever the folder it
+resolved has none:
+
+```json
+{ "name": "Acme Shop" }
+```
+
+Write it when you create a data folder, and when the command says it is
+missing — the project name is the one the cases carry in `@project`. Commit
+it: it is the folder's name for everyone who clones the repo. The extension
+infers and records one on its own when it can (a folder whose cases agree on
+one `@project`), so the file being absent is not a failure — just a row in
+somebody's panel that says less than it could. A folder deliberately holding
+several projects' cases is better left unnamed.
+
 ## Asking well
 
 When you ask, ask once and make the answer cheap:
@@ -60,7 +85,7 @@ When you ask, ask once and make the answer cheap:
 - **Offer the candidates the command found**, each with its absolute path and
   how many cases it already holds — a folder with 40 cases in it is
   recognisable in a way a path is not.
-- **Offer to create an in-repo folder** when the repo has none: `<repo>/enloop/`,
+- **Offer to create an in-repo folder** when the repo has none: `<repo>/enloop.md/`,
   which the extension can connect as a storage of its own and which keeps cases
   with the code. Say that the extension writes a `.gitignore` there so runs stay
   local.

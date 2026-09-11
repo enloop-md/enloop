@@ -21,7 +21,9 @@ import {
   RATING_MAX,
   RATING_WORDS,
   ratingStars,
+  type PhotoSpec,
   type Run,
+  type RunScreenshot,
   type RunStep,
   type RunStepStatus,
 } from "@tcm/shared";
@@ -39,9 +41,34 @@ import { looksNavigable, whereAddress } from "../../lib/navigate.js";
 import { NavigateButton } from "../../components/NavigateButton.js";
 import { runCaptureKey } from "../../lib/capture.js";
 import { downloadTextFile, fileSlug } from "../../lib/download.js";
+import { canDownloadGuide, downloadRunGuide } from "../../lib/guide-download.js";
+import { takePhoto, takePlainScreenshot, type TakenPhoto } from "../../lib/photo-runner.js";
+import { GESTURE_HINT } from "../../lib/page-capture.js";
+import { useGestureScreenshot } from "../../lib/use-gesture-screenshot.js";
+import { editScreenshot, EditorTooLargeError, screenshotApi, type ScreenshotOwner } from "../../lib/screenshot-store.js";
 import { useCaptureRecorder } from "../useCapture.js";
 import { commandPending, useAgentChannel, type AskDraft } from "../useAgentChannel.js";
 import { CommandList, StepQuestions } from "./RunAgentChannel.js";
+import { FixPrompt } from "./RunFixPrompt.js";
+import {
+  PhotoConfirmSheet,
+  PhotoToast,
+  RunScreenshots,
+  type PhotoDecision,
+  type SpecNotices,
+} from "./RunScreenshots.js";
+
+/** A `Mode: confirm` photo waiting for the tester's word. */
+interface PendingConfirm {
+  stepId: string;
+  slot: number;
+  spec: PhotoSpec;
+  photo: TakenPhoto;
+  onDecide: (decision: PhotoDecision) => void;
+}
+
+/** How long the auto-photo toast stays. */
+const TOAST_MS = 2000;
 
 export function RunScreen({
   testCaseId,
@@ -71,6 +98,31 @@ export function RunScreen({
   // returns a fresh Run, and syncing on that would fight the cursor of
   // someone still typing.
   const commentSeeded = useRef(false);
+  // The run as of the last store answer, readable from inside the runner's
+  // serial photo loop — which spans several awaits and cannot trust the
+  // `run` its closure captured at the first one.
+  const runRef = useRef<Run | null>(null);
+  // Slots the runner has already fired for, as `${stepId}:${slot}`. A
+  // discarded or failed photo stays fired: re-opening the step must not
+  // take it again (G5); Retake inside the sheet is the one way to a second
+  // capture.
+  const firedSlots = useRef(new Set<string>());
+  const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  // What the runner could not do, per `${stepId}:${slot}` — shown on the
+  // spec row, never thrown: the verdict lands either way.
+  const [specNotices, setSpecNotices] = useState<Record<string, string>>({});
+  const [guideWarnings, setGuideWarnings] = useState<string[] | null>(null);
+  const [headerBusy, setHeaderBusy] = useState(false);
+
+  const owner: ScreenshotOwner = { kind: "run", testCaseId, runId };
+
+  /** Every path that gets a new run from the store goes through here, so
+   * the ref the photo loop reads is never behind the screen. */
+  function applyRun(next: Run) {
+    runRef.current = next;
+    setRun(next);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -78,7 +130,7 @@ export function RunScreen({
       .getRun(testCaseId, runId)
       .then(async (loaded) => {
         if (cancelled) return;
-        setRun(loaded);
+        applyRun(loaded);
         if (!commentSeeded.current) {
           commentSeeded.current = true;
           setCommentDraft(loaded.comment);
@@ -86,7 +138,7 @@ export function RunScreen({
         if (loaded.status === "in_progress" && !autoStarted.current) {
           autoStarted.current = true;
           const chained = await chainAutomatedFrom(store, loaded, null);
-          if (!cancelled) setRun(chained);
+          if (!cancelled) applyRun(chained);
         }
       })
       .catch((e) => !cancelled && setError(e));
@@ -162,12 +214,169 @@ export function RunScreen({
     return () => clearTimeout(timer);
   }, [commentDraft, run, readOnly]);
 
+  function showToast(text: string) {
+    setToast(text);
+    setTimeout(() => setToast((t) => (t === text ? null : t)), TOAST_MS);
+  }
+
+  /**
+   * The runner's photos for one step at one moment (`before` when the step
+   * opens, `after` when it is marked). Serial, in spec order, so two
+   * confirm sheets never fight and the page is not captured twice at once.
+   * Every failure becomes a notice on the spec row; nothing here throws,
+   * because the verdict waiting behind an `after` photo must land whatever
+   * happened to the picture.
+   */
+  async function takeSlotPhotos(stepId: string, moment: "before" | "after") {
+    const api = screenshotApi(store, owner);
+    for (let i = 0; ; i++) {
+      const current = runRef.current;
+      if (!current || current.status !== "in_progress") return;
+      const step = current.steps.find((s) => s.stepId === stepId);
+      if (!step || i >= step.photos.length) return;
+      const spec = step.photos[i];
+      const slot = i + 1;
+      const key = `${stepId}:${slot}`;
+      if (spec.take !== moment || firedSlots.current.has(key)) continue;
+      if (current.screenshots.some((s) => s.stepId === stepId && s.slot === slot)) continue;
+      firedSlots.current.add(key);
+
+      const fail = (why: string) =>
+        setSpecNotices((n) => ({ ...n, [key]: `Photo ${slot} not taken: ${why}` }));
+      try {
+        let result = await takePhoto(spec, step.selectors);
+        while (true) {
+          if (!result.ok) {
+            fail(result.error);
+            break;
+          }
+          const photo = result.photo;
+          const decision: PhotoDecision =
+            spec.mode === "auto"
+              ? "keep"
+              : await new Promise<PhotoDecision>((onDecide) =>
+                  setConfirm({ stepId, slot, spec, photo, onDecide }),
+                );
+          setConfirm(null);
+          if (decision === "retake") {
+            result = await takePhoto(spec, step.selectors);
+            continue;
+          }
+          if (decision === "discard") break;
+          const { next, screenshot } = await api.add({
+            stepId,
+            slot,
+            pageUrl: photo.pageUrl,
+            width: photo.width,
+            height: photo.height,
+            sourcePng: photo.sourcePng,
+            ops: photo.ops,
+            renderedPng: photo.ops.length > 0 ? photo.renderedPng : null,
+            missing: photo.missing,
+            caption: "",
+          });
+          applyRun(next as Run);
+          setSpecNotices((n) => {
+            const { [key]: _gone, ...rest } = n;
+            return rest;
+          });
+          if (spec.mode === "auto") showToast(`Photo ${slot} taken`);
+          if (decision === "edit") {
+            try {
+              const edited = await editScreenshot(
+                api,
+                screenshot,
+                editorTitleFor(current, step),
+                photo.ops,
+                photo.sourcePng,
+              );
+              if (edited) applyRun(edited as Run);
+            } catch (e) {
+              if (e instanceof EditorTooLargeError) fail("too large to edit (the photo is kept)");
+              else setError(e);
+            }
+          }
+          break;
+        }
+      } catch (e) {
+        fail(e instanceof Error ? e.message : String(e));
+      }
+    }
+  }
+
+  /** A hand-taken capture, attached to the step the tester is on, or to
+   * the run when there is no current step. */
+  async function attachPlainPhoto(photo: TakenPhoto) {
+    const current = runRef.current;
+    if (!current || current.status !== "in_progress") return;
+    const step = current.steps.find((s) => s.status === "pending" || s.status === "running");
+    const { run: next } = await store.addScreenshot(testCaseId, runId, {
+      stepId: step?.stepId ?? null,
+      slot: null,
+      pageUrl: photo.pageUrl,
+      width: photo.width,
+      height: photo.height,
+      sourcePng: photo.sourcePng,
+      ops: [],
+      renderedPng: null,
+      missing: [],
+      caption: "",
+    });
+    applyRun(next);
+  }
+
+  // The shortcut and the context-menu item: the worker captures on the
+  // gesture and hands the bytes here.
+  useGestureScreenshot(
+    readOnly ? null : (photo) => attachPlainPhoto(photo).catch(setError),
+    (message) => setError(new Error(`Cannot capture: ${message}`)),
+  );
+
+  /** The header camera: the page as it is. */
+  async function captureFromHeader() {
+    const current = runRef.current;
+    if (!current || readOnly) return;
+    setHeaderBusy(true);
+    setError(null);
+    try {
+      const access = await getPageAccess();
+      if (access.status !== "ready") {
+        setError(new Error(`Cannot capture: ${pageAccessWords(access)}`));
+        return;
+      }
+      const result = await takePlainScreenshot();
+      if (!result.ok) {
+        setError(new Error(result.needsGesture ? GESTURE_HINT : `Cannot capture: ${result.error}`));
+        return;
+      }
+      await attachPlainPhoto(result.photo);
+    } catch (e) {
+      setError(e);
+    } finally {
+      setHeaderBusy(false);
+    }
+  }
+
+  async function downloadGuide() {
+    if (!run) return;
+    setError(null);
+    try {
+      setGuideWarnings(await downloadRunGuide(store, run));
+    } catch (e) {
+      setError(e);
+    }
+  }
+
   async function handleMark(step: RunStep, status: "success" | "failed" | "warning" | "skipped") {
     if (!run) return;
     setBusyStepId(step.stepId);
     setError(null);
     try {
-      setRun(await markManualStep(store, run, step.stepId, status));
+      // The picture of the result comes before the verdict is written: an
+      // `after` photo is the state the tester is judging, and marking the
+      // step advances the run past it. A skip has no result to picture.
+      if (status !== "skipped") await takeSlotPhotos(step.stepId, "after");
+      applyRun(await markManualStep(store, runRef.current ?? run, step.stepId, status));
       // A verdict closes the step. It is decided, the panel is narrow, and
       // leaving it open pushes the step the tester is moving on to off the
       // bottom of the screen. What they wrote about it survives in the
@@ -189,9 +398,11 @@ export function RunScreen({
     setBusyStepId(step.stepId);
     setError(null);
     try {
-      const ran = await runAutomatedStep(store, run, step.stepId);
-      const chained = await chainAutomatedFrom(store, ran, step.stepId);
-      setRun(chained);
+      applyRun(await runAutomatedStep(store, run, step.stepId));
+      // The script's result is on the page now; the chain moves on only
+      // once it has been pictured.
+      await takeSlotPhotos(step.stepId, "after");
+      applyRun(await chainAutomatedFrom(store, runRef.current ?? run, step.stepId));
     } catch (e) {
       setError(e);
     } finally {
@@ -203,7 +414,7 @@ export function RunScreen({
     if (!run) return;
     try {
       const updated = await store.updateStep(run.testCaseId, run.id, step.stepId, patch);
-      setRun(updated);
+      applyRun(updated);
     } catch (e) {
       setError(e);
     }
@@ -212,7 +423,7 @@ export function RunScreen({
   async function saveComment(text: string) {
     if (!run || text === run.comment) return;
     try {
-      setRun(await store.updateRun(run.testCaseId, run.id, { comment: text }));
+      applyRun(await store.updateRun(run.testCaseId, run.id, { comment: text }));
     } catch (e) {
       setError(e);
     }
@@ -221,7 +432,7 @@ export function RunScreen({
   async function saveRating(rating: number | null) {
     if (!run || rating === run.rating) return;
     try {
-      setRun(await store.updateRun(run.testCaseId, run.id, { rating }));
+      applyRun(await store.updateRun(run.testCaseId, run.id, { rating }));
     } catch (e) {
       setError(e);
     }
@@ -279,7 +490,7 @@ export function RunScreen({
         consoleInReport,
       });
       const updated = await store.finishRun(run.testCaseId, run.id, status);
-      setRun(updated);
+      applyRun(updated);
     } catch (e) {
       setError(e);
     }
@@ -304,6 +515,16 @@ export function RunScreen({
   const allExpanded = run.steps.every((s) => expandedIds.has(s.stepId));
   const currentIndex = run.steps.findIndex((s) => s.stepId === currentStepId);
   const numberLabels = stepNumberLabels(run.steps);
+  const moveTargets = run.steps.map((s, i) => ({ stepId: s.stepId, label: `#${numberLabels[i]} ${s.title}` }));
+  const guide = run.kind === "guide";
+  const specNoticesFor = (stepId: string): SpecNotices => {
+    const out: SpecNotices = {};
+    for (const [key, text] of Object.entries(specNotices)) {
+      const [id, slot] = [key.slice(0, key.lastIndexOf(":")), Number(key.slice(key.lastIndexOf(":") + 1))];
+      if (id === stepId) out[slot] = text;
+    }
+    return out;
+  };
   // Must mirror renderRunFeedback's own test, including the run-level
   // comment — a banner promising a feedback.md that was never written is
   // worse than no banner.
@@ -322,7 +543,7 @@ export function RunScreen({
     );
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
       <Header
         title={run.testCaseTitle}
         onBack={onBack}
@@ -330,14 +551,27 @@ export function RunScreen({
         actions={<RunStatusBadge status={run.status} />}
       />
       {/* The goal stays above whatever step is current, for the whole run:
-          nobody should wonder what the click they are about to make is for. */}
-      {run.goal.trim() && (
-        <p
-          className="border-b border-emerald-100 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-900"
-          title="What this case proves"
-        >
-          {run.goal}
-        </p>
+          nobody should wonder what the click they are about to make is for.
+          The camera beside it is the one-click capture that needs no step
+          open: it lands on the step the tester is on, or on the run. */}
+      {(run.goal.trim() || !readOnly) && (
+        <div className="flex items-start gap-2 border-b border-emerald-100 bg-emerald-50 px-3 py-1.5">
+          <p className="flex-1 text-sm font-medium text-emerald-900" title="What this case proves">
+            {run.goal}
+          </p>
+          {!readOnly && (
+            <button
+              type="button"
+              onClick={() => void captureFromHeader()}
+              disabled={headerBusy}
+              className="shrink-0 rounded border border-emerald-200 bg-white px-1.5 py-0.5 text-sm leading-none hover:bg-emerald-100 disabled:opacity-50"
+              title={currentStepId ? "Screenshot for the current step" : "Screenshot for the run"}
+              aria-label="Take a screenshot"
+            >
+              📷
+            </button>
+          )}
+        </div>
       )}
       <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2 text-xs text-slate-500">
         {run.tier === "quick" && (
@@ -403,6 +637,22 @@ export function RunScreen({
         {(run.youWill.trim() || run.youWillNeed.length > 0) && (
           <WhatToExpect youWill={run.youWill} youWillNeed={run.youWillNeed} locations={run.locations} />
         )}
+        {/* Screenshots of the run as a whole — the landing page, the state
+            before step 1 — and the home of anything moved off a step. */}
+        {(!readOnly || run.screenshots.some((s) => s.stepId === null)) && (
+          <div className="border-b border-slate-200 px-3 py-2">
+            <RunScreenshots
+            owner={owner}
+            step={null}
+            screenshots={run.screenshots.filter((s) => s.stepId === null)}
+            readOnly={readOnly}
+            onChanged={(next) => applyRun(next as Run)}
+            moveTargets={moveTargets}
+            editorTitle={`${run.testCaseTitle} — run`}
+            compact
+          />
+          </div>
+        )}
         <BeforeYouStart
           dependencies={run.dependencies}
           prerequisites={run.prerequisites}
@@ -455,12 +705,19 @@ export function RunScreen({
               onDraftChange={(draft) =>
                 pendingDrafts.current.set(step.stepId, draft)
               }
+              onBeforePhotos={() => takeSlotPhotos(step.stepId, "before")}
+              owner={owner}
+              screenshots={run.screenshots.filter((s) => s.stepId === step.stepId)}
+              specNotices={specNoticesFor(step.stepId)}
+              moveTargets={moveTargets}
+              editorTitle={editorTitleFor(run, step, numberLabels[index])}
+              onScreenshotsChanged={(next) => applyRun(next as Run)}
               run={run}
               questions={agent.questions}
               commands={agent.commands.filter((c) => c.stepId === step.stepId)}
               watcher={agent.watcher}
               onAsk={agent.ask}
-              onSwapped={setRun}
+              onSwapped={applyRun}
               onRunCommand={(command, field) =>
                 void handleRunCommand(command, step.stepId, field)
               }
@@ -571,8 +828,68 @@ export function RunScreen({
             )}
           </div>
         )}
+
+      {/* A run with pictures is a guide waiting to be read; a guide's run
+          is one even without them. One self-contained HTML file, every
+          screenshot inlined, so it can be mailed as it is. */}
+      {readOnly && canDownloadGuide(run) && (
+        <div className="space-y-1 border-t border-slate-200 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void downloadGuide()}
+              className="rounded bg-sky-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-sky-500"
+              title="This run as a user guide: one HTML page with the screenshots inlined"
+            >
+              ⬇ Download guide
+            </button>
+            <span className="text-[11px] text-slate-400">
+              {run.screenshots.length} screenshot{run.screenshots.length === 1 ? "" : "s"}
+              {guide ? " · guide" : ""}
+            </span>
+          </div>
+          {guideWarnings && guideWarnings.length > 0 && (
+            <p className="text-[11px] text-amber-700" title={guideWarnings.join("\n")}>
+              {guideWarnings.length === 1
+                ? guideWarnings[0]
+                : `${guideWarnings.length} placeholders had no screenshot and were dropped`}
+            </p>
+          )}
+        </div>
+      )}
+
+      {confirm && (
+        <PhotoConfirmSheet
+          slot={confirm.slot}
+          spec={confirm.spec}
+          photo={confirm.photo}
+          onDecide={confirm.onDecide}
+        />
+      )}
+      <PhotoToast text={toast} />
     </div>
   );
+}
+
+/** Names the editor tab after where the screenshot belongs. */
+function editorTitleFor(run: Run, step: RunStep, label?: string): string {
+  const index = run.steps.findIndex((s) => s.stepId === step.stepId);
+  const number = label ?? stepNumberLabels(run.steps)[index] ?? "";
+  return `${run.testCaseTitle} — step ${number}: ${step.title}`;
+}
+
+/** The access states as one clause, for an error the header camera shows. */
+function pageAccessWords(access: PageAccess): string {
+  switch (access.status) {
+    case "no-tab":
+      return "no page open to capture";
+    case "needs-grant":
+      return `Enloop has no access to ${access.host} yet — open the step's Highlight or Screenshot to grant it`;
+    case "restricted":
+      return access.reason;
+    default:
+      return "";
+  }
 }
 
 /**
@@ -1195,15 +1512,7 @@ function StepComments({
             placeholder="What did you see?"
             className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
           />
-          {/* Who a comment is for is the check skill's question, not the
-              tester's: a comment with nobody ticked is stored as context and
-              routed at triage. The audience row stays for the tester who
-              knows — under a disclosure, closed by default. */}
-          <details className="group">
-            <summary className="cursor-pointer select-none text-[10px] text-slate-400 hover:text-slate-600">
-              Address it to someone (optional)
-            </summary>
-          <div className="space-y-0.5 pt-1">
+          <div className="space-y-0.5">
             <div className="flex items-center justify-between text-[10px] text-slate-400">
               <span>This comment is for:</span>
               <button
@@ -1263,7 +1572,6 @@ function StepComments({
               </p>
             )}
           </div>
-          </details>
           {/* Pale while the box is empty, filled the moment it is not: the
               button's colour is the one cue that something is waiting to be
               added, on a panel where the box itself looks the same either
@@ -1313,6 +1621,13 @@ function StepRow({
   onRunAutomated,
   onUpdateFields,
   onDraftChange,
+  onBeforePhotos,
+  owner,
+  screenshots,
+  specNotices,
+  moveTargets,
+  editorTitle,
+  onScreenshotsChanged,
   run,
   questions,
   commands,
@@ -1336,11 +1651,21 @@ function StepRow({
   onRunAutomated: () => void;
   onUpdateFields: (patch: Partial<RunStep>) => void;
   onDraftChange: (draft: RunCommentDraft | null) => void;
+  /** The runner's `Take: before` photos, fired once the step is open and
+   * its Highlight has settled. */
+  onBeforePhotos: () => Promise<void>;
+  owner: ScreenshotOwner;
+  /** This step's screenshots only. */
+  screenshots: RunScreenshot[];
+  specNotices: SpecNotices;
+  moveTargets: Array<{ stepId: string; label: string }>;
+  editorTitle: string;
+  onScreenshotsChanged: (next: Run) => void;
   run: Run;
   questions: AgentQuestion[];
   commands: AgentCommand[];
   watcher: AgentPresence | null;
-  onAsk: (draft: AskDraft) => Promise<void>;
+  onAsk: (draft: AskDraft) => Promise<AgentQuestion>;
   onSwapped: (run: Run) => void;
   onRunCommand: (command: string, field: "instructions" | "note") => void;
   onKillCommand: (commandId: string) => Promise<void>;
@@ -1370,6 +1695,12 @@ function StepRow({
       : whereStatus === "match"
         ? "Matches this case's @locations"
         : undefined;
+  // What the `%PHOTO_n%` chips in the prose say: green once the slot has a
+  // screenshot, amber until then.
+  const photoSlots = {
+    filled: screenshots.filter((s) => s.slot !== null).map((s) => s.slot as number),
+    captions: step.photos.map((p) => p.caption),
+  };
 
   async function highlight() {
     if (step.selectors.length === 0) return;
@@ -1407,8 +1738,16 @@ function StepRow({
   // one. Gated on `isCurrent` and not on `expanded` alone: since steps open
   // independently, "Open all" would otherwise fire one highlight per step
   // into the same tab, and they would fight over the same overlay.
+  // The `before` photos follow the highlight, in that order: the highlight
+  // scrolls the subject into view, and the photo wants it there. The
+  // run screen guards against a slot firing twice, so a step opened,
+  // closed and opened again does not take a second picture.
   useEffect(() => {
-    if (expanded && isCurrent && step.selectors.length > 0) void highlight();
+    if (!expanded || !isCurrent) return;
+    void (async () => {
+      if (step.selectors.length > 0) await highlight();
+      await onBeforePhotos();
+    })();
   }, [expanded, isCurrent, selectorKey]);
 
   // Keep the step being worked on in view as the run advances past the fold.
@@ -1523,6 +1862,16 @@ function StepRow({
                 )}
               </div>
             )}
+            {/* The UI path to the page, beside the address: the link may be for
+                another deployment or incomplete, and this is how a person gets
+                there anyway. "link only" is the explicit answer that there is
+                no menu to look for. */}
+            {step.via && (
+              <div className="flex flex-wrap items-baseline gap-1.5 text-xs">
+                <span className="font-medium text-slate-500">Via:</span>
+                <span className="text-slate-600">{step.via}</span>
+              </div>
+            )}
             {step.selectors.length > 0 && (
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
@@ -1569,6 +1918,7 @@ function StepRow({
                 text={step.instructions}
                 insertValues
                 locations={run.locations}
+                photoSlots={photoSlots}
                 className="text-sm text-slate-600"
                 onRunCommand={
                   !readOnly && step.type === "manual"
@@ -1584,11 +1934,14 @@ function StepRow({
             )}
             {step.expected && (
               <div className="text-xs text-slate-500">
-                <span className="font-medium text-slate-600">Expected:</span>
+                <span className="font-medium text-slate-600">
+                  {run.kind === "guide" ? "You should see:" : "Expected:"}
+                </span>
                 <Markdown
                   text={step.expected}
                   insertValues
                   locations={run.locations}
+                  photoSlots={photoSlots}
                   className="text-xs text-slate-500"
                 />
               </div>
@@ -1607,6 +1960,21 @@ function StepRow({
                 />
               </div>
             )}
+
+            {/* The pictures of this step: what the case asked for, what was
+                taken by hand. After the prose they illustrate and before the
+                questions and comments about it. */}
+            <RunScreenshots
+              owner={owner}
+              step={step}
+              screenshots={screenshots}
+              readOnly={readOnly}
+              onChanged={(next) => onScreenshotsChanged(next as Run)}
+              matchedSelector={matchedSelector}
+              moveTargets={moveTargets}
+              editorTitle={editorTitle}
+              specNotices={specNotices}
+            />
 
             <CommandList
               commands={commands}
@@ -1666,6 +2034,14 @@ function StepRow({
               onSwapped={onSwapped}
             />
 
+            {/* Offered on the step being worked on and on any decided step,
+                finished runs included: a run that failed yesterday is
+                exactly the one someone hands to an agent today. Not on a
+                step three ahead — nothing has been found there yet. */}
+            {(isCurrent || step.status !== "pending") && (
+              <FixPrompt run={run} step={step} questions={questions} />
+            )}
+
             <StepComments
               step={step}
               hasPreviousStep={run.steps[0]?.stepId !== step.stepId}
@@ -1692,7 +2068,7 @@ function StepRow({
                 <div className="flex gap-2">
                   <VerdictButton
                     verdict="success"
-                    label="Pass"
+                    label={run.kind === "guide" ? "Done" : "Pass"}
                     status={step.status}
                     disabled={busy}
                     onMark={onMark}
@@ -1706,7 +2082,7 @@ function StepRow({
                   />
                   <VerdictButton
                     verdict="failed"
-                    label="Fail"
+                    label={run.kind === "guide" ? "Could not" : "Fail"}
                     status={step.status}
                     disabled={busy}
                     onMark={onMark}

@@ -42,6 +42,22 @@ export default defineManifest({
   // Chrome shows and a lot to ask before the tester has seen the panel do
   // anything. Requested per origin instead, at the moment a step first needs
   // it — see lib/page-access.ts.
-  permissions: ["sidePanel", "scripting", "tabs", "storage"],
+  // `activeTab` and `contextMenus` carry no install warning either.
+  // `captureVisibleTab` does not accept a per-origin grant — only
+  // `activeTab` or all-sites access — and all-sites is exactly the prompt
+  // this permission set exists to avoid. So screenshots ride on gestures
+  // that grant `activeTab` to the tab they happen on: the keyboard
+  // shortcut below or the page's context-menu item (the toolbar icon
+  // would too, but it toggles the panel closed). Once a tab has been
+  // invoked that way it stays
+  // photographable until it navigates to another origin, the runner's own
+  // photos included (see lib/page-capture.ts).
+  permissions: ["sidePanel", "scripting", "tabs", "storage", "activeTab", "contextMenus"],
+  commands: {
+    "take-screenshot": {
+      suggested_key: { default: "Alt+Shift+S" },
+      description: "Take a screenshot of this tab for the open Enloop run",
+    },
+  },
   optional_host_permissions: ["<all_urls>"],
 });

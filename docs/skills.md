@@ -19,6 +19,8 @@ To install and invoke them:
 | check | the app repo | fixes, and a verdict per failure | `/enloop:check` | `$check` |
 | instrument | the app repo | `data-testid` attributes | `/enloop:instrument` | `$instrument` |
 | serve | the app repo, one manual pass | answers to mid-run questions, patch versions, command output | `/enloop:serve` | `$serve` |
+| guide | the app repo | a `@kind guide` case in end-user prose, with photo specs the runner takes | `/enloop:guide` | `$guide` |
+| export-guide | the app repo, after a run | `guides/<slug>/README.md` + images, or one `index.html` | `/enloop:export-guide` | `$export-guide` |
 
 There is also `enloop-demo`, which lives in this repo's `.claude/skills/`
 and produces demo cases exercising the grammar itself. It is intentionally
@@ -28,7 +30,7 @@ Copying it into another project gives you a skill whose every path is wrong.
 
 ## Which model to run them on
 
-The authoring skills — **quick** and **full** — read a codebase and follow a
+The authoring skills — **quick**, **full** and **guide** — read a codebase and follow a
 multi-file procedure, and they assume a **Sonnet-class model or better**. On
 a smaller model, expect the deterministic guards to hold the shape (the
 guard hook and the `write` command refuse anything that does not parse, and
@@ -66,7 +68,7 @@ resolve **per repo**, in this order:
    which is how one case goes somewhere other than the usual place without
    reconfiguring anything.
 2. **`$ENLOOP_DATA_DIR`**, when nothing in the repo contradicts it.
-3. **A data folder inside the repo** — `enloop/`, `test-cases/` or `.enloop/`
+3. **A data folder inside the repo** — `enloop.md/` (also `enloop/`, `test-cases/` or `.enloop/`)
    at the root. Nothing to configure, cases are committed with the code they
    test, and it arrives with a clone. Prefer this when it fits.
 4. **Otherwise they ask**, naming the candidates and how many cases each
@@ -186,6 +188,63 @@ What it does, in order:
    defends every value the case will ask for. Zero questions is the norm.
 
 Then open the extension, find the case in the Library, and run it.
+
+## Writing a guide
+
+A guide is a case whose reader is the end user — the same grammar, panel and
+run, but the prose says how to *use* the feature, and each step that
+changes the screen says what to photograph. The **guide** skill writes one
+from the app's source, from inside its repo:
+
+```
+/enloop:guide place an order    # Claude Code
+$guide place an order           # Codex
+```
+
+It follows the same procedure as **quick** and **full** — resolve the
+folder, read the rules and the grammar, derive every route, label and
+selector from source, validate with the real parser, land with `write` —
+in a third column of the [authoring table](../plugins/enloop/references/authoring.md):
+the happy path plus every screen the reader passes, no app map, no quick
+marks, and a `### Photo` block on every step that changes what is on
+screen. Two rule lists in the skill itself keep the prose honest: second
+person and present tense, one action per step, `### Expected` in the words
+on screen (it exports as *You should see*), no internal names, no "verify"
+or "check that"; and for the photos, crop to the smallest container that
+still shows where the reader is, `Callout:` each control the text mentions
+in the order it mentions them, `Blur:` anything personal the sandbox will
+show, at most three marks per picture. The case carries `@kind guide`, so
+the panel says **Done / Could not** and the linter drops its quick-mark
+warnings.
+
+Then run it in the extension: the runner takes the photos at the moments
+the specs name — confirm, retake or edit each — and the finished run is the
+guide. Details of the capture, the editor and the file layout are in
+[screenshots and guides](guides.md).
+
+## Exporting a guide
+
+A finished run with screenshots — of a guide or of any case — and a
+finished free run with screenshots can be exported as a document:
+
+```
+/enloop:export-guide              # Claude Code — newest candidate, Markdown
+/enloop:export-guide html         # one self-contained index.html
+$export-guide both                # Codex
+```
+
+The skill resolves the data folder, lists the candidates with
+`enloop-case.mjs list-guides` (one → takes it; several → one closed
+question with title, date and screenshot count), and runs
+`enloop-case.mjs export-guide`, which writes `<data folder>/guides/<slug>/`
+— `README.md` with `images/`, `index.html` with every picture inlined, or
+both — and refuses a non-empty folder until you agree to `--force`. Every
+`WARN` the renderer prints (a `%PHOTO_n%` whose photo was never kept) is
+repeated to you. Then it reads the produced file once and fixes what leaked
+through from the tester's voice — "verify", "check that", a component name
+— **in the exported file only**. The case is what it was when it ran; the
+export never edits it. The panel's **⬇ Download guide** button produces the
+HTML form of the same document without any agent.
 
 ## Checking a run
 

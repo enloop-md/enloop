@@ -4,6 +4,7 @@ import { HighlightLink } from "./HighlightLink.js";
 import { ValueChip } from "./ValueChip.js";
 import { looksLikeSelector, matchesLocations, selectorFromHref } from "@tcm/shared";
 import { rehypeQuotedValues } from "../lib/quoted-values.js";
+import { rehypePhotoChips } from "../lib/photo-chips.js";
 
 /**
  * Renders test-case content (description, instructions, expected, notes) as
@@ -45,6 +46,12 @@ import { rehypeQuotedValues } from "../lib/quoted-values.js";
  * folder, since a side panel cannot spawn processes. Inline code only, by
  * design: a fenced block inside a step is what makes the step automated,
  * and its fence is a *browser* script, never shell.
+ *
+ * `%PHOTO_n%` — where the step's n-th `### Photo` lands on export — always
+ * renders as a small chip rather than as text. With `photoSlots` (the run
+ * screen) the chip also says whether the picture exists yet: green once
+ * the slot is filled, amber while it is not; anywhere else it is plain
+ * grey, a marker and nothing more.
  */
 export function Markdown({
   text,
@@ -53,6 +60,7 @@ export function Markdown({
   insertValues = false,
   onRunCommand,
   locations,
+  photoSlots,
 }: {
   text: string;
   className?: string;
@@ -60,14 +68,19 @@ export function Markdown({
   insertValues?: boolean;
   onRunCommand?: (command: string) => void;
   locations?: string[];
+  /** Which `### Photo` slots of this step have a screenshot, and each
+   * spec's caption (index = slot − 1) for the chip's tooltip. Only the run
+   * screen knows this. */
+  photoSlots?: { filled: number[]; captions: string[] };
 }) {
   return (
     <div className={className}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={insertValues ? [rehypeQuotedValues] : []}
+        rehypePlugins={insertValues ? [rehypeQuotedValues, rehypePhotoChips] : [rehypePhotoChips]}
         components={{
           mark: ({ children }) => <ValueChip value={flattenText(children)} />,
+          data: ({ value }) => <PhotoChip n={Number(value)} slots={photoSlots} />,
           a: ({ href, children, ...props }) => {
             const selector = highlightSelectors ? selectorFromHref(href) : null;
             if (selector) {
@@ -134,6 +147,31 @@ export function Markdown({
     </div>
   );
 }
+
+/**
+ * The `%PHOTO_n%` marker. Amber is "the runner has not taken this one
+ * yet", green "it is there" — the same question the spec row under the
+ * step answers, shown at the place in the prose the picture belongs.
+ */
+function PhotoChip({ n, slots }: { n: number; slots?: { filled: number[]; captions: string[] } }) {
+  const state = !slots ? "plain" : slots.filled.includes(n) ? "filled" : "empty";
+  const caption = slots?.captions[n - 1]?.trim();
+  const title =
+    state === "plain"
+      ? `Photo ${n} of this step goes here on export`
+      : `${caption || `Photo ${n}`} — ${state === "filled" ? "taken" : "not taken yet"}`;
+  return (
+    <span className={`inline-block rounded border px-1 align-baseline text-[10px] ${PHOTO_CHIP_CLASS[state]}`} title={title}>
+      📷 {n}
+    </span>
+  );
+}
+
+const PHOTO_CHIP_CLASS = {
+  plain: "border-slate-200 bg-slate-50 text-slate-500",
+  empty: "border-amber-200 bg-amber-50 text-amber-700",
+  filled: "border-emerald-200 bg-emerald-50 text-emerald-700",
+} as const;
 
 /** A link's colour by where its host stands against `@locations`. */
 const LINK_CLASS = {

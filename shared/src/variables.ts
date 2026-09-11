@@ -125,6 +125,27 @@ export function coldLocation(locations: readonly string[]): string {
   }
 }
 
+/**
+ * A resolved value joined to whatever follows the placeholder in the text.
+ *
+ * `%BASE_URL%/admin` is the shape every case uses, and the addresses that
+ * fill it come from four places that disagree about trailing slashes: an
+ * origin taken from the open tab never has one, a `Default:` line and an
+ * environment card are typed by hand and often do, and a value typed on the
+ * run screen is pasted from a browser bar, where `https://app.test/` is what
+ * the bar shows. Pasting one of those produced `https://app.test//admin` —
+ * a link that looks right, is not the same path to most routers, and fails
+ * as a 404 in the middle of a run rather than as anything a tester can read.
+ *
+ * So the boundary carries exactly one slash: a value that ends in slashes
+ * loses them when a slash follows. Nothing is *added* — `%HOST%:8080` and
+ * `%BASE_URL%?next=/x` are joins an author wrote on purpose, and a missing
+ * separator is not a thing this can tell from an intended one.
+ */
+export function joinResolvedValue(value: string, rest: string): string {
+  return rest.startsWith("/") ? value.replace(/\/+$/, "") : value;
+}
+
 /** A page-derived value, gated by the variable's `Match:`. A page the
  * pattern refuses yields nothing — `resolveVariableValues`' fallthrough
  * then reaches the `Default:` — rather than a wrong address that reads
