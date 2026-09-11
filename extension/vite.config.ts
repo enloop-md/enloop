@@ -23,7 +23,9 @@ export default defineConfig({
   // has to be told to the bundler by hand.
   build: {
     rollupOptions: {
-      input: { sidepanel: "sidepanel.html", editor: "editor.html" },
+      // Only the editor: crxjs already adds the side panel from the
+      // manifest, and naming it here too bundled it twice.
+      input: { editor: "editor.html" },
     },
   },
   server: {
