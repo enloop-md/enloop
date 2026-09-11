@@ -22,6 +22,11 @@
  *   node enloop-case.mjs rules <data folder> <project> this project's authoring rules
  *   node enloop-case.mjs ratings <data folder> <project> what testers starred: exemplary
  *                        [--limit N] [--min-runs N]           and poor steps, case ratings
+ *   node enloop-case.mjs list-guides <data folder>     finished runs worth exporting
+ *                        [--project <name>]                 as a guide, newest first
+ *   node enloop-case.mjs export-guide <data folder> <caseId> [--run <runId>]   a run as
+ *                        [--out <dir>] [--format md|html|both] [--force]        a guide
+ *   node enloop-case.mjs export-guide <data folder> --free <freeRunId> [--out …] […]
  *   node enloop-case.mjs id "Project: Case title"      the case folder's id
  *   node enloop-case.mjs version                       the grammar format version
  *
@@ -35,7 +40,7 @@
  * single authoring session, and gets followed approximately. A command costs
  * its output, once, and does the same thing every time.
  */
-import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import {
@@ -55,6 +60,13 @@ import {
   newEnvironmentId,
   parseCaseDocument,
   runFileSchema,
+  freeRunFileSchema,
+  fileSlug,
+  renderGuideMarkdown,
+  renderGuideHtml,
+  renderFreeRunGuideMarkdown,
+  renderFreeRunGuideHtml,
+  screenshotStem,
   describeRating,
   isExemplaryRating,
   isPoorRating,
@@ -84,6 +96,25 @@ function readEnvironments(dataDir) {
     return { file, data: parsed.success ? parsed.data : emptyEnvironments(), known: parsed.success };
   } catch {
     return { file, data: emptyEnvironments(), known: isDir(dataDir) };
+  }
+}
+
+/**
+ * The name recorded in a data folder's `project.json`, or `null`.
+ *
+ * The extension shows this instead of the directory name, which is the
+ * whole reason to write one: the recommended layout puts an `enloop.md/`
+ * in every repo, so a tester with four projects connected sees four
+ * identical rows without it. Reported here so the skill can say which
+ * project a candidate folder holds — and notice when a folder says nothing.
+ */
+function projectNameOf(dataDir) {
+  try {
+    const parsed = JSON.parse(readFileSync(path.join(path.resolve(dataDir), "project.json"), "utf8"));
+    const name = typeof parsed?.name === "string" ? parsed.name.trim() : "";
+    return name || null;
+  } catch {
+    return null;
   }
 }
 
@@ -174,6 +205,136 @@ function levelOf(dir) {
   }
   if (entries(d).length === 0) return { dir: d, state: "empty" };
   return { dir: d, state: "unrecognised" };
+}
+
+/** `path` parsed by `schema`, or `null` when it is missing, malformed, or
+ * not the shape expected — the three cases a folder walk treats alike. */
+function readJsonFile(file, schema) {
+  try {
+    const parsed = schema.safeParse(JSON.parse(readFileSync(file, "utf8")));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Every finished run in `runs/`, with its frozen `case.md` parsed where it
+ * parses. A run with an unparseable `case.md` still counts — its screenshots
+ * are real — but has no `doc`, so the caller cannot read its kind or
+ * project. Shared by `list-guides` and `export-guide` so the two agree on
+ * what "a run of this case" means.
+ */
+function finishedRuns(dir, onlyCaseId) {
+  const runsRoot = path.join(dir, "runs");
+  const out = [];
+  for (const caseId of onlyCaseId ? [onlyCaseId] : entries(runsRoot)) {
+    for (const runId of entries(path.join(runsRoot, caseId))) {
+      const runDir = path.join(runsRoot, caseId, runId);
+      const run = readJsonFile(path.join(runDir, "run.json"), runFileSchema);
+      if (!run || run.finishedAt === null) continue;
+      let doc = null;
+      try {
+        doc = parseCaseDocument(readFileSync(path.join(runDir, "case.md"), "utf8"), {
+          version: run.testCaseVersion,
+          createdAt: run.startedAt,
+        });
+      } catch {
+        // Frozen text this parser no longer reads — listed, not exportable.
+      }
+      out.push({ caseId, runId, runDir, run, doc });
+    }
+  }
+  return out.sort((a, b) => b.run.finishedAt.localeCompare(a.run.finishedAt));
+}
+
+/** Every finished free run in `free-runs/`, newest first. */
+function finishedFreeRuns(dir, onlyId) {
+  const root = path.join(dir, "free-runs");
+  const out = [];
+  for (const id of onlyId ? [onlyId] : entries(root)) {
+    const freeDir = path.join(root, id);
+    const free = readJsonFile(path.join(freeDir, "free-run.json"), freeRunFileSchema);
+    if (!free || free.finishedAt === null) continue;
+    out.push({ id, freeDir, free });
+  }
+  return out.sort((a, b) => b.free.finishedAt.localeCompare(a.free.finishedAt));
+}
+
+/**
+ * Write a guide's files. `sourceDir` is the run's folder (its `screenshots/`
+ * child holds the PNGs); `render(imageRef)` returns the renderer's output
+ * for one format. Markdown gets relative `images/<stem>.png` references and
+ * a copy of every PNG it referenced; HTML gets each PNG inlined as a data
+ * URL, so the page travels as one file. A screenshot whose rendered PNG is
+ * missing from disk is reported and referenced anyway — the record is the
+ * truth about what the run took, and a broken image is a better clue than
+ * a silently thinner guide.
+ */
+/** The files an export writes, and nothing else: what `--force` may remove. */
+const GUIDE_ENTRIES = new Set(["README.md", "index.html", "images"]);
+
+/** True when `dir` holds only what a previous export wrote — the one shape
+ * of folder `--force` is allowed to empty. Anything else in it is somebody's
+ * data, and a wrong `--out` must not cost them the folder. */
+function looksLikeGuideFolder(dir) {
+  for (const name of entries(dir)) {
+    if (!GUIDE_ENTRIES.has(name)) return false;
+    if (name === "images") {
+      for (const image of entries(path.join(dir, "images"))) {
+        if (!/^\d+\.png$/.test(image)) return false;
+      }
+    }
+  }
+  return true;
+}
+
+function writeGuide(outDir, sourceDir, format, render) {
+  const pngOf = (shot) => path.join(sourceDir, "screenshots", `${screenshotStem(shot)}.png`);
+  const missing = new Set();
+  // Both formats walk the same run and say the same things; once is enough.
+  const warned = new Set();
+  const warn = (w) => {
+    if (warned.has(w)) return;
+    warned.add(w);
+    console.log(`WARN ${w}`);
+  };
+  if (format === "md" || format === "both") {
+    const referenced = new Map();
+    const { text, warnings } = render.md((shot) => {
+      referenced.set(screenshotStem(shot), pngOf(shot));
+      return `images/${screenshotStem(shot)}.png`;
+    });
+    for (const w of warnings) warn(w);
+    const readme = path.join(outDir, "README.md");
+    writeFileSync(readme, text);
+    console.log(`WROTE ${readme}`);
+    if (referenced.size > 0) mkdirSync(path.join(outDir, "images"), { recursive: true });
+    for (const [stem, src] of referenced) {
+      const dest = path.join(outDir, "images", `${stem}.png`);
+      try {
+        copyFileSync(src, dest);
+        console.log(`WROTE ${dest}`);
+      } catch {
+        missing.add(src);
+      }
+    }
+  }
+  if (format === "html" || format === "both") {
+    const { text, warnings } = render.html((shot) => {
+      try {
+        return `data:image/png;base64,${readFileSync(pngOf(shot)).toString("base64")}`;
+      } catch {
+        missing.add(pngOf(shot));
+        return "";
+      }
+    });
+    for (const w of warnings) warn(w);
+    const index = path.join(outDir, "index.html");
+    writeFileSync(index, text);
+    console.log(`WROTE ${index}`);
+  }
+  for (const src of missing) console.log(`WARN rendered screenshot missing on disk: ${src}`);
 }
 
 switch (command) {
@@ -519,6 +680,7 @@ Default: qa-bot-staging
 
 ## Save the widget
 Where: %DOMAIN%/admin/widgets
+Via: Admin → Widgets
 Kind: quick
 Selector: [data-testid="save-widget"]
 Put "**Blue widget**" in the \`Name\` field and click \`Save\`.
@@ -552,6 +714,9 @@ The hard rules — the step contract in one breath:
       host the case touches: %DOMAIN%/orders, then %ADMIN%/audit.
       A value the run itself produces — a created record's id — never
       goes in an address: say where to click, give the shape in backticks.
+      Where: is never the only way to a page: a step that moves to a new
+      page carries Via: <menu path> as well, or Via: link only when the
+      UI has no path — and then says where the link comes from.
   2d  Say who the tester is: account, role, and where the credential lives
       — a place to look, never a person to ask.
   3   Every UI step carries a Selector: read from this repo's source.
@@ -566,6 +731,11 @@ The hard rules — the step contract in one breath:
   9   A case with several concerns groups its steps: \`# Steps: <title>\`
       sections, each opening with its goal — what those steps prove
       together — before the first \`## \` step. Numbering runs through.
+  10  A step that changes the screen may carry a \`### Photo\` block —
+      Crop:, Mark:, Point:, Callout:, Blur: selectors the runner resolves
+      when it takes the picture — and \`%PHOTO_n%\` in the text where the
+      n-th photo lands on export. A guide (\`@kind guide\`) needs them; a
+      case may use them.
 
 Every route, label and selector comes from source read in THIS session.
 
@@ -612,6 +782,16 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
         isDir(path.join(dataDir, "test-cases", e)),
       ).length;
 
+    /** Said once, after the folder is settled: a folder nobody named is a
+     * row in the panel nobody can tell from the next repo's. Cheap to fix,
+     * invisible until a second project is connected — so it is said here
+     * rather than discovered then. */
+    const nameHint = (dir) => {
+      if (projectNameOf(dir)) return;
+      console.log(`  name    ${path.join(dir, "project.json")} — { "name": "<project>" }`);
+      console.log("          the panel shows this instead of the directory name; write it if absent");
+    };
+
     const describe = (c) => {
       const notes = [];
       if (c.state === "deep") notes.push("path pointed one level too deep; corrected to the parent");
@@ -620,6 +800,10 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
       if (c.state === "data") {
         const n = cases(c.dir);
         notes.push(`${n} case${n === 1 ? "" : "s"}`);
+        // Which project this folder holds, in the folder's own words. A
+        // path is not recognisable; "Acme Shop" is.
+        const name = projectNameOf(c.dir);
+        notes.push(name ? `named "${name}"` : "no project.json — the panel shows it as the directory name");
       }
       return `  ${c.dir}\n      ${c.origin}${notes.length ? ` — ${notes.join("; ")}` : ""}`;
     };
@@ -636,6 +820,7 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
       console.log(`RESOLVED ${resolved.dir}`);
       console.log(describe({ ...resolved, origin: "named in the request" }));
       console.log(`  write   ${path.join(resolved.dir, "test-cases", "<caseId>", "versions", "v1.md")}`);
+      nameHint(resolved.dir);
       process.exit(0);
     }
 
@@ -651,7 +836,7 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
     // A folder inside the repo is the shape to prefer when it exists: cases
     // are committed with the code they test, they arrive with a clone, and
     // nothing has to be configured per machine.
-    for (const name of ["enloop", "test-cases", ".enloop"]) {
+    for (const name of ["enloop.md", "enloop", "test-cases", ".enloop"]) {
       const dir = path.join(root, name);
       if (!isDir(dir)) continue;
       const found = levelOf(dir);
@@ -666,6 +851,7 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
       console.log(`RESOLVED ${distinct[0]}`);
       for (const c of candidates) console.log(describe(c));
       console.log(`  write   ${path.join(distinct[0], "test-cases", "<caseId>", "versions", "v1.md")}`);
+      nameHint(distinct[0]);
       process.exit(0);
     }
 
@@ -678,7 +864,9 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
     }
 
     console.log("NONE — nothing names a data folder for this repo. Ask; do not fall back to a default.");
-    console.log(`  offer   ${path.join(root, "enloop")} (in-repo, keeps cases with the code)`);
+    console.log(`  offer   ${path.join(root, "enloop.md")} (in-repo, keeps cases with the code)`);
+    console.log('  offer   to name it: project.json — { "name": "<project>" } — so the panel');
+    console.log("          shows the project rather than a fourth folder called enloop.md");
     console.log("  offer   to record the answer, so this is asked once per repo");
     process.exit(1);
   }
@@ -1147,6 +1335,162 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
     process.exit(1);
   }
 
+  /**
+   * What is worth exporting as a guide: every finished run that took a
+   * screenshot, every finished run of a `@kind guide` case (a guide with
+   * no pictures is still a guide — the steps carry it), and every finished
+   * free run with screenshots. Newest first, because the run somebody
+   * wants to export is almost always the one they just finished. The
+   * `export-guide` skill reads this to pick a run instead of asking.
+   */
+  case "list-guides": {
+    const positional = [];
+    let project = "";
+    for (let i = 0; i < rest.length; i++) {
+      const a = rest[i];
+      if (a === "--project") project = (rest[++i] ?? "").trim().toLowerCase();
+      else if (a.startsWith("--")) die(`list-guides: unknown flag ${a}`);
+      else positional.push(a);
+    }
+    const [dataDir] = positional;
+    if (!dataDir) die('usage: enloop-case.mjs list-guides <data folder> [--project "<name>"]');
+    const dir = path.resolve(dataDir).replace(/\/+$/, "");
+
+    const rows = [];
+    for (const { caseId, runId, run, doc } of finishedRuns(dir)) {
+      const kind = doc?.kind ?? "case";
+      if (run.screenshots.length === 0 && kind !== "guide") continue;
+      if (project && (doc?.project ?? "").trim().toLowerCase() !== project) continue;
+      rows.push({
+        type: "run",
+        caseId,
+        id: runId,
+        at: run.finishedAt,
+        n: run.screenshots.length,
+        kind,
+        title: doc?.title ?? run.testCaseTitle,
+      });
+    }
+    // A free run belongs to no project; `--project` asks for a project's
+    // runs, so free runs stay out of a filtered list.
+    if (!project) {
+      for (const { id, free } of finishedFreeRuns(dir)) {
+        if (free.screenshots.length === 0) continue;
+        rows.push({ type: "free", caseId: "-", id, at: free.finishedAt, n: free.screenshots.length, kind: "-", title: free.title });
+      }
+    }
+    rows.sort((a, b) => b.at.localeCompare(a.at));
+    if (rows.length === 0) {
+      console.log("NONE");
+      process.exit(1);
+    }
+    const width = (key) => Math.max(...rows.map((r) => String(r[key]).length));
+    const w = { caseId: width("caseId"), id: width("id"), at: width("at"), n: width("n"), kind: width("kind") };
+    for (const r of rows) {
+      console.log(
+        `${r.type.padEnd(4)}  ${r.caseId.padEnd(w.caseId)}  ${r.id.padEnd(w.id)}  ${r.at.padEnd(w.at)}  ` +
+          `${String(r.n).padStart(w.n)} screenshots  ${r.kind.padEnd(w.kind)}  ${r.title}`,
+      );
+    }
+    break;
+  }
+
+  /**
+   * A finished run written out as a user guide — Markdown with an `images/`
+   * folder beside it, an HTML page with the pictures inlined, or both. The
+   * prose is the frozen `case.md` of that run, so the guide describes the
+   * version the tester actually walked, with the screenshots they actually
+   * took. Which run: the one named, else the newest finished run with
+   * screenshots, else the newest finished run at all — a guide case run
+   * without photos still reads as a guide. The output folder is never
+   * merged into: a guide is a whole, and stale images from a previous
+   * export beside a fresh README are the kind of wrong nobody notices.
+   */
+  case "export-guide": {
+    const positional = [];
+    let runId;
+    let freeId;
+    let outFlag;
+    let format = "md";
+    let force = false;
+    for (let i = 0; i < rest.length; i++) {
+      const a = rest[i];
+      if (a === "--run") runId = rest[++i];
+      else if (a === "--free") freeId = rest[++i];
+      else if (a === "--out") outFlag = rest[++i];
+      else if (a === "--format") format = rest[++i];
+      else if (a === "--force") force = true;
+      else if (a.startsWith("--")) die(`export-guide: unknown flag ${a}`);
+      else positional.push(a);
+    }
+    const [dataDir, caseId] = positional;
+    const usage =
+      "usage: enloop-case.mjs export-guide <data folder> <caseId> [--run <runId>] [--out <dir>] [--format md|html|both] [--force]\n" +
+      "       enloop-case.mjs export-guide <data folder> --free <freeRunId> [--out <dir>] [--format md|html|both] [--force]";
+    if (!dataDir || (!caseId && !freeId) || (caseId && freeId)) die(usage);
+    if (!["md", "html", "both"].includes(format)) die(`export-guide: --format must be md, html or both, not ${format}`);
+    const dir = path.resolve(dataDir).replace(/\/+$/, "");
+
+    let title;
+    let sourceDir;
+    let render;
+    if (freeId) {
+      const [found] = finishedFreeRuns(dir, freeId);
+      if (!found) {
+        console.log(`NO RUN  no finished free run ${freeId} in ${path.join(dir, "free-runs")}`);
+        process.exit(1);
+      }
+      let notes = "";
+      try {
+        notes = readFileSync(path.join(found.freeDir, "notes.md"), "utf8");
+      } catch {
+        // A session with no notes is only its screenshots.
+      }
+      title = found.free.title.trim() || "Free run";
+      sourceDir = found.freeDir;
+      render = {
+        md: (imageRef) => renderFreeRunGuideMarkdown(found.free, notes, { imageRef }),
+        html: (imageRef) => renderFreeRunGuideHtml(found.free, notes, { imageRef }),
+      };
+    } else {
+      const runs = finishedRuns(dir, caseId).filter((r) => r.doc !== null);
+      const chosen = runId
+        ? runs.find((r) => r.runId === runId)
+        : (runs.find((r) => r.run.screenshots.length > 0) ?? runs[0]);
+      if (!chosen) {
+        console.log(
+          runId
+            ? `NO RUN  no finished run ${runId} of ${caseId} with a readable case.md in ${path.join(dir, "runs", caseId)}`
+            : `NO RUN  no finished run of ${caseId} in ${path.join(dir, "runs", caseId)}`,
+        );
+        process.exit(1);
+      }
+      title = chosen.doc.title;
+      sourceDir = chosen.runDir;
+      render = {
+        md: (imageRef) => renderGuideMarkdown(chosen.doc, chosen.run, { imageRef }),
+        html: (imageRef) => renderGuideHtml(chosen.doc, chosen.run, { imageRef }),
+      };
+    }
+
+    const outDir = outFlag ? path.resolve(outFlag) : path.join(dir, "guides", fileSlug(title));
+    if (entries(outDir).length > 0) {
+      if (!force) {
+        console.log(`EXISTS ${outDir}`);
+        process.exit(1);
+      }
+      if (!looksLikeGuideFolder(outDir)) {
+        console.log(`EXISTS ${outDir} (not an Enloop guide folder — --force only replaces a previous export; choose an empty --out)`);
+        process.exit(1);
+      }
+      for (const name of entries(outDir)) rmSync(path.join(outDir, name), { recursive: true, force: true });
+    }
+    mkdirSync(outDir, { recursive: true });
+    writeGuide(outDir, sourceDir, format, render);
+    console.log(`GUIDE ${outDir}`);
+    break;
+  }
+
   case "id": {
     const title = rest.join(" ").trim();
     if (!title) die('usage: enloop-case.mjs id "Project: Case title"');
@@ -1172,6 +1516,9 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
         '  enloop-case.mjs environments <data folder> "<project>" [--domain NAME] [--variable NAME] [--env <name> [--set NAME=value] [--default]]\n' +
         '  enloop-case.mjs rules <data folder> "<project>"\n' +
         '  enloop-case.mjs ratings <data folder> "<project>" [--limit N] [--min-runs N]\n' +
+        '  enloop-case.mjs list-guides <data folder> [--project "<name>"]\n' +
+        "  enloop-case.mjs export-guide <data folder> <caseId> [--run <runId>] [--out <dir>] [--format md|html|both] [--force]\n" +
+        "  enloop-case.mjs export-guide <data folder> --free <freeRunId> [--out <dir>] [--format md|html|both] [--force]\n" +
         '  enloop-case.mjs id "Project: Case title"\n' +
         "  enloop-case.mjs version",
     );

@@ -88,6 +88,12 @@ export function RunHistoryScreen({
                       <span className="text-red-500"> · {entry.run.failCount} failed</span>
                     )}
                     {entry.run.skipCount > 0 && <span> · {entry.run.skipCount} skipped</span>}
+                    {entry.run.screenshots > 0 && (
+                      <span title="Screenshots in this run — the ones worth exporting as a guide">
+                        {" "}
+                        · 📷 {entry.run.screenshots}
+                      </span>
+                    )}
                   </div>
                 </button>
               </li>
@@ -108,6 +114,9 @@ export function RunHistoryScreen({
                   <div className="text-xs text-slate-400">
                     {new Date(entry.freeRun.startedAt).toLocaleString()} ·{" "}
                     {entry.freeRun.finishedAt ? "finished" : "in progress"}
+                    {entry.freeRun.screenshots.length > 0 && (
+                      <span title="Screenshots in this session"> · 📷 {entry.freeRun.screenshots.length}</span>
+                    )}
                   </div>
                 </button>
               </li>

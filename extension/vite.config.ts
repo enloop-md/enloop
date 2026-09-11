@@ -18,6 +18,14 @@ export default defineConfig({
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
   },
   plugins: [react(), tailwindcss(), crx({ manifest })],
+  // The manifest names only the side panel; the screenshot editor is an
+  // extension page reached by `chrome.runtime.getURL("editor.html")`, so it
+  // has to be told to the bundler by hand.
+  build: {
+    rollupOptions: {
+      input: { sidepanel: "sidepanel.html", editor: "editor.html" },
+    },
+  },
   server: {
     port: 5173,
     strictPort: true,

@@ -3,8 +3,9 @@
 The Chrome side panel: installing it, the folder it stores cases in, the site
 permissions it asks for and when, and the viewer it shares cases through.
 
-See also — [the case format](case-format.md) for what a case file is, and
-[the skills](skills.md) for having an agent write one.
+See also — [the case format](case-format.md) for what a case file is,
+[the skills](skills.md) for having an agent write one, and
+[screenshots and guides](guides.md) for the pictures a run takes.
 
 ## Install
 
@@ -45,14 +46,24 @@ Either way, open the side panel from the extension's toolbar icon. Installing
 asks for no site permissions — see [Site access](#site-access) for what gets
 asked for later, and when.
 
-On first run the panel asks you to connect a folder. Pick any directory; the
+On first run the panel asks you to connect a folder — or takes a case file
+straight away: the dashed **Drop a case file here** block on that screen,
+and at the top of the Library ever after, accepts a dropped or picked `.md`
+and makes it a runnable case. With no folder connected it lands in the
+browser's own storage, listed in Settings as *Inbox (this browser)*; with
+one, in the default folder.
+
+ Pick any directory; the
 extension creates its layout inside:
 
 ```
 <your folder>/
+├── project.json         what this folder is called: { "name": "Acme Shop" }
 ├── test-cases/          cases and suites
-├── runs/                one folder per run: case.md, run.json, report.md
-├── free-runs/           unscripted sessions
+├── runs/                one folder per run: case.md, run.json, report.md,
+│                        screenshots/NN.png (and NN.source.png as captured)
+├── free-runs/           unscripted sessions, with their own screenshots/
+├── guides/              exported guides: <slug>/README.md + images/, or index.html
 └── agent/               the live channel to a watching agent session —
                          created on first use; see skills.md
 ```
@@ -83,9 +94,26 @@ bugs:
   back* with a one-click **Reconnect** button. Your cases and runs are
   untouched; only the extension's access to them has to be re-granted, and
   Chrome requires a click to do it.
-- **Chrome only reports the folder's name**, not its path. If you keep a
-  folder per project, give them distinguishable names — two directories both
-  called `test-cases` are indistinguishable in the panel and in Settings.
+- **Chrome only reports the folder's name**, not its path — so the folder
+  says what it is called itself, in a `project.json` at its root:
+
+  ```json
+  { "name": "Acme Shop" }
+  ```
+
+  The panel shows that name everywhere a folder appears: the reconnect
+  buttons, the storage picker in the Library, Settings, with the directory
+  name underneath. Without it, four repos that each keep their cases in an
+  `enloop.md/` are four identical rows.
+
+  You rarely write the file yourself. On connect, and on every refresh, a
+  folder with no name recorded gets one: the `@project` its cases agree on,
+  else the repository directory you picked when Enloop found the case folder
+  inside it, else the directory name — and whatever it worked out is written
+  back, so it is settled once and travels with the repo. **Rename** in
+  Settings edits the same file. A folder holding several projects' cases is
+  left unnamed on purpose: no single name is right, and the Library already
+  groups those rows by `@project`.
 
 **Disconnect** in Settings forgets the folder; it never deletes anything.
 
@@ -164,6 +192,25 @@ Each audience gets its own section in `feedback.md`, so whoever picks the
 file up can find their own name in it. Anything ticked for the **test writer**
 goes one step further — see [project rules](#project-rules).
 
+**Handing a finding to the agent that can fix it.** The step you are on,
+and every step already given a result, offers **⚒ Prompt to fix this**. One
+click gathers everything about that step into a Markdown prompt and copies
+it: which project the fix belongs in (the case's `@project`, and the repo
+the case was authored from when an agent stamped one), the environment and
+main domain, the step's own text — where, via, selectors, instructions,
+expected, note, the script and its result for an automated step — your
+comments on it with their audiences, the questions you asked from it and
+their answers, any earlier step that failed or carries a comment, and what
+the page printed while the step was current: errors, warnings, uncaught
+exceptions and failed requests, deduplicated, with stack traces, and the
+request trace when you captured every request. Chatter stays in
+`console.md`; a step whose log has nothing wrong in it gets no console
+section. It ends with what to do — find the code, make **Expected** hold,
+and say so instead if the finding is about the case rather than the app.
+Paste it into Claude Code in the app's repo, or save it with **Download
+.md**. It is a snapshot: a comment added afterwards is not in it, and
+**Regenerate** makes it again. This needs no agent watching the folder.
+
 **No agent on this machine?** A finished run shows **Comments for all
 steps** at the bottom of the screen. It opens the same text as `feedback.md`
 — every comment, rating and failure, grouped by audience — with a **Copy**
@@ -178,12 +225,35 @@ above the steps, and it counts as feedback signal on its own, so a run that
 passed while worrying the tester still produces a `feedback.md` for
 the **check** skill to read.
 
+### Screenshots
+
+Every step has **📷 Screenshot** and **📷 Screenshot & edit**, and the run
+header has a **📷** that captures to the current step or, before there is
+one, to the run. A step's `### Photo` spec makes the runner take the
+picture itself — cropped to the container the case names, with the
+controls it names boxed, arrowed, numbered or blurred — when the step
+becomes current (`Take: before`) or when you give the verdict (`Take:
+after`); `Mode: confirm` shows it first with **Keep · Retake · Edit ·
+Discard**, `Mode: auto` keeps it with a two-second toast, and `Take:
+manual` leaves a **📷 Photo n** button for you to press. Each screenshot is
+a thumbnail under its step with a caption, **✎ Edit**, **↺ Original**,
+**Move** and **✕**; the editor opens in its own tab with crop, blur, line,
+arrow, rectangle and numbered callouts in seven colours. Pictures land in
+`screenshots/` beside `run.json` and are listed under their steps in
+`report.md`. Free runs have the same buttons, and each capture drops a
+`%PHOTO_n%` into the notes where the picture belongs. Chrome only
+photographs a tab the extension has been invoked on, so the first capture
+on a tab is **Alt+Shift+S** on the page or the page's **Take an Enloop
+screenshot** context-menu item — after that the buttons and the runner
+work on that tab. No all-sites access is asked for. The whole of it —
+the spec keys, the editor's keys, what is stored where — is in
+[screenshots and guides](guides.md).
+
 ### Asking the agent mid-run
 
-When an agent is watching your data folder — the **[enloopd
-daemon](daemon.md)** (recommended: always on, no session to keep open), or
-a one-off `/enloop:serve` pass in Claude Code — two more things work
-during a run, without leaving the panel. The panel checks for a connected
+When an agent is watching your data folder — a `/enloop:serve` pass in
+Claude Code, run from the repo under test — two more things work during
+a run, without leaving the panel. The panel checks for a connected
 agent and shows setup instructions right where you'd otherwise wait:
 
 - **Ask the agent.** Select the confusing part of a step, press *Ask the
@@ -204,6 +274,13 @@ agent and shows setup instructions right where you'd otherwise wait:
   form*, *Found it — the step names a renamed button*, *Writing the
   answer*. The line shows how long ago it last changed, so a long think is
   visibly a think and not a crash.
+  An answer takes a while, and you will have gone to other tabs by the
+  time it lands: every question card shows **↗ Bring me to the tab**
+  whenever the tab you asked from is not the one in front of you. It
+  brings that tab forward — the very tab, with whatever you had typed
+  into the page still there, not a fresh copy of its address. The link
+  disappears once you are back, and is not offered if the tab was closed
+  and no other tab shows that page.
 - **Run a case's commands.** Inline commands in Dependencies, Prerequisites
   and step text (`node scripts/seed.js …`) get a ▶ **Run** button. The
   watching session executes them from the app repo, output streams into a
@@ -212,11 +289,10 @@ agent and shows setup instructions right where you'd otherwise wait:
   is how you turn off a server you started from it.
 
 No session watching? Questions and Run requests wait, and the panel says so
-— nothing is lost, and nothing leaves your machine either way. And the
-watcher doesn't have to be an interactive session:
-[enloopd](daemon.md) serves the same channel unattended, thinking with
-the same LLMs (the Claude API, or Claude Code / Codex driven headlessly)
-— just with no session anyone has to keep open.
+— nothing is lost, and nothing leaves your machine either way. Run
+`/enloop:serve` again and the next pass picks them up. (An unattended
+watcher, the [enloopd daemon](daemon.md), exists in the repo but is not
+offered in the panel until it is fixed and debugged.)
 
 ### Project rules
 
@@ -353,6 +429,15 @@ the values copyable. Everything except the raw Markdown carries a suite's prep
 steps along with the case, since a reader handed the case alone would be
 missing the setup it assumes.
 
+A finished **run** can be shared too, as what the tester saw rather than
+what they were asked: **⬇ Download guide** appears on a finished run with at
+least one screenshot, on any finished run of a `@kind guide` case, and on a
+finished free run with screenshots. It is one HTML file with the pictures
+inlined — the steps in the order they were run, each with its photos,
+captions and callout legends, and *You should see* where the case had
+Expected. The same document as a Markdown folder comes from the plugin's
+`export-guide` command; see [screenshots and guides](guides.md#exporting).
+
 ## Environments and domains
 
 A case builds its addresses on `%DOMAIN%` — the tab you start the run from,
@@ -376,6 +461,18 @@ screen keeps the goal pinned under its title for the whole run. **Start
 run** is one button: the quick path when the case marks one, with **Full**
 beside it. A run does not start while any value is empty; the values block
 opens and says where each missing value comes from.
+
+**A value you type is kept for the next run of that case.** The record id
+you were chasing, the account this bug needs, the address of a branch
+deployment nothing knows about yet — typed once, and there again when you
+come back, marked *from your last run* beside the field. Only typed values
+come back; a generated one is generated afresh at start, and an address that
+follows the open tab keeps following it. **↺ back to auto** clears the value
+here and for next time, and picking an environment that has its own answer
+for a name drops the remembered one rather than running staging against the
+address you typed for prod. The values live in this browser, never in the
+folder — a typed value is often an email address, and it is your working
+state rather than the case's.
 
 On a case screen, the **Environment** picker sits above **Start run**. Picking
 one sets every domain and every environment-provided variable at once; the

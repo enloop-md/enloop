@@ -146,6 +146,41 @@ export async function tryReadTextFile(
   }
 }
 
+export async function readBinaryFile(
+  dir: FileSystemDirectoryHandle,
+  filename: string,
+): Promise<Uint8Array> {
+  const fileHandle = await getFileHandleOrThrow(dir, filename);
+  return new Uint8Array(await (await fileHandle.getFile()).arrayBuffer());
+}
+
+async function getFileHandleOrThrow(
+  dir: FileSystemDirectoryHandle,
+  filename: string,
+): Promise<FileSystemFileHandle> {
+  try {
+    return await dir.getFileHandle(filename);
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "NotFoundError") {
+      throw new NotFoundError(`File not found: ${filename}`);
+    }
+    throw e;
+  }
+}
+
+/** Deletes a file; a file that is already gone is not an error. */
+export async function removeFileIfPresent(
+  dir: FileSystemDirectoryHandle,
+  filename: string,
+): Promise<void> {
+  try {
+    await dir.removeEntry(filename);
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "NotFoundError") return;
+    throw e;
+  }
+}
+
 export async function writeBinaryFile(
   dir: FileSystemDirectoryHandle,
   filename: string,

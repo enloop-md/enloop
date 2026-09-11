@@ -1,8 +1,11 @@
 import { installCaptureListeners, syncCaptureRegistration } from "./capture.js";
+import { installScreenshotGestures, installScreenshotListeners } from "./screenshot.js";
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  installScreenshotGestures();
 });
+installScreenshotListeners();
 
 installCaptureListeners();
 

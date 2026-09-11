@@ -14,6 +14,14 @@ import {
   capturePageSnapshot,
   captureScreenshot,
 } from "../../lib/page-capture.js";
+import {
+  currentTabRef,
+  findQuestionTab,
+  focusTab,
+  isCurrentTab,
+  rememberQuestionTab,
+  type TabRef,
+} from "../../lib/question-tab.js";
 import { useReadyStore } from "../store/DataStoreProvider.js";
 import { commandPending, type AskDraft } from "../useAgentChannel.js";
 
@@ -44,21 +52,21 @@ function describeSilence(quietMs: number, hasProgress: boolean): string {
 
 /**
  * Shown wherever the tester is about to wait on a server that is not
- * there. The daemon is the recommended fix — always on, no session to
- * babysit; a manual /enloop:serve pass is the there-right-now alternative
- * for someone already sitting in Claude Code.
+ * there. The answer is one `/enloop:serve` pass in Claude Code. The
+ * enloopd daemon exists but is not offered here until it is fixed and
+ * debugged — a recommendation that does not work is worse than none.
  */
 /** A server is present but speaks a different wire version — one of the
  * three parts is out of date, and guessing which way breaks is worse than
  * saying so. Everything still tries to work; this is a warning, not a
  * refusal, because protocol changes are additive until they are not. */
 function ProtocolMismatchHint({ presence }: { presence: AgentPresence }) {
-  const who = presence.kind === "claude-code" ? "Claude Code serve pass" : "enloopd daemon";
+  const who = presence.kind === "claude-code" ? "Claude Code serve pass" : "agent";
   return (
     <p className="rounded border border-amber-200 bg-amber-50/60 p-1.5 text-[10px] text-amber-800">
       The watching {who} speaks channel protocol v{presence.protocol}; this extension speaks v
       {AGENT_PROTOCOL_VERSION}. Update the older side — extension via the Web Store,
-      daemon/plugin from the Enloop repo.
+      plugin via <code className="rounded bg-slate-100 px-1">/plugin update enloop</code>.
     </p>
   );
 }
@@ -68,23 +76,9 @@ function AgentSetupHint() {
     <div className="space-y-1 rounded border border-amber-200 bg-amber-50/60 p-2 text-[11px] text-slate-600">
       <p className="font-medium text-amber-800">No agent is connected to this folder.</p>
       <p>
-        Recommended: run the <span className="font-medium">enloopd</span> daemon — it answers and
-        runs commands with no session to keep open. From the Enloop repo:
-      </p>
-      <pre className="overflow-x-auto rounded bg-slate-100 px-1.5 py-1 text-[10px] text-slate-700">{`npm run build:daemon
-node daemon/dist/enloopd.mjs setup   # once
-node daemon/dist/enloopd.mjs         # leave running`}</pre>
-      <p>
-        <a
-          href="https://github.com/enloop-md/enloop/blob/master/docs/daemon.md"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sky-600 underline hover:text-sky-700"
-        >
-          Daemon setup guide
-        </a>{" "}
-        · Or answer this one manually: run{" "}
-        <code className="rounded bg-slate-100 px-1">/enloop:serve</code> once in Claude Code.
+        In Claude Code, from the repo under test, run{" "}
+        <code className="rounded bg-slate-100 px-1">/enloop:serve</code> — one pass answers
+        what is waiting here and runs any queued command. Run it again for the next question.
       </p>
     </div>
   );
@@ -104,7 +98,7 @@ export function StepQuestions({
   questions: AgentQuestion[];
   readOnly: boolean;
   watcher: AgentPresence | null;
-  onAsk: (draft: AskDraft) => Promise<void>;
+  onAsk: (draft: AskDraft) => Promise<AgentQuestion>;
   onSwapped: (run: Run) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -138,11 +132,14 @@ export function StepQuestions({
     if (!text.trim()) return;
     setBusy(true);
     try {
-      const [snapshot, screenshot] = await Promise.all([
+      // Which tab this is asked from, read before the captures so a tab
+      // switch during a slow screenshot cannot misattribute it.
+      const [tab, snapshot, screenshot] = await Promise.all([
+        currentTabRef(),
         withSnapshot ? capturePageSnapshot() : Promise.resolve(null),
         withScreenshot ? captureScreenshot() : Promise.resolve(null),
       ]);
-      await onAsk({
+      const question = await onAsk({
         stepId,
         question: text.trim(),
         selection,
@@ -150,6 +147,7 @@ export function StepQuestions({
         screenshotPng: screenshot,
         pageHtml: snapshot?.html ?? null,
       });
+      if (tab) await rememberQuestionTab(question.id, tab);
       setText("");
       setSelection("");
       setOpen(false);
@@ -259,6 +257,70 @@ function shortUrl(url: string): string {
   }
 }
 
+/**
+ * The tab a question was asked from, when the tester is not looking at it.
+ *
+ * Re-checked on every tab switch and every navigation rather than once:
+ * the whole point is that the tester left, and the link has to appear when
+ * they do and go away when they are back. `null` means there is nothing to
+ * offer — the tab is the one in front of them, or it is gone.
+ */
+function useQuestionTabAway(question: AgentQuestion): TabRef | null {
+  const [away, setAway] = useState<TabRef | null>(null);
+  const { id, pageUrl } = question;
+
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      const ref = await findQuestionTab({ id, pageUrl });
+      const result = ref && !(await isCurrentTab(ref)) ? ref : null;
+      if (!cancelled) setAway(result);
+    };
+    void check();
+    const onChange = () => void check();
+    const onUpdated = (_tabId: number, change: chrome.tabs.TabChangeInfo) => {
+      if (change.url || change.status === "complete") void check();
+    };
+    chrome.tabs.onActivated.addListener(onChange);
+    chrome.tabs.onRemoved.addListener(onChange);
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.windows.onFocusChanged.addListener(onChange);
+    return () => {
+      cancelled = true;
+      chrome.tabs.onActivated.removeListener(onChange);
+      chrome.tabs.onRemoved.removeListener(onChange);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      chrome.windows.onFocusChanged.removeListener(onChange);
+    };
+  }, [id, pageUrl]);
+
+  return away;
+}
+
+/** "Bring me to the tab" — shown only while the tester is somewhere else.
+ * A link, not a button: it changes nothing in the run. */
+function BringMeToTab({ question }: { question: AgentQuestion }) {
+  const away = useQuestionTabAway(question);
+  const [error, setError] = useState<string | null>(null);
+  if (!away) return null;
+  return (
+    <p className="text-[11px]">
+      <button
+        type="button"
+        onClick={() => {
+          setError(null);
+          focusTab(away).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+        }}
+        className="text-sky-600 hover:underline"
+        title={question.pageUrl ? `Back to ${question.pageUrl}` : "Back to the tab this was asked from"}
+      >
+        ↗ Bring me to the tab
+      </button>
+      {error && <span className="ml-1 text-red-500">{error}</span>}
+    </p>
+  );
+}
+
 function QuestionCard({
   run,
   question,
@@ -301,6 +363,7 @@ function QuestionCard({
           {question.attachments.length > 0 && <>📎 {question.attachments.join(" · ")}</>}
         </p>
       )}
+      <BringMeToTab question={question} />
       {question.answer === null ? (
         question.pickedUpAt !== null ? (
           // The server's own words about what it is doing, when it has
@@ -313,9 +376,7 @@ function QuestionCard({
               ? question.progress.text
               : question.pickedUpBy === "claude-code"
                 ? "Claude Code is working on the answer…"
-                : question.pickedUpBy === "daemon"
-                  ? "Enloop daemon is working on the answer…"
-                  : "Agent is working on the answer…"}
+                : "Agent is working on the answer…"}
             <span className="ml-1 text-slate-400">
               {describeSilence(
                 Date.now() - Date.parse(question.progress?.at ?? question.pickedUpAt),
@@ -536,8 +597,8 @@ export function CommandCard({
       )}
       {command.display === "queued" && (
         <p className="text-[11px] text-slate-400">
-          Waiting for an agent — the enloopd daemon runs these; or one manual{" "}
-          <code className="rounded bg-slate-100 px-1">/enloop:serve</code> pass in Claude Code.
+          Waiting for an agent — run{" "}
+          <code className="rounded bg-slate-100 px-1">/enloop:serve</code> in Claude Code.
         </p>
       )}
       {command.logTail && (

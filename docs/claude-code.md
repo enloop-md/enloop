@@ -49,6 +49,8 @@ Claude Code namespaces a plugin's skills, so each one is `/enloop:<skill>`:
 | Prepare an app repo, once | `/enloop:setup` |
 | Write a quick case — happy path only | `/enloop:quick <ticket>` |
 | Write the full case, edges and cleanup | `/enloop:full <ticket>` |
+| Write a user guide the runner photographs | `/enloop:guide <feature>` |
+| Export a finished run as a guide | `/enloop:export-guide` |
 | Triage a finished run | `/enloop:check` |
 | Backfill test selectors | `/enloop:instrument` |
 | Answer a waiting panel request, once | `/enloop:serve` |
@@ -80,8 +82,8 @@ are fed straight back to the model that wrote it; when the file is valid,
 the same hook stamps `context.json` beside the case — the authoring
 session's id, repo and host — which is how [enloopd](daemon.md) later
 answers testers' questions by resuming that very session. And a bare
-`/enloop:quick` or `/enloop:full` — Enter pressed on an autocomplete, no
-scope — injects a demand to derive the likeliest scope from git and ask a
+`/enloop:quick`, `/enloop:full` or `/enloop:guide` — Enter pressed on an
+autocomplete, no scope — injects a demand to derive the likeliest scope from git and ask a
 one-keystroke closed question before doing anything, so an empty
 invocation costs a confirmation instead of a guessed case. The authoring skills
 already end by validating; the hook is for the session that skips the
@@ -101,7 +103,7 @@ clone and no path to Enloop to set.
 
 The one thing worth telling them is your **data folder** — the directory you
 picked with "Connect folder…" in the extension. Skip even this if the repo
-keeps its cases in an `enloop/` folder of its own; the skills find that
+keeps its cases in an `enloop.md/` folder of its own; the skills find that
 without configuration.
 
 ```json

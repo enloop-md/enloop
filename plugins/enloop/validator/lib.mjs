@@ -3526,7 +3526,7 @@ var arrayType = ZodArray.create;
 var objectType = ZodObject.create;
 ZodObject.strictCreate;
 var unionType = ZodUnion.create;
-ZodDiscriminatedUnion.create;
+var discriminatedUnionType = ZodDiscriminatedUnion.create;
 ZodIntersection.create;
 ZodTuple.create;
 var recordType = ZodRecord.create;
@@ -3534,7 +3534,7 @@ ZodMap.create;
 ZodSet.create;
 ZodFunction.create;
 ZodLazy.create;
-ZodLiteral.create;
+var literalType = ZodLiteral.create;
 var enumType = ZodEnum.create;
 ZodNativeEnum.create;
 ZodPromise.create;
@@ -3701,6 +3701,58 @@ var stepGroupSchema = objectType({
 	* linter requires it — a group without a goal is only a heading. */
 	goal: stringType()
 });
+var PHOTO_TAKE = [
+	"before",
+	"after",
+	"manual"
+];
+var PHOTO_MODE = ["auto", "confirm"];
+/** The palette a photo spec's `Color:` and the editor's swatches share —
+* red first, since it is the default. */
+var SHOT_COLORS = [
+	"#E5484D",
+	"#F76B15",
+	"#30A46C",
+	"#0090FF",
+	"#8E4EC6",
+	"#1C2024",
+	"#FFFFFF"
+];
+var DEFAULT_SHOT_COLOR = SHOT_COLORS[0];
+/**
+* A `### Photo` block of a step — what the runner should capture, and how
+* to mark it up, without the tester doing anything. Every selector is
+* resolved on the page at capture time; one that matches nothing is skipped
+* and listed in the screenshot record's `missing`. The n-th block of a step
+* fills the `%PHOTO_n%` placeholder in that step's prose on export.
+*/
+var photoSpecSchema = objectType({
+	/** Selector of the container to crop to; empty = the whole viewport. */
+	crop: stringType(),
+	/** CSS px of padding around `crop`. */
+	pad: numberType().int().nonnegative(),
+	/** Rectangles around these. */
+	marks: arrayType(stringType()),
+	/** Arrows pointing at these. */
+	points: arrayType(stringType()),
+	/** Numbered discs beside these, in order; `text` is the legend line
+	* printed under the figure on export (may be empty). */
+	callouts: arrayType(objectType({
+		selector: stringType(),
+		text: stringType()
+	})),
+	/** Pixelated. */
+	blurs: arrayType(stringType()),
+	/** `before`: when the step becomes current. `after`: when the verdict is
+	* given (or the script finishes). `manual`: a preloaded button. */
+	take: enumType(PHOTO_TAKE),
+	/** `auto` keeps the photo silently; `confirm` shows Keep / Retake /
+	* Edit / Discard. Ignored for `manual`. */
+	mode: enumType(PHOTO_MODE),
+	/** One of `SHOT_COLORS`. */
+	color: stringType(),
+	caption: stringType()
+});
 /** A step as parsed from a case document's `# Steps` section (one `## `). */
 var stepSchema = objectType({
 	id: stringType(),
@@ -3731,6 +3783,14 @@ var stepSchema = objectType({
 	* screen name, or other surface, e.g. `Where: /admin/sync-console`.
 	* Keeps "which app/tab am I in?" out of the instructions prose. */
 	where: stringType().optional(),
+	/** How the page in `where` is reached through the app's own UI —
+	* `Via: Settings → Users → the row` — so the address is never the only
+	* way to find it: a link may point at another environment, or be
+	* incomplete, and a tester must still be able to get there. Required by
+	* the linter whenever a step moves to a new page; `Via: link only`
+	* states explicitly that the UI offers no path (a deep link, an emailed
+	* link, a redirect target). */
+	via: stringType().optional(),
 	/** Background a tester may want but must not have to read to judge
 	* pass/fail — rationale, regression history, caveats. Parsed from a
 	* `### Note` subsection so `expected` can stay purely the pass criteria. */
@@ -3738,8 +3798,11 @@ var stepSchema = objectType({
 	/** Title of the `# Steps: <group>` section this step was written under,
 	* matching an entry in the document's `groups`. Absent for a step under a
 	* plain `# Steps`. */
-	group: stringType().optional()
+	group: stringType().optional(),
+	/** `### Photo` blocks in document order — see `photoSpecSchema`. */
+	photos: arrayType(photoSpecSchema)
 });
+var CASE_KINDS = ["case", "guide"];
 objectType({
 	version: caseVersionIdSchema,
 	createdAt: stringType(),
@@ -3754,6 +3817,12 @@ objectType({
 	* selectors below refer to. Empty when the document declares none. */
 	project: stringType(),
 	changeNote: stringType(),
+	/** `@kind guide` — a user guide: the same grammar and the same run,
+	* written for an end user rather than a tester, exported with its
+	* screenshots by `export-guide`. Absent line = `case`. A guide's run
+	* labels verdicts Done / Could not and Expected "You should see"; the
+	* linter drops the quick-mark warnings. Nothing else differs. */
+	kind: enumType(CASE_KINDS),
 	title: stringType().min(1),
 	/** `Goal:` — one plain line saying what the case proves, for someone who
 	* has never seen the app. Pinned on screen for the whole run. Empty in
@@ -3964,6 +4033,88 @@ var runStatusSchema = enumType([
 * marked `Kind: quick`; `full` executes all of them. Recorded on the run
 * because "it passed" means different things for each. */
 var runTierSchema = enumType(["quick", "full"]);
+/** One drawn operation on a screenshot, in the source PNG's pixel space
+* (device pixels, as Chrome captured them). Render order is blurs, then
+* the other shapes in list order, then the crop — so a callout over a
+* blurred field stays crisp, and shapes are addressed against the uncropped
+* capture and survive the crop being changed. There is at most one crop.
+* Geometry lives in the extension's `lib/screenshot-render.ts`. */
+var screenshotOpSchema = discriminatedUnionType("tool", [
+	objectType({
+		tool: literalType("crop"),
+		x: numberType(),
+		y: numberType(),
+		w: numberType().positive(),
+		h: numberType().positive()
+	}),
+	objectType({
+		tool: literalType("blur"),
+		x: numberType(),
+		y: numberType(),
+		w: numberType().positive(),
+		h: numberType().positive()
+	}),
+	objectType({
+		tool: literalType("line"),
+		x1: numberType(),
+		y1: numberType(),
+		x2: numberType(),
+		y2: numberType(),
+		color: stringType()
+	}),
+	objectType({
+		tool: literalType("arrow"),
+		x1: numberType(),
+		y1: numberType(),
+		x2: numberType(),
+		y2: numberType(),
+		color: stringType()
+	}),
+	objectType({
+		tool: literalType("rect"),
+		x: numberType(),
+		y: numberType(),
+		w: numberType().positive(),
+		h: numberType().positive(),
+		color: stringType()
+	}),
+	objectType({
+		tool: literalType("callout"),
+		x: numberType(),
+		y: numberType(),
+		n: numberType().int().positive(),
+		color: stringType()
+	})
+]);
+/** One screenshot taken during a run or a free run. The bytes are
+* `screenshots/<seq>.png` (rendered with `ops`) and
+* `screenshots/<seq>.source.png` (exactly as captured, never modified)
+* beside `run.json` / `free-run.json`; this record is what the JSON
+* carries. */
+var runScreenshotSchema = objectType({
+	id: stringType(),
+	/** 1-based capture order; the file stem, zero-padded to two digits.
+	* Never reused within a run. */
+	seq: numberType().int().positive(),
+	/** The step it illustrates, or null for the run as a whole (always null
+	* in a free run). */
+	stepId: stringType().nullable(),
+	/** Which `### Photo` of that step it fills (1-based), null when taken by
+	* hand. One screenshot per slot; retaking replaces. Moving to another
+	* step clears it. */
+	slot: numberType().int().positive().nullable(),
+	takenAt: stringType(),
+	/** Bumped on every edit; the panel keys its thumbnail cache on it. */
+	updatedAt: stringType(),
+	pageUrl: stringType(),
+	caption: stringType(),
+	/** Source PNG dimensions. */
+	width: numberType().int().positive(),
+	height: numberType().int().positive(),
+	ops: arrayType(screenshotOpSchema),
+	/** Spec selectors that matched nothing when the runner took it. */
+	missing: arrayType(stringType())
+});
 /** On-disk shape of `run.json` — run-level status plus per-step state only.
 * `testCaseTitle` is a denormalized convenience copy for cheap listing;
 * `case.md` next to it remains the source of truth for step definitions. */
@@ -4007,6 +4158,14 @@ var runFileSchema = objectType({
 	/** Audit trail of mid-run hot-swaps, oldest first. Empty for the common
 	* run that finishes on the version it started with. */
 	swaps: arrayType(runSwapSchema).default([]),
+	/** Every screenshot of the run, in capture order — see
+	* `runScreenshotSchema`. Defaulted so runs recorded before screenshots
+	* existed still parse. */
+	screenshots: arrayType(runScreenshotSchema).default([]),
+	/** The highest `seq` ever handed out, so a removed or retaken screenshot's
+	* number (and file stem) is never reused — a stale `%PHOTO_n%` must not
+	* quietly point at a different picture. Defaulted for older files. */
+	screenshotSeq: numberType().int().nonnegative().default(0),
 	steps: arrayType(runStepStateSchema)
 });
 /** Step definition (from case.md) merged with its execution state (from
@@ -4063,13 +4222,26 @@ objectType({
 	/** From `run.json` — the panel needs it to tell a patch offer it already
 	* loaded from one still open. */
 	swaps: arrayType(runSwapSchema),
+	/** From `run.json`; the panel groups them by `stepId`. */
+	screenshots: arrayType(runScreenshotSchema),
+	/** The frozen `case.md`'s kind — a guide's run words its verdicts
+	* differently. Composed. */
+	kind: enumType(CASE_KINDS),
 	steps: arrayType(runStepSchema)
 });
-objectType({
+/** On-disk `free-run.json` — metadata only; the captured text lives in
+* `notes.md` next to it. `finishedAt: null` means the session is still open. */
+var freeRunFileSchema = objectType({
 	id: stringType(),
 	title: stringType(),
 	startedAt: stringType(),
-	finishedAt: stringType().nullable()
+	finishedAt: stringType().nullable(),
+	/** Screenshots taken during the session, `stepId` and `slot` always
+	* null; `notes.md` places them with `%PHOTO_<seq>%`. Defaulted so free
+	* runs from before screenshots existed still parse. */
+	screenshots: arrayType(runScreenshotSchema).default([]),
+	/** See `runFileSchema.screenshotSeq`. */
+	screenshotSeq: numberType().int().nonnegative().default(0)
 });
 objectType({
 	status: runStepStatusSchema.optional(),
@@ -4361,6 +4533,26 @@ function coldLocation(locations) {
 		return "";
 	}
 }
+/**
+* A resolved value joined to whatever follows the placeholder in the text.
+*
+* `%BASE_URL%/admin` is the shape every case uses, and the addresses that
+* fill it come from four places that disagree about trailing slashes: an
+* origin taken from the open tab never has one, a `Default:` line and an
+* environment card are typed by hand and often do, and a value typed on the
+* run screen is pasted from a browser bar, where `https://app.test/` is what
+* the bar shows. Pasting one of those produced `https://app.test//admin` —
+* a link that looks right, is not the same path to most routers, and fails
+* as a 404 in the middle of a run rather than as anything a tester can read.
+*
+* So the boundary carries exactly one slash: a value that ends in slashes
+* loses them when a slash follows. Nothing is *added* — `%HOST%:8080` and
+* `%BASE_URL%?next=/x` are joins an author wrote on purpose, and a missing
+* separator is not a thing this can tell from an intended one.
+*/
+function joinResolvedValue(value, rest) {
+	return rest.startsWith("/") ? value.replace(/\/+$/, "") : value;
+}
 /** A page-derived value, gated by the variable's `Match:`. A page the
 * pattern refuses yields nothing — `resolveVariableValues`' fallthrough
 * then reaches the `Default:` — rather than a wrong address that reads
@@ -4516,7 +4708,7 @@ function mainDomainName(doc) {
 * v1.md/v2.md version history, which tracks edits to a case's *content*
 * under this same grammar.
 */
-var CURRENT_FORMAT_VERSION = "0.0.11";
+var CURRENT_FORMAT_VERSION = "0.0.13";
 /**
 * Grammar. There is no separate spec by design: this comment is it, sitting
 * against the parser that implements it, and `scripts/build-plugin.mjs`
@@ -4536,6 +4728,12 @@ var CURRENT_FORMAT_VERSION = "0.0.11";
 *                                                belongs to, so a reader
 *                                                opening the file cold knows
 *                                                what they are looking at)
+*   @kind guide                                (optional — a user guide:
+*                                                the same grammar and run,
+*                                                written for an end user;
+*                                                exported with its
+*                                                screenshots. Absent =
+*                                                an ordinary case)
 *   Tags: auth, smoke
 *   @locations: localhost:8080, *.acme.com     (host globs — where this
 *                                                case is meant to run; see
@@ -4684,8 +4882,10 @@ var CURRENT_FORMAT_VERSION = "0.0.11";
 *   else empty) and replaces every `%NAME%` placeholder anywhere in the rest
 *   of the document (title, description, step instructions, selectors,
 *   scripts) with the resolved value. A name that resolves to nothing is
-*   not substituted at all: the step keeps the literal `%NAME%`. See
-*   `substituteVariables`.
+*   not substituted at all: the step keeps the literal `%NAME%`. A value
+*   ending in `/` where a `/` follows it loses the slash, so `%DOMAIN%/orders`
+*   is one slash deep whether or not the address was recorded with a
+*   trailing one. See `substituteVariables`.
 *
 *   # Dependencies                              (optional, bullet list)
 *   - Seeded test user
@@ -4734,6 +4934,14 @@ var CURRENT_FORMAT_VERSION = "0.0.11";
 *                                                 this step, so "which app
 *                                                 am I in?" stays out of the
 *                                                 instructions prose)
+*   Via: Settings → Users → the user's row     (how the page is reached in
+*                                                 the app's own UI. Required
+*                                                 whenever the step moves to
+*                                                 a page the previous step
+*                                                 was not on; `Via: link
+*                                                 only` says the UI has no
+*                                                 path — a deep link, a
+*                                                 redirect target)
 *   Kind: quick                                 (optional — marks this step
 *                                                 as part of the core happy
 *                                                 path. A "quick" run
@@ -4774,9 +4982,20 @@ var CURRENT_FORMAT_VERSION = "0.0.11";
 *                                                 the page wins)
 *   Free text instructions (manual step — no code fence found).
 *
-*   `Where:`, `Selector:` and `Kind:` form a header block directly under
-*   the step title and may appear in any order; the first line that is none
-*   of them ends the header and begins the instructions.
+*   `Where:`, `Via:`, `Selector:` and `Kind:` form a header block directly
+*   under the step title and may appear in any order; the first line that
+*   is none of them ends the header and begins the instructions.
+*
+*   `Where:` is never the only way to find a page. Its address may point
+*   at a deployment the tester is not on, or be incomplete, and a Go
+*   control that opens the wrong page is worse than none — so a step that
+*   moves to a new page also says how a person gets there from the app's
+*   own screens: `Via: Settings → Users → the row for the account`. The
+*   panel shows it under the address. When the UI genuinely has no path —
+*   a link from an email, a redirect the app performs, a page only a URL
+*   reaches — the step says so with `Via: link only`, so the tester knows
+*   not to look for a menu. A step on the same page as the one before it
+*   needs no `Via:`.
 *
 *   A `Where:` that is a route (`/admin/x`), an absolute URL, or a local
 *   address (`localhost:3000/admin`) gets a Go control in the run screen
@@ -4829,6 +5048,38 @@ var CURRENT_FORMAT_VERSION = "0.0.11";
 *   pass/fail: rationale, regression history, caveats. Keeping it out of
 *   `### Expected` is the whole point — Expected stays scannable.
 *   `### Expected` and `### Note` may appear in either order.
+*
+*   ### Photo                                   (optional, repeatable —
+*   Crop: #order-form                            what the runner should
+*   Pad: 24                                      photograph for this step,
+*   Mark: #save-button                           and how to mark it up:
+*   Point: .toast                                `Crop:` the container to
+*   Callout: #email — The address on the invoice  cut to (viewport when
+*   Blur: [data-testid="card-number"]            absent), `Pad:` css px
+*   Take: after                                  around it (24); `Mark:` a
+*   Mode: confirm                                box, `Point:` an arrow,
+*   Color: #E5484D                               `Callout:` a numbered disc
+*   Caption: The order form, ready to save       with an optional legend
+*                                                after " — ", `Blur:`
+*                                                pixelated — each a selector,
+*                                                each repeatable, resolved
+*                                                on the page when the photo
+*                                                is taken. `Take:` before |
+*                                                after | manual — when: as
+*                                                the step becomes current,
+*                                                as its verdict is given, or
+*                                                by a button. `Mode:` auto |
+*                                                confirm — keep silently, or
+*                                                offer Keep / Retake / Edit /
+*                                                Discard. Only the keys that
+*                                                differ from these defaults
+*                                                need writing.)
+*
+*   The n-th `### Photo` of a step fills `%PHOTO_n%` wherever that appears
+*   in the step's instructions or `### Expected` — the place the picture
+*   belongs when the run is exported as a guide. `PHOTO_` is a reserved
+*   prefix: `%PHOTO_n%` is never a variable and never substituted. A photo
+*   with no placeholder is placed after the instructions.
 *
 *   ## Another step title
 *   ```js
@@ -4884,6 +5135,7 @@ function parseCaseDocument(raw, fallback, opts = {}) {
 	let formatVersion = CURRENT_FORMAT_VERSION;
 	let author = "";
 	let project = "";
+	let kind = "case";
 	let tags = [];
 	let locations = [];
 	let goal = "";
@@ -4896,6 +5148,7 @@ function parseCaseDocument(raw, fallback, opts = {}) {
 		const versionMatch = /^@version\s+(.*)$/i.exec(line);
 		const authorMatch = /^@author\s+(.*)$/i.exec(line);
 		const projectMatch = /^@project\s+(.*)$/i.exec(line);
+		const kindMatch = /^@kind:?\s+(.*)$/i.exec(line);
 		const tagsMatch = /^Tags:\s*(.*)$/i.exec(line);
 		const locationsMatch = /^@locations:?\s*(.*)$/i.exec(line);
 		const noteMatch = /^Change note:\s*(.*)$/i.exec(line);
@@ -4911,6 +5164,13 @@ function parseCaseDocument(raw, fallback, opts = {}) {
 		}
 		if (projectMatch) {
 			project = projectMatch[1].trim();
+			i++;
+			continue;
+		}
+		if (kindMatch) {
+			const value = kindMatch[1].trim().toLowerCase();
+			if (value !== "case" && value !== "guide") throw new Error(`@kind must be case or guide, not "${kindMatch[1].trim()}".`);
+			kind = value;
 			i++;
 			continue;
 		}
@@ -4977,6 +5237,7 @@ function parseCaseDocument(raw, fallback, opts = {}) {
 		formatVersion,
 		author,
 		project,
+		kind,
 		changeNote,
 		title,
 		goal,
@@ -5107,6 +5368,21 @@ function parseOneVariable(name, body) {
 	};
 }
 var PLACEHOLDER_RE = /%([A-Za-z_][A-Za-z0-9_]*)%/g;
+/** `%PHOTO_n%` — where the n-th `### Photo` of the step lands on export.
+* Reserved: never a variable (see `isPhotoPlaceholder`). */
+var PHOTO_PLACEHOLDER_RE = /%PHOTO_(\d+)%/g;
+function isPhotoPlaceholder(name) {
+	return /^PHOTO_\d+$/.test(name);
+}
+/** The distinct `n`s of every `%PHOTO_n%` in `text`, in order of first use. */
+function photoPlaceholders(text) {
+	const seen = [];
+	for (const m of text.matchAll(PHOTO_PLACEHOLDER_RE)) {
+		const n = Number(m[1]);
+		if (n > 0 && !seen.includes(n)) seen.push(n);
+	}
+	return seen;
+}
 /** Replaces every `%NAME%` placeholder in `text` with its resolved value.
 *
 * A variable is only used when it actually has a value. A placeholder with
@@ -5117,7 +5393,12 @@ var PLACEHOLDER_RE = /%([A-Za-z_][A-Za-z0-9_]*)%/g;
 * reading the run to tell that a value was ever meant to be there. Leaving
 * the placeholder says exactly what happened. */
 function substituteVariables(text, values) {
-	return text.replace(PLACEHOLDER_RE, (match, name) => values[name]?.trim() ? values[name] : match);
+	return text.replace(PLACEHOLDER_RE, (match, name, offset, whole) => {
+		if (isPhotoPlaceholder(name)) return match;
+		const value = values[name];
+		if (!value?.trim()) return match;
+		return joinResolvedValue(value, whole.slice(offset + match.length));
+	});
 }
 /**
 * The items of a `# Dependencies` / `# Prerequisites` section, one string per
@@ -5142,10 +5423,23 @@ function parseBulletList(text) {
 	}
 	return items;
 }
+/** `parseBulletList`'s inverse: items back out as one Markdown list, each
+* item's continuation lines indented two spaces so they stay inside their
+* bullet. Every renderer that shows these lists goes through here — a
+* renderer that writes `- ${item}` flat breaks a multiline item back out of
+* its bullet, which is the truncation bug in a second form. */
+function renderBulletList(items) {
+	return items.map((item) => `- ${item.trim().replace(/\n/g, "\n  ")}`).join("\n");
+}
 var FENCE_RE = /```([^\n]*)\n([\s\S]*?)```/;
-var SUBSECTION_RE = /^###\s+(Expected|Note)\s*$/i;
+var SUBSECTION_RE = /^###\s+(Expected|Note|Photo)\s*$/i;
+var PHOTO_KEY_RE = /^([A-Za-z]+):\s*(.*)$/;
 var SELECTOR_RE = /^Selector:\s*(.*)$/i;
 var WHERE_RE = /^Where:\s*(.*)$/i;
+var VIA_RE = /^Via:\s*(.*)$/i;
+/** The `Via:` values that say "the UI offers no path to this page" — an
+* explicit answer, not a missing one. */
+var VIA_LINK_ONLY_RE = /^(link only|direct link( only)?|url only|none|no ui path)$/i;
 var KIND_RE = /^Kind:\s*(.*)$/i;
 /** Splits a step body into its lead text and any `### Expected` / `### Note`
 * subsections. They may appear in either order, and either may be absent. */
@@ -5153,15 +5447,20 @@ function splitStepSubsections(text) {
 	const lead = [];
 	const expected = [];
 	const note = [];
+	const photoBlocks = [];
 	let current = lead;
 	let sawExpected = false;
 	let sawNote = false;
 	for (const line of text.split("\n")) {
 		const match = SUBSECTION_RE.exec(line);
 		if (match) {
-			if (match[1].toLowerCase() === "expected") {
+			const which = match[1].toLowerCase();
+			if (which === "expected") {
 				current = expected;
 				sawExpected = true;
+			} else if (which === "photo") {
+				current = [];
+				photoBlocks.push(current);
 			} else {
 				current = note;
 				sawNote = true;
@@ -5173,8 +5472,108 @@ function splitStepSubsections(text) {
 	return {
 		lead: lead.join("\n").trim(),
 		expected: sawExpected ? expected.join("\n").trim() || void 0 : void 0,
-		note: sawNote ? note.join("\n").trim() || void 0 : void 0
+		note: sawNote ? note.join("\n").trim() || void 0 : void 0,
+		photos: photoBlocks.map(parsePhotoBlock)
 	};
+}
+/** Splits `#email — The address` into selector and legend text; the dash
+* may be an em dash or ` - ` with spaces, so a plain-keyboard author is
+* not punished. A selector never contains either surrounded by spaces. */
+function splitCalloutLine(value) {
+	const m = /^(.*?)\s+(?:—|–|-)\s+(.*)$/.exec(value);
+	return m ? {
+		selector: m[1].trim(),
+		text: m[2].trim()
+	} : {
+		selector: value.trim(),
+		text: ""
+	};
+}
+/** One `### Photo` block's `Key: value` lines into a spec. Unknown keys
+* and bad values throw — a photo spec the runner would misread is worse
+* than a parse error at authoring time. */
+function parsePhotoBlock(lines) {
+	const spec = {
+		crop: "",
+		pad: 24,
+		marks: [],
+		points: [],
+		callouts: [],
+		blurs: [],
+		take: "after",
+		mode: "confirm",
+		color: DEFAULT_SHOT_COLOR,
+		caption: ""
+	};
+	for (const raw of lines) {
+		const line = raw.trim();
+		if (!line) continue;
+		const m = PHOTO_KEY_RE.exec(line);
+		if (!m) throw new Error(`A \`### Photo\` block holds only \`Key: value\` lines, not "${line}".`);
+		const key = m[1].toLowerCase();
+		const value = m[2].trim();
+		switch (key) {
+			case "crop":
+				spec.crop = value;
+				break;
+			case "pad":
+				if (!value) break;
+				if (!/^\d+$/.test(value)) throw new Error(`\`Pad:\` must be a whole number of pixels, not "${value}".`);
+				spec.pad = Number(value);
+				break;
+			case "mark":
+				if (value) spec.marks.push(value);
+				break;
+			case "point":
+				if (value) spec.points.push(value);
+				break;
+			case "callout":
+				if (value) spec.callouts.push(splitCalloutLine(value));
+				break;
+			case "blur":
+				if (value) spec.blurs.push(value);
+				break;
+			case "take": {
+				const take = value.toLowerCase();
+				if (!PHOTO_TAKE.includes(take)) throw new Error(`\`Take:\` must be before, after or manual, not "${value}".`);
+				spec.take = take;
+				break;
+			}
+			case "mode": {
+				const mode = value.toLowerCase();
+				if (!PHOTO_MODE.includes(mode)) throw new Error(`\`Mode:\` must be auto or confirm, not "${value}".`);
+				spec.mode = mode;
+				break;
+			}
+			case "color":
+			case "colour":
+				spec.color = value.toUpperCase();
+				break;
+			case "caption":
+				spec.caption = value;
+				break;
+			default: throw new Error(`Unknown \`### Photo\` key "${m[1]}" — the keys are Crop, Pad, Mark, Point, Callout, Blur, Take, Mode, Color, Caption.`);
+		}
+	}
+	return spec;
+}
+/** `parsePhotoBlock`'s inverse: only the keys that differ from defaults. */
+function renderPhotoBlock(spec) {
+	const out = ["### Photo"];
+	if (spec.crop.trim()) out.push(`Crop: ${spec.crop.trim()}`);
+	if (spec.pad !== 24) out.push(`Pad: ${spec.pad}`);
+	for (const s of spec.marks) if (s.trim()) out.push(`Mark: ${s.trim()}`);
+	for (const s of spec.points) if (s.trim()) out.push(`Point: ${s.trim()}`);
+	for (const c of spec.callouts) {
+		if (!c.selector.trim()) continue;
+		out.push(`Callout: ${c.selector.trim()}${c.text.trim() ? ` — ${c.text.trim()}` : ""}`);
+	}
+	for (const s of spec.blurs) if (s.trim()) out.push(`Blur: ${s.trim()}`);
+	if (spec.take !== "after") out.push(`Take: ${spec.take}`);
+	if (spec.mode !== "confirm") out.push(`Mode: ${spec.mode}`);
+	if (spec.color.toUpperCase() !== DEFAULT_SHOT_COLOR) out.push(`Color: ${spec.color.toUpperCase()}`);
+	if (spec.caption.trim()) out.push(`Caption: ${spec.caption.trim()}`);
+	return out;
 }
 function parseOneStep(title, body, index, group) {
 	const lines = body.split("\n");
@@ -5182,16 +5581,19 @@ function parseOneStep(title, body, index, group) {
 	while (i < lines.length && lines[i].trim() === "") i++;
 	const selectors = [];
 	let where;
+	let via;
 	let quick = false;
 	let extra = false;
 	for (; i < lines.length; i++) {
 		const selectorMatch = SELECTOR_RE.exec(lines[i]);
 		const whereMatch = WHERE_RE.exec(lines[i]);
+		const viaMatch = VIA_RE.exec(lines[i]);
 		const kindMatch = KIND_RE.exec(lines[i]);
 		if (selectorMatch) {
 			const candidate = selectorMatch[1].trim();
 			if (candidate) selectors.push(candidate);
 		} else if (whereMatch) where = whereMatch[1].trim() || void 0;
+		else if (viaMatch) via = viaMatch[1].trim() || void 0;
 		else if (kindMatch) {
 			const kind = kindMatch[1].trim().toLowerCase();
 			quick = kind === "quick";
@@ -5206,7 +5608,7 @@ function parseOneStep(title, body, index, group) {
 		script = fenceMatch[2].replace(/\n$/, "");
 		remaining = (bodyAfterHeader.slice(0, fenceMatch.index) + bodyAfterHeader.slice(fenceMatch.index + fenceMatch[0].length)).trim();
 	}
-	const { lead, expected, note } = splitStepSubsections(remaining);
+	const { lead, expected, note, photos } = splitStepSubsections(remaining);
 	const type = script !== void 0 ? "automated" : "manual";
 	return {
 		id: `step-${index + 1}`,
@@ -5218,10 +5620,12 @@ function parseOneStep(title, body, index, group) {
 		script,
 		selectors,
 		where,
+		via,
 		quick,
 		extra,
 		note,
-		group
+		group,
+		photos
 	};
 }
 /**
@@ -5253,6 +5657,131 @@ function stepNumberLabels(steps) {
 		return `${major}`;
 	});
 }
+/**
+* A parsed case back out as grammar-valid Markdown — the inverse of
+* `parseCaseDocument`.
+*
+* This exists for the builder in the viewer, where someone assembles a case
+* from form fields and needs a real `.md` file at the end of it. It lives
+* here, beside the parser and under the same doc comment that specifies the
+* grammar, because a serializer that drifts from its parser produces files
+* that look right and do not load.
+*
+* The property that must hold, and the one worth testing:
+* `parseCaseDocument(renderCaseMarkdown(doc))` returns `doc` again, for
+* everything the grammar can express. Fields the grammar has nowhere to put
+* — `version`, `createdAt`, which are derived from the filename and mtime —
+* are the deliberate exceptions.
+*/
+function renderCaseMarkdown(doc) {
+	const out = [];
+	out.push(`# ${doc.title.trim() || "Untitled case"}`);
+	out.push(`@version ${doc.formatVersion || "0.0.13"}`);
+	if (doc.author.trim()) out.push(`@author ${doc.author.trim()}`);
+	if (doc.project.trim()) out.push(`@project ${doc.project.trim()}`);
+	if (doc.kind === "guide") out.push("@kind guide");
+	if (doc.tags.length > 0) out.push(`Tags: ${doc.tags.join(", ")}`);
+	if (doc.locations.length > 0) out.push(`@locations: ${doc.locations.join(", ")}`);
+	if (doc.goal.trim()) out.push(`Goal: ${doc.goal.trim()}`);
+	if (doc.youWill.trim()) out.push(`You will: ${doc.youWill.trim()}`);
+	if (doc.changeNote.trim()) out.push(`Change note: ${doc.changeNote.trim()}`);
+	if (doc.description.trim()) {
+		out.push("");
+		out.push(doc.description.trim());
+	}
+	const declaredDomains = doc.domains.filter((d) => !d.implicit);
+	if (declaredDomains.length > 0) {
+		out.push("");
+		out.push("# Domains");
+		for (const domain of declaredDomains) {
+			out.push("");
+			out.push(`## ${domain.name.trim()}`);
+			if (domain.description.trim()) out.push(domain.description.trim());
+			if (domain.defaultValue?.trim()) out.push(`Default: ${domain.defaultValue.trim()}`);
+			if (domain.match?.trim()) out.push(`Match: ${domain.match.trim()}`);
+		}
+	}
+	if (doc.variables.length > 0) {
+		out.push("");
+		out.push("# Variables");
+		for (const variable of doc.variables) {
+			out.push("");
+			out.push(`## ${variable.name.trim()}`);
+			if (variable.description.trim()) out.push(variable.description.trim());
+			if (variable.defaultValue?.trim()) out.push(`Default: ${variable.defaultValue.trim()}`);
+			if (variable.generator) out.push(`Generator: ${variable.generator}${variable.generatorArg?.trim() ? ` ${variable.generatorArg.trim()}` : ""}`);
+			if (variable.match?.trim()) out.push(`Match: ${variable.match.trim()}`);
+		}
+	}
+	for (const [heading, items] of [
+		["You will need", doc.youWillNeed],
+		["Dependencies", doc.dependencies],
+		["Prerequisites", doc.prerequisites]
+	]) {
+		if (items.length === 0) continue;
+		out.push("");
+		out.push(`# ${heading}`);
+		out.push(renderBulletList(items));
+	}
+	let openGroup = null;
+	for (const step of doc.steps) {
+		const group = step.group?.trim() || void 0;
+		if (openGroup === null || group !== openGroup) {
+			out.push("");
+			if (group) {
+				out.push(`# Steps: ${group}`);
+				const goal = doc.groups.find((g) => g.title === group)?.goal.trim();
+				if (goal) {
+					out.push("");
+					out.push(goal);
+				}
+			} else out.push("# Steps");
+			openGroup = group;
+		}
+		out.push("");
+		out.push(`## ${step.title.trim() || "Untitled step"}`);
+		if (step.where?.trim()) out.push(`Where: ${step.where.trim()}`);
+		if (step.via?.trim()) out.push(`Via: ${step.via.trim()}`);
+		for (const selector of step.selectors) if (selector.trim()) out.push(`Selector: ${selector.trim()}`);
+		if (step.quick) out.push("Kind: quick");
+		else if (step.extra) out.push("Kind: extra");
+		if (step.instructions?.trim()) out.push(step.instructions.trim());
+		if (step.script !== void 0) {
+			out.push("```js");
+			out.push(step.script.replace(/\n$/, ""));
+			out.push("```");
+		}
+		if (step.expected?.trim()) {
+			out.push("");
+			out.push("### Expected");
+			out.push(step.expected.trim());
+		}
+		for (const photo of step.photos ?? []) {
+			out.push("");
+			out.push(...renderPhotoBlock(photo));
+		}
+		if (step.note?.trim()) {
+			out.push("");
+			out.push("### Note");
+			out.push(step.note.trim());
+		}
+	}
+	if (doc.steps.length === 0) {
+		out.push("");
+		out.push("# Steps");
+	}
+	return out.join("\n") + "\n";
+}
+/** The file stem of a screenshot — `01`, `02`, … — shared by every
+* writer and reader of `screenshots/`. */
+function screenshotStem(shot) {
+	return String(shot.seq).padStart(2, "0");
+}
+/** A screenshot's alt text: its caption, else which photo it is. */
+function screenshotAlt(shot) {
+	if (shot.caption.trim()) return shot.caption.trim();
+	return shot.slot ? `Photo ${shot.slot}` : `Screenshot ${shot.seq}`;
+}
 /** True when a step body's header block carries `Kind: quick`. Reads only
 * the header — the same lines `parseOneStep` reads — so a `Kind:` line in
 * the instructions prose is not a marker. */
@@ -5261,7 +5790,7 @@ function stepBodyIsQuick(body) {
 		if (line.trim() === "") continue;
 		const kindMatch = KIND_RE.exec(line);
 		if (kindMatch) return kindMatch[1].trim().toLowerCase() === "quick";
-		if (!SELECTOR_RE.test(line) && !WHERE_RE.test(line)) return false;
+		if (!SELECTOR_RE.test(line) && !WHERE_RE.test(line) && !VIA_RE.test(line)) return false;
 	}
 	return false;
 }
@@ -5430,7 +5959,7 @@ function lintCase(raw, options = {}) {
 			...s.selectors
 		])
 	].join("\n");
-	const undeclared = new Set([...everyField.matchAll(/%([A-Za-z_][A-Za-z0-9_]*)%/g)].map((m) => m[1]).filter((name) => !declaredNames.has(name)));
+	const undeclared = new Set([...everyField.matchAll(/%([A-Za-z_][A-Za-z0-9_]*)%/g)].map((m) => m[1]).filter((name) => !declaredNames.has(name) && !isPhotoPlaceholder(name)));
 	for (const name of undeclared) errors.push({
 		rule: "6",
 		message: `%${name}% is used but never declared under \`# Domains\` or \`# Variables\`, so it stays literal in the run — a typo, or a missing declaration.`
@@ -5478,7 +6007,7 @@ function lintCase(raw, options = {}) {
 			message: `Several domains, and ${unmatched.map((n) => `\`${n}\``).join(", ")} ${unmatched.length === 1 ? "carries" : "carry"} no \`Match:\`. With a pattern per domain the panel can tell which deployment the open tab is; without one, only the main domain follows the tab, and a run started from the wrong tab starts on the wrong address.`
 		});
 	}
-	if (doc.formatVersion && doc.formatVersion !== "0.0.11") warnings.push({
+	if (doc.formatVersion && doc.formatVersion !== "0.0.13") warnings.push({
 		rule: "7",
 		message: `@version is ${doc.formatVersion}; this parser implements ${CURRENT_FORMAT_VERSION}. Re-read the grammar before trusting anything below.`
 	});
@@ -5540,10 +6069,35 @@ function lintCase(raw, options = {}) {
 		at: firstStep.title,
 		message: "Step 1 looks like it only opens the app. Move it to `# Prerequisites` unless arriving is what is under test."
 	});
+	const pageOf = (text) => {
+		const value = (text ?? "").trim();
+		if (!value || !ADDRESS.test(value) || /\s/.test(value)) return null;
+		return value.split(/[?#]/)[0].replace(/\/+$/, "").toLowerCase();
+	};
+	let previousPage = pageOf(declared.prerequisites.filter((p) => OPENS_SOMEWHERE.test(p)).map((p) => /(%[A-Za-z_][A-Za-z0-9_]*%\S*|https?:\/\/\S+|(?<=\s|^)\/\S+)/.exec(stripCode(p))?.[1] ?? "").find(Boolean));
 	let quickMarked = 0;
 	for (const [index, step] of doc.steps.entries()) {
 		const where = step.where?.trim() ?? "";
 		if (step.quick) quickMarked++;
+		const page = pageOf(declared.steps[index]?.where);
+		const moved = page !== null && page !== previousPage;
+		if (page !== null) previousPage = page;
+		const via = step.via?.trim() ?? "";
+		if (moved && !via) errors.push({
+			rule: "2b",
+			at: step.title,
+			message: `\`Where: ${where}\` is a new page and nothing says how to reach it from the app. Add \`Via: <menu path>\` — \`Via: Settings → Users → the row\` — or \`Via: link only\` when the UI genuinely has no path (a deep link, a redirect target). The address may point at another environment; the tester must still be able to get there.`
+		});
+		else if (via && !moved && index > 0 && page !== null) warnings.push({
+			rule: "2b",
+			at: step.title,
+			message: `\`Via: ${via}\` on a step that stays on the previous step's page — the tester is already there. Drop it unless the step genuinely re-navigates.`
+		});
+		if (VIA_LINK_ONLY_RE.test(via) && !/\b(link|redirect|email|mail|url|qr|only)\b/i.test(`${step.instructions ?? ""} ${step.note ?? ""}`)) warnings.push({
+			rule: "2b",
+			at: step.title,
+			message: "`Via: link only` — say in the instructions or a `### Note` where the link comes from (an email, a redirect, a QR code), so the tester knows why there is no menu to look for."
+		});
 		if (!where) errors.push({
 			rule: "2b",
 			at: step.title,
@@ -5651,6 +6205,52 @@ function lintCase(raw, options = {}) {
 		at: doc.groups[0].title,
 		message: "Every step is in the one group, so the group is the case. Groups earn their headings when a case has several concerns; otherwise use a plain `# Steps` and let the description carry the goal."
 	});
+	for (const step of doc.steps) {
+		const placeholders = photoPlaceholders(`${step.instructions ?? ""}\n${step.expected ?? ""}`);
+		for (const n of placeholders) if (n > step.photos.length) errors.push({
+			rule: "10",
+			at: step.title,
+			message: `%PHOTO_${n}% is used but the step has ${step.photos.length === 0 ? "no" : `only ${step.photos.length}`} \`### Photo\` block${step.photos.length === 1 ? "" : "s"}. Add the block, or renumber the placeholder.`
+		});
+		if (photoPlaceholders(step.note ?? "").length > 0) warnings.push({
+			rule: "10",
+			at: step.title,
+			message: "A %PHOTO_n% in `### Note` is never exported — the note is not part of a guide. Put it in the instructions or `### Expected`."
+		});
+		step.photos.forEach((photo, i) => {
+			const at = `${step.title} — photo ${i + 1}`;
+			const marked = [
+				...photo.marks,
+				...photo.points,
+				...photo.callouts.map((c) => c.selector)
+			];
+			if (!SHOT_COLORS.includes(photo.color.toUpperCase())) errors.push({
+				rule: "10",
+				at,
+				message: `\`Color: ${photo.color}\` is not in the palette: ${SHOT_COLORS.join(", ")}.`
+			});
+			for (const selector of marked) if (photo.blurs.includes(selector)) errors.push({
+				rule: "10",
+				at,
+				message: `\`${selector}\` is both blurred and marked. An element cannot be pointed at and hidden in the same photo.`
+			});
+			if (photo.take !== "manual" && !photo.crop && marked.length === 0 && photo.blurs.length === 0) warnings.push({
+				rule: "10",
+				at,
+				message: "An unmarked, uncropped photo of the whole viewport. Say what it shows with `Crop:` or a `Mark:`/`Callout:`; a reader cannot tell what to look at in a full page."
+			});
+			const specSelectors = [
+				photo.crop,
+				...marked,
+				...photo.blurs
+			].filter(Boolean);
+			if (step.selectors.length > 0 && specSelectors.length > 0 && !specSelectors.some((s) => step.selectors.includes(s))) warnings.push({
+				rule: "10",
+				at,
+				message: "None of the photo's selectors is one of the step's `Selector:` lines. Fine when the photo shows a container around the element; check it is on the right step."
+			});
+		});
+	}
 	let quickParses = true;
 	if (quickMarked > 0) try {
 		const quickDoc = parseCaseDocument(filterToQuickSteps(substituted), {
@@ -5669,7 +6269,7 @@ function lintCase(raw, options = {}) {
 			message: `The quick subset fails to parse on its own: ${String(e)}`
 		});
 	}
-	if (quickMarked === 0 && doc.steps.length > 1) warnings.push({
+	if (doc.kind === "guide") {} else if (quickMarked === 0 && doc.steps.length > 1) warnings.push({
 		rule: "3b",
 		message: "No step carries `Kind: quick`, so this case is full-only. Correct for a case that is all edge cases; otherwise mark the core path."
 	});
@@ -5719,6 +6319,549 @@ function shortId() {
 }
 function newTestCaseId(title) {
 	return `${slugify(title) || "test-case"}-${shortId()}`;
+}
+/** A title as a filename: lowercase, punctuation collapsed to dashes, and
+* short enough that a suffix stays visible in a downloads list. Falls back
+* to `case` so an untitled document still saves. Shared by the panel's
+* downloads and the validator's `export-guide`, so both name a guide's
+* folder and file the same way. */
+function fileSlug(title) {
+	return title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60).replace(/-+$/g, "") || "case";
+}
+//#endregion
+//#region shared/src/selector-text.ts
+/**
+* Deciding whether a scrap of text inside a step's prose is a CSS selector
+* the tester can be offered a Highlight for.
+*
+* The step contract tells authors to put visible UI labels in backticks
+* (`` `Save changes` ``), so inline code is *mostly* not selectors. A rule
+* that guesses generously turns every quoted button label into a control
+* that flashes nothing — worse than no feature, because the tester learns
+* to distrust it. So this errs hard toward "no", and only says yes to
+* shapes a label could not plausibly take.
+*/
+/** Rejects anything `querySelector` itself would throw on, which is the
+* cheapest correctness filter available and needs no page access — the
+* side panel is a document too. */
+function isParseableSelector(text) {
+	try {
+		document.querySelector(text);
+		return true;
+	} catch {
+		return false;
+	}
+}
+/** An id selector: `#` followed by a name that cannot start with a digit —
+* which is what keeps `#1234` (an issue reference, very common in a step
+* that names a ticket) from reading as one. */
+var ID_SELECTOR = /^#[A-Za-z_-][\w-]*$/;
+/** An attribute selector anywhere in the string — `[data-testid="x"]`,
+* `button[type=submit]`. Nothing that reads as prose contains one. */
+var HAS_ATTRIBUTE = /\[[\w-]+([~|^$*]?=|])/;
+/** A compound/descendant selector built from classes and ids: `.modal .btn`,
+* `#panel > .row`. Requires more than one part on purpose — a lone
+* `.env` or `.gitignore` in an instruction is a filename, not a selector. */
+var MULTIPART = /^[.#][\w-]+(\s*[>+~]\s*|\s+|[.#:])[\w\s.#:>+~[\]="'-]+$/;
+/**
+* True when `text` should be offered as a clickable Highlight in rendered
+* step Markdown. Single line, bounded length, and one of the three shapes
+* above — plus actually parseable as a selector.
+*/
+function looksLikeSelector(text) {
+	const value = text.trim();
+	if (!value || value.length > 120 || value.includes("\n")) return false;
+	if (!(ID_SELECTOR.test(value) || HAS_ATTRIBUTE.test(value) || MULTIPART.test(value))) return false;
+	return isParseableSelector(value);
+}
+//#endregion
+//#region shared/src/html.ts
+/**
+* A case as a page a person reads and works through, rather than as a file.
+*
+* One renderer serves two deliveries of the same thing:
+*
+* - **The online viewer** (`viewer/`, published to GitHub Pages) decodes a
+*   case out of a link, parses it, and drops this markup into its document.
+* - **The HTML download** in the side panel writes the same markup out as a
+*   single self-contained file — no network, no assets, nothing to install —
+*   which is what you attach to a ticket or send to someone who will never
+*   have the extension.
+*
+* They must not drift, because the whole promise of the link is that the
+* recipient sees the case you are looking at. So the markup, the CSS and the
+* behaviour all live here, and the two callers differ only in how they get
+* the page in front of someone.
+*
+* Markdown is rendered by the small inline renderer below rather than by a
+* library, for the same reason: the downloaded file has to work with nothing
+* loaded alongside it, and case prose is a narrow dialect — paragraphs,
+* bullets, bold, code, links, and the `"**value**"` marker. Anything richer
+* degrades to escaped text, which is safe and legible rather than broken.
+*/
+function escapeHtml$1(text) {
+	return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+/** Escaped for use inside a double-quoted attribute. */
+function escapeAttr(text) {
+	return escapeHtml$1(text).replace(/'/g, "&#39;");
+}
+var VARIABLE_TOKEN = /%([A-Za-z_][A-Za-z0-9_]*)%/g;
+/** `text` with every `%NAME%` that has a value replaced by it, leaving the
+* rest literal — `substituteVariables`' rule, applied where a span cannot go
+* (attributes). Slashes at the seam collapse the same way too, so a link
+* built from a `Default:` that ends in `/` is still one slash deep. */
+function resolveText(text, values) {
+	return text.replace(VARIABLE_TOKEN, (match, name, offset, whole) => {
+		if (isPhotoPlaceholder(name)) return match;
+		const value = values[name];
+		if (!value?.trim()) return match;
+		return joinResolvedValue(value, whole.slice(offset + match.length));
+	});
+}
+/**
+* Copyable things — a value chip, a selector — carry the text to copy in
+* `data-copy`. When that text contains a variable, it also carries the
+* unresolved form, so filling the value in updates what the clipboard gets:
+* a chip that quietly copies `%LOGIN_EMAIL%` into a login field is a trap,
+* and it is exactly the chip a reader is most likely to click.
+*/
+function copyAttrs(text, values) {
+	const resolved = resolveText(text, values);
+	const template = HAS_VARIABLE.test(text) ? ` data-copy-template="${escapeAttr(text)}"` : "";
+	return ` data-copy="${escapeAttr(resolved)}"${template}`;
+}
+/** Non-global twin of `VARIABLE_TOKEN`: a `g` regex carries `lastIndex`
+* between `test` calls, which turns a pure question into a stateful one. */
+var HAS_VARIABLE = /%[A-Za-z_][A-Za-z0-9_]*%/;
+/**
+* Wraps every `%NAME%` in a span the page can rewrite live as the reader
+* fills in values. Applied to escaped text only — never to an attribute —
+* so a placeholder inside a URL keeps its literal form and is handled by the
+* link's own template attribute instead.
+*/
+function withVariableSpans(escapedText, values) {
+	return escapedText.replace(VARIABLE_TOKEN, (match, name) => {
+		if (isPhotoPlaceholder(name)) return match;
+		const value = values[name]?.trim();
+		return `<span class="var" data-var="${escapeAttr(name)}"${value ? "" : " data-unset"}>${value ? escapeHtml$1(value) : match}</span>`;
+	});
+}
+/** A value an author marked as something to type: `"**Buy milk**"`. Both
+* marks are required — see `rehypeQuotedValues` in the extension for why
+* neither quotes nor bold alone can carry it. */
+var QUOTED_VALUE = /["“]\*\*([^*\n]{1,120})\*\*["”]/;
+var INLINE_CODE = /`([^`\n]+)`/;
+var MD_LINK = /\[([^\]\n]+)\]\(([^)\s]+)\)/;
+var BOLD = /\*\*([^*\n]+)\*\*/;
+/**
+* Emphasis, with the character in front of it captured rather than checked
+* by a lookbehind — which older Safari cannot parse, and an unparseable
+* regex here does not degrade, it throws before the page renders at all.
+*
+* The guard on both sides is what keeps snake_case out: without it,
+* `%LOGIN_EMAIL% and %RUN_ID%` matches from the `_` in one variable to the
+* `_` in the next and italicises the span between them.
+*/
+var EMPHASIS = /(^|[^\w*])[*_]([^*_\n]+)[*_](?![\w*])/;
+/** Alternation order is the precedence: a quoted bold run is a value rather
+* than bold-inside-quotes, and code wins over everything so a selector
+* containing `*` is never read as emphasis. */
+var INLINE_SOURCE = [
+	`(?<value>${QUOTED_VALUE.source})`,
+	`(?<code>${INLINE_CODE.source})`,
+	`(?<link>${MD_LINK.source})`,
+	`(?<varaddr>${/%[A-Za-z_][A-Za-z0-9_]*%[^\s<>()]*/.source})`,
+	`(?<bold>${BOLD.source})`,
+	`(?<em>${EMPHASIS.source})`,
+	`(?<url>${/https?:\/\/[^\s<>()]+/.source})`
+].join("|");
+/**
+* A selector an author named in prose — `` `#sync-btn` `` — rendered as
+* something the reader can copy. In the side panel these flash the element
+* in the page; here there is no page to flash, and a selector you can put on
+* your clipboard is the most of that idea a document can keep.
+*/
+function renderCode(value, values) {
+	const trimmed = value.trim();
+	if (looksLikeSelector(trimmed)) return `<code class="sel"${copyAttrs(trimmed, values)} title="Copy this selector">${withVariableSpans(escapeHtml$1(trimmed), values)}</code>`;
+	return `<code>${withVariableSpans(escapeHtml$1(value), values)}</code>`;
+}
+function renderLink(label, href, values) {
+	if (href.startsWith("#") || href.startsWith("selector:")) return renderInline(label, values);
+	return `<a href="${escapeAttr(resolveText(href, values))}" data-href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer">${renderInline(label, values)}</a>`;
+}
+/** Markdown's inline layer: the marks case prose actually uses. */
+function renderInline(text, values = {}) {
+	const scanner = new RegExp(INLINE_SOURCE, "g");
+	let out = "";
+	let last = 0;
+	for (let match = scanner.exec(text); match; match = scanner.exec(text)) {
+		out += withVariableSpans(escapeHtml$1(text.slice(last, match.index)), values);
+		const groups = match.groups ?? {};
+		if (groups.value !== void 0) {
+			const value = QUOTED_VALUE.exec(match[0])[1];
+			out += `<button type="button" class="chip"${copyAttrs(value, values)} title="Copy this value">${withVariableSpans(escapeHtml$1(value), values)}</button>`;
+		} else if (groups.code !== void 0) out += renderCode(INLINE_CODE.exec(match[0])[1], values);
+		else if (groups.link !== void 0) {
+			const link = MD_LINK.exec(match[0]);
+			out += renderLink(link[1], link[2], values);
+		} else if (groups.varaddr !== void 0) {
+			const token = match[0].replace(/[.,;:!?]+$/, "");
+			const trailing = match[0].slice(token.length);
+			const resolved = resolveText(token, values);
+			if (ABSOLUTE_URL.test(resolved) && !HAS_VARIABLE.test(resolved)) out += `<a href="${escapeAttr(resolved)}" data-href="${escapeAttr(token)}" target="_blank" rel="noopener noreferrer">${withVariableSpans(escapeHtml$1(token), values)}</a>` + withVariableSpans(escapeHtml$1(trailing), values);
+			else out += withVariableSpans(escapeHtml$1(match[0]), values);
+		} else if (groups.bold !== void 0) out += `<strong>${renderInline(BOLD.exec(match[0])[1], values)}</strong>`;
+		else if (groups.em !== void 0) {
+			const emphasis = EMPHASIS.exec(match[0]);
+			out += withVariableSpans(escapeHtml$1(emphasis[1]), values) + `<em>${renderInline(emphasis[2], values)}</em>`;
+		} else out += `<a href="${escapeAttr(match[0])}" target="_blank" rel="noopener noreferrer">${escapeHtml$1(match[0])}</a>`;
+		last = match.index + match[0].length;
+	}
+	return out + withVariableSpans(escapeHtml$1(text.slice(last)), values);
+}
+var BULLET = /^\s*[-*]\s+(.*)$/;
+var NUMBERED = /^\s*\d+[.)]\s+(.*)$/;
+/** Markdown's block layer: paragraphs and the two kinds of list. */
+function renderMarkdown(text, values = {}) {
+	const blocks = [];
+	let paragraph = [];
+	let list = null;
+	const flushParagraph = () => {
+		if (paragraph.length === 0) return;
+		blocks.push(`<p>${renderInline(paragraph.join(" "), values)}</p>`);
+		paragraph = [];
+	};
+	const flushList = () => {
+		if (!list) return;
+		const tag = list.ordered ? "ol" : "ul";
+		blocks.push(`<${tag}>${list.items.map((i) => `<li>${renderInline(i, values)}</li>`).join("")}</${tag}>`);
+		list = null;
+	};
+	for (const line of text.split("\n")) {
+		const bullet = BULLET.exec(line);
+		const numbered = NUMBERED.exec(line);
+		if (bullet || numbered) {
+			flushParagraph();
+			const ordered = !bullet;
+			if (list && list.ordered !== ordered) flushList();
+			if (!list) list = {
+				ordered,
+				items: []
+			};
+			list.items.push((bullet ?? numbered)[1]);
+			continue;
+		}
+		if (line.trim() === "") {
+			flushParagraph();
+			flushList();
+			continue;
+		}
+		flushList();
+		paragraph.push(line.trim());
+	}
+	flushParagraph();
+	flushList();
+	return blocks.join("");
+}
+var ABSOLUTE_URL = /^https?:\/\//i;
+//#endregion
+//#region shared/src/guide.ts
+/**
+* A finished run as a user guide.
+*
+* A case run step by step, with a picture at each step, is a guide: the
+* prose comes from the frozen `case.md`, the pictures from the run's
+* screenshots, and the order from the run. What a tester needs and a reader
+* does not — notes, selectors, scripts, photo specs, verdicts, comments,
+* ratings — never crosses over. Two outputs from one walk: Markdown with
+* image references (a folder with an `images/` beside it) and a single
+* HTML page (images inlined as data URLs by the caller's `imageRef`).
+*
+* Used by the validator's `export-guide` and by the panel's Download guide,
+* so the two cannot disagree about what a guide contains.
+*/
+/** The steps a guide shows: document order, every step the run did not
+* skip, numbered over that list. */
+function guideSteps(doc, run) {
+	const byId = new Map(run.steps.map((s) => [s.stepId, s]));
+	const included = doc.steps.map((step) => ({
+		step,
+		state: byId.get(step.id)
+	})).filter((s) => !!s.state && s.state.status !== "skipped");
+	const labels = stepNumberLabels(included.map((s) => s.step));
+	return included.map((s, i) => ({
+		...s,
+		label: labels[i]
+	}));
+}
+/** A figure's legend: the spec's callout texts, in order, only for a
+* screenshot that fills a slot. */
+function legendOf(step, shot) {
+	if (!step || shot.slot === null) return [];
+	const spec = step.photos[shot.slot - 1];
+	if (!spec) return [];
+	return spec.callouts.filter((c) => !shot.missing.includes(c.selector)).map((c) => c.text.trim() || c.selector);
+}
+/** What the figure shows: the crop's size when there is one, else the
+* capture's — the rendered PNG is the cropped image. */
+function shownSize(shot) {
+	const crop = shot.ops.find((op) => op.tool === "crop");
+	if (!crop) return {
+		width: shot.width,
+		height: shot.height
+	};
+	return {
+		width: Math.round(crop.w),
+		height: Math.round(crop.h)
+	};
+}
+/** The caption a figure shows: the screenshot's own, else the spec's. */
+function captionOf(step, shot) {
+	if (shot.caption.trim()) return shot.caption.trim();
+	if (step && shot.slot !== null) return step.photos[shot.slot - 1]?.caption.trim() ?? "";
+	return "";
+}
+function bySeq(shots) {
+	return [...shots].sort((a, b) => a.seq - b.seq);
+}
+function figureMarkdown(step, shot, opts) {
+	const caption = captionOf(step, shot);
+	const lines = [`![${caption || screenshotAlt(shot)}](${opts.imageRef(shot)})`];
+	if (caption) lines.push(`*${caption}*`);
+	const legend = legendOf(step, shot);
+	if (legend.length > 0) {
+		lines.push("");
+		legend.forEach((text, i) => lines.push(`${i + 1}. ${text}`));
+	}
+	return lines.join("\n");
+}
+/** `text` with every `%PHOTO_n%` replaced by the figure that fills it, on
+* its own paragraph; unfilled ones are dropped and reported. */
+function placeFiguresMarkdown(text, at, step, bySlot, opts, warnings) {
+	return text.replace(PHOTO_PLACEHOLDER_RE, (_m, n) => {
+		const shot = bySlot.get(Number(n));
+		if (!shot) {
+			warnings.push(`${at}: %PHOTO_${n}% has no screenshot in this run; dropped.`);
+			return "";
+		}
+		return `\n\n${figureMarkdown(step, shot, opts)}\n\n`;
+	});
+}
+/** Collapses the blank runs that dropped or inserted figures leave. */
+function tidy(text) {
+	return text.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+function renderGuideMarkdown(doc, run, opts) {
+	const warnings = [];
+	const out = [];
+	const push = (s) => {
+		out.push(s);
+		out.push("");
+	};
+	push(`# ${doc.title.trim()}`);
+	if (doc.goal.trim()) push(doc.goal.trim());
+	if (doc.description.trim()) push(doc.description.trim());
+	for (const shot of bySeq(run.screenshots.filter((s) => s.stepId === null))) push(figureMarkdown(null, shot, opts));
+	const before = [...doc.youWillNeed, ...doc.prerequisites];
+	if (before.length > 0) {
+		push("## Before you start");
+		push(renderBulletList(before));
+	}
+	const grouped = doc.groups.length > 0;
+	let openGroup;
+	for (const { step, label } of guideSteps(doc, run)) {
+		if (grouped && step.group && step.group !== openGroup) {
+			openGroup = step.group;
+			push(`## ${step.group}`);
+			const goal = doc.groups.find((g) => g.title === step.group)?.goal.trim();
+			if (goal) push(goal);
+		}
+		push(`${grouped ? "###" : "##"} ${label}. ${step.title.trim()}`);
+		if (step.where?.trim()) push(`Go to: \`${step.where.trim()}\``);
+		if (step.via?.trim() && !VIA_LINK_ONLY_RE.test(step.via.trim())) push(`Find it under: ${step.via.trim()}`);
+		const shots = bySeq(run.screenshots.filter((s) => s.stepId === step.id));
+		const bySlot = new Map(shots.filter((s) => s.slot !== null).map((s) => [s.slot, s]));
+		const at = `Step ${label} "${step.title.trim()}"`;
+		const placed = /* @__PURE__ */ new Set([...placeholdersOf(step.instructions ?? ""), ...placeholdersOf(step.expected ?? "")]);
+		if (step.instructions?.trim()) push(tidy(placeFiguresMarkdown(step.instructions.trim(), at, step, bySlot, opts, warnings)));
+		for (const shot of shots) {
+			if (shot.slot !== null && placed.has(shot.slot)) continue;
+			push(figureMarkdown(step, shot, opts));
+		}
+		if (step.expected?.trim()) {
+			push("**You should see:**");
+			push(tidy(placeFiguresMarkdown(step.expected.trim(), at, step, bySlot, opts, warnings)));
+		}
+	}
+	push("---");
+	push(`*Made with Enloop from run ${run.id} of v${run.testCaseVersion}.*`);
+	return {
+		text: tidy(out.join("\n")) + "\n",
+		warnings
+	};
+}
+function placeholdersOf(text) {
+	return [...text.matchAll(PHOTO_PLACEHOLDER_RE)].map((m) => Number(m[1]));
+}
+var GUIDE_PAGE_CSS = `
+:root { --bg: #ffffff; --ink: #0f172a; --muted: #64748b; --line: #e2e8f0; --link: #0369a1; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0b1120; --ink: #e2e8f0; --muted: #94a3b8; --line: #1f2937; --link: #7dd3fc; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); padding: 24px 16px 64px;
+  font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.guide { max-width: 46rem; margin: 0 auto; }
+h1 { font-size: 1.8rem; line-height: 1.25; margin: 0 0 12px; letter-spacing: -0.01em; }
+h2 { font-size: 1.25rem; margin: 32px 0 8px; }
+h3 { font-size: 1.05rem; margin: 24px 0 6px; }
+p { margin: 8px 0; }
+ul, ol { margin: 6px 0; padding-left: 22px; }
+code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; background: rgba(127,127,127,.12);
+  border-radius: 4px; padding: 1px 5px; }
+a { color: var(--link); }
+.nav { color: var(--muted); font-size: 0.95em; margin: 4px 0; }
+figure { margin: 14px 0; }
+figure img { max-width: 100%; height: auto; display: block; border: 1px solid var(--line); border-radius: 8px; }
+figcaption { color: var(--muted); font-size: 0.9em; margin-top: 6px; }
+figure ol { font-size: 0.9em; margin-top: 4px; }
+.see { font-weight: 600; margin-top: 12px; }
+footer { color: var(--muted); font-size: 0.85em; margin-top: 40px; border-top: 1px solid var(--line); padding-top: 12px; }
+.chip { font: inherit; border: 1px solid var(--line); border-radius: 6px; padding: 0 5px; background: transparent; color: inherit; }
+`;
+function escapeHtml(text) {
+	return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function figureHtml(step, shot, opts) {
+	const caption = captionOf(step, shot);
+	const legend = legendOf(step, shot);
+	const size = shownSize(shot);
+	return `<figure><img src="${escapeHtml(opts.imageRef(shot))}" alt="${escapeHtml(caption || screenshotAlt(shot))}" width="${size.width}" height="${size.height}">` + (caption ? `<figcaption>${renderInline(caption)}</figcaption>` : "") + (legend.length > 0 ? `<ol>${legend.map((t) => `<li>${renderInline(t)}</li>`).join("")}</ol>` : "") + `</figure>`;
+}
+/** Markdown prose with `%PHOTO_n%` cut out and the figure HTML put between
+* the rendered chunks — a figure is block content and cannot sit inside a
+* paragraph the Markdown renderer would build around the token. */
+function placeFiguresHtml(text, at, step, bySlot, opts, warnings) {
+	const parts = [];
+	let last = 0;
+	for (const m of text.matchAll(PHOTO_PLACEHOLDER_RE)) {
+		const chunk = text.slice(last, m.index).trim();
+		if (chunk) parts.push(renderMarkdown(chunk));
+		const shot = bySlot.get(Number(m[1]));
+		if (shot) parts.push(figureHtml(step, shot, opts));
+		else warnings.push(`${at}: %PHOTO_${m[1]}% has no screenshot in this run; dropped.`);
+		last = (m.index ?? 0) + m[0].length;
+	}
+	const tail = text.slice(last).trim();
+	if (tail) parts.push(renderMarkdown(tail));
+	return parts.join("\n");
+}
+function renderGuideHtml(doc, run, opts) {
+	const warnings = [];
+	const body = [];
+	body.push(`<h1>${escapeHtml(doc.title.trim())}</h1>`);
+	if (doc.goal.trim()) body.push(`<p>${renderInline(doc.goal.trim())}</p>`);
+	if (doc.description.trim()) body.push(renderMarkdown(doc.description.trim()));
+	for (const shot of bySeq(run.screenshots.filter((s) => s.stepId === null))) body.push(figureHtml(null, shot, opts));
+	const before = [...doc.youWillNeed, ...doc.prerequisites];
+	if (before.length > 0) {
+		body.push("<h2>Before you start</h2>");
+		body.push(renderMarkdown(renderBulletList(before)));
+	}
+	const grouped = doc.groups.length > 0;
+	let openGroup;
+	for (const { step, label } of guideSteps(doc, run)) {
+		if (grouped && step.group && step.group !== openGroup) {
+			openGroup = step.group;
+			body.push(`<h2>${escapeHtml(step.group)}</h2>`);
+			const goal = doc.groups.find((g) => g.title === step.group)?.goal.trim();
+			if (goal) body.push(`<p>${renderInline(goal)}</p>`);
+		}
+		const tag = grouped ? "h3" : "h2";
+		body.push(`<${tag}>${escapeHtml(label)}. ${escapeHtml(step.title.trim())}</${tag}>`);
+		if (step.where?.trim()) body.push(`<p class="nav">Go to: <code>${escapeHtml(step.where.trim())}</code></p>`);
+		if (step.via?.trim() && !VIA_LINK_ONLY_RE.test(step.via.trim())) body.push(`<p class="nav">Find it under: ${renderInline(step.via.trim())}</p>`);
+		const shots = bySeq(run.screenshots.filter((s) => s.stepId === step.id));
+		const bySlot = new Map(shots.filter((s) => s.slot !== null).map((s) => [s.slot, s]));
+		const at = `Step ${label} "${step.title.trim()}"`;
+		const placed = /* @__PURE__ */ new Set([...placeholdersOf(step.instructions ?? ""), ...placeholdersOf(step.expected ?? "")]);
+		if (step.instructions?.trim()) body.push(placeFiguresHtml(step.instructions.trim(), at, step, bySlot, opts, warnings));
+		for (const shot of shots) {
+			if (shot.slot !== null && placed.has(shot.slot)) continue;
+			body.push(figureHtml(step, shot, opts));
+		}
+		if (step.expected?.trim()) {
+			body.push(`<p class="see">You should see:</p>`);
+			body.push(placeFiguresHtml(step.expected.trim(), at, step, bySlot, opts, warnings));
+		}
+	}
+	body.push(`<footer>Made with Enloop from run ${escapeHtml(run.id)} of v${escapeHtml(String(run.testCaseVersion))}.</footer>`);
+	return {
+		text: page(doc.title.trim(), body.join("\n")),
+		warnings
+	};
+}
+function page(title, body) {
+	return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(title)}</title>\n<style>${GUIDE_PAGE_CSS}</style>\n</head>\n<body>\n<main class="guide">\n${body}\n</main>\n</body>\n</html>\n`;
+}
+/** A free run's notes with `%PHOTO_<seq>%` replaced by its figures, and
+* every screenshot the notes never placed appended at the end. */
+function renderFreeRunGuideMarkdown(free, notes, opts) {
+	const warnings = [];
+	const bySeqMap = new Map(free.screenshots.map((s) => [s.seq, s]));
+	const placed = new Set(placeholdersOf(notes));
+	const body = notes.replace(PHOTO_PLACEHOLDER_RE, (_m, n) => {
+		const shot = bySeqMap.get(Number(n));
+		if (!shot) {
+			warnings.push(`%PHOTO_${n}% names no screenshot of this session; dropped.`);
+			return "";
+		}
+		return `\n\n${figureMarkdown(null, shot, opts)}\n\n`;
+	});
+	const out = [
+		`# ${free.title.trim() || "Free run"}`,
+		"",
+		tidy(body)
+	];
+	for (const shot of bySeq(free.screenshots)) {
+		if (placed.has(shot.seq)) continue;
+		out.push("", figureMarkdown(null, shot, opts));
+	}
+	out.push("", "---", "", `*Made with Enloop from free run ${free.id}.*`);
+	return {
+		text: tidy(out.join("\n")) + "\n",
+		warnings
+	};
+}
+function renderFreeRunGuideHtml(free, notes, opts) {
+	const warnings = [];
+	const bySeqMap = new Map(free.screenshots.map((s) => [s.seq, s]));
+	const placed = new Set(placeholdersOf(notes));
+	const parts = [`<h1>${escapeHtml(free.title.trim() || "Free run")}</h1>`];
+	let last = 0;
+	for (const m of notes.matchAll(PHOTO_PLACEHOLDER_RE)) {
+		const chunk = notes.slice(last, m.index).trim();
+		if (chunk) parts.push(renderMarkdown(chunk));
+		const shot = bySeqMap.get(Number(m[1]));
+		if (shot) parts.push(figureHtml(null, shot, opts));
+		else warnings.push(`%PHOTO_${m[1]}% names no screenshot of this session; dropped.`);
+		last = (m.index ?? 0) + m[0].length;
+	}
+	const tail = notes.slice(last).trim();
+	if (tail) parts.push(renderMarkdown(tail));
+	for (const shot of bySeq(free.screenshots)) if (!placed.has(shot.seq)) parts.push(figureHtml(null, shot, opts));
+	parts.push(`<footer>Made with Enloop from free run ${escapeHtml(free.id)}.</footer>`);
+	return {
+		text: page(free.title.trim() || "Free run", parts.join("\n")),
+		warnings
+	};
 }
 //#endregion
 //#region shared/src/environments.ts
@@ -5821,4 +6964,4 @@ function newEnvironmentId() {
 	return `env-${crypto.randomUUID().slice(0, 8)}`;
 }
 //#endregion
-export { AGENT_PROTOCOL_VERSION, CURRENT_FORMAT_VERSION, compareVersionIds, describeRating, emptyEnvironments, environmentsFileSchema, environmentsForProject, isExemplaryRating, isPoorRating, lintCase, missingEnvironmentValues, newEnvironmentId, newTestCaseId, nextMajorId, nextMinorId, parseCaseDocument, ratingStars, runFileSchema, stepNumberLabels, stripViewerComment, versionIdFromFileName, viewerLink, withViewerComment };
+export { AGENT_PROTOCOL_VERSION, CURRENT_FORMAT_VERSION, compareVersionIds, describeRating, emptyEnvironments, environmentsFileSchema, environmentsForProject, fileSlug, freeRunFileSchema, guideSteps, isExemplaryRating, isPoorRating, lintCase, missingEnvironmentValues, newEnvironmentId, newTestCaseId, nextMajorId, nextMinorId, parseCaseDocument, photoPlaceholders, ratingStars, renderCaseMarkdown, renderFreeRunGuideHtml, renderFreeRunGuideMarkdown, renderGuideHtml, renderGuideMarkdown, runFileSchema, screenshotStem, stepNumberLabels, stripViewerComment, versionIdFromFileName, viewerLink, withViewerComment };

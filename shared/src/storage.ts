@@ -6,11 +6,14 @@ import type {
   AgentCommandSourceField,
   AgentPresence,
   AgentQuestion,
+  CaseContext,
   FreeRun,
   FreeRunFile,
   Run,
+  RunScreenshot,
   RunStatus,
   RunSummary,
+  ScreenshotOp,
   RunTier,
   StepPatch,
   SuiteSummary,
@@ -53,6 +56,14 @@ export interface TestCaseStore {
    * its suite's prep steps/variables (see `buildRunSource`), or just the
    * case's own version text when it isn't in a suite. */
   getRunSource(testCaseId: string, version: string, tier?: RunTier): Promise<string>;
+  /**
+   * The case's `context.json` — which repo, host and session authored it —
+   * or `null` when no agent has stamped one (a hand-written case, a case
+   * dropped in from elsewhere). Read-only from the panel: the plugin's guard
+   * hook is the only writer. What a fix prompt uses to say *which* project
+   * the fix belongs in.
+   */
+  getCaseContext(testCaseId: string): Promise<CaseContext | null>;
 }
 
 /** Everything that reads/writes runs. Same swap-later story as TestCaseStore. */
@@ -101,6 +112,14 @@ export interface RunStore {
    * step patch. Per-step counts are derived from these when the run finishes.
    */
   appendConsole(testCaseId: string, runId: string, entries: CapturedEntry[]): Promise<void>;
+  /**
+   * Everything `appendConsole` has recorded for this run so far, in order,
+   * stamped with the step each entry arrived in. Read while the run is
+   * still open — a fix prompt written from the step that just failed wants
+   * the errors of the last minute, not the digest a finished run leaves in
+   * `report.md`. Empty when capture was off.
+   */
+  readRunConsole(testCaseId: string, runId: string): Promise<CapturedEntry[]>;
   finishRun(testCaseId: string, runId: string, status: RunStatus): Promise<Run>;
   /**
    * The `feedback.md` a finished run left behind, verbatim, or `null` when
@@ -110,6 +129,50 @@ export interface RunStore {
    * whoever has one.
    */
   getRunFeedback(testCaseId: string, runId: string): Promise<string | null>;
+  /**
+   * Attaches a capture to the run. Writes `screenshots/<seq>.source.png`
+   * (the bytes as captured) and `<seq>.png` (`renderedPng`, or the same
+   * bytes when null), then the record — the record is the ready marker, so
+   * a crash between the two leaves an orphan file and no dangling entry.
+   * With a non-null `slot`, any earlier screenshot of the same step and
+   * slot is removed first (that is Retake). Refused on a finished run.
+   */
+  addScreenshot(testCaseId: string, runId: string, input: ScreenshotInput): Promise<{ run: Run; screenshot: RunScreenshot }>;
+  /**
+   * Caption, step, slot, or a new operation list. When `ops` is given,
+   * `renderedPng` must be too — the store never renders (there is no canvas
+   * on the daemon side) — and `<seq>.png` is overwritten. Moving to another
+   * step clears the slot unless the patch sets one. Allowed after finish:
+   * a caption typo found later is fixable.
+   */
+  updateScreenshot(testCaseId: string, runId: string, id: string, patch: ScreenshotPatch): Promise<Run>;
+  /** Removes the record and both files. */
+  removeScreenshot(testCaseId: string, runId: string, id: string): Promise<Run>;
+  readScreenshot(testCaseId: string, runId: string, id: string, which: ScreenshotVariant): Promise<Uint8Array>;
+}
+
+export type ScreenshotVariant = "rendered" | "source";
+
+export interface ScreenshotInput {
+  stepId: string | null;
+  slot: number | null;
+  pageUrl: string;
+  width: number;
+  height: number;
+  sourcePng: Uint8Array;
+  ops: ScreenshotOp[];
+  /** Null = identical to the source. */
+  renderedPng: Uint8Array | null;
+  missing: string[];
+  caption: string;
+}
+
+export interface ScreenshotPatch {
+  caption?: string;
+  stepId?: string | null;
+  slot?: number | null;
+  ops?: ScreenshotOp[];
+  renderedPng?: Uint8Array;
 }
 
 /** Everything that reads/writes free runs — unscripted verification
@@ -124,6 +187,13 @@ export interface FreeRunStore {
    * is worth having, and there is no step for it to hang off. */
   appendFreeRunConsole(id: string, entries: CapturedEntry[]): Promise<void>;
   finishFreeRun(id: string): Promise<FreeRun>;
+  /** The run store's four screenshot methods, against
+   * `free-runs/<id>/screenshots/`. `stepId` and `slot` are ignored and
+   * stored as null. Adding is refused once the session is finished. */
+  addFreeRunScreenshot(id: string, input: ScreenshotInput): Promise<{ freeRun: FreeRun; screenshot: RunScreenshot }>;
+  updateFreeRunScreenshot(id: string, shotId: string, patch: ScreenshotPatch): Promise<FreeRun>;
+  removeFreeRunScreenshot(id: string, shotId: string): Promise<FreeRun>;
+  readFreeRunScreenshot(id: string, shotId: string, which: ScreenshotVariant): Promise<Uint8Array>;
 }
 
 /**

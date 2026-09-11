@@ -14,6 +14,7 @@ import type {
   SuiteSummary,
   TestCaseMeta,
 } from "@tcm/shared";
+import { joinId } from "@tcm/shared";
 import { describeError } from "../../lib/errors.js";
 import { FsaDataStore } from "../../lib/fsa-store.js";
 import {
@@ -24,7 +25,9 @@ import {
   permissionOf,
   removeStorage as forgetStorage,
   renameStorage as relabelStorage,
+  ensureInboxStorage,
   requestAccess,
+  syncProjectNames,
   type StorageStatus,
 } from "../../lib/storage-registry.js";
 import { WorkspaceStore, type DegradedStorage } from "../../lib/workspace-store.js";
@@ -60,6 +63,10 @@ interface DataStoreContextValue {
   renameStorage: (id: string, label: string) => Promise<void>;
   reconnect: (id: string) => Promise<void>;
   refresh: () => Promise<void>;
+  /** A case file dropped on the panel. With a store, it goes to the default
+   * storage; with none, the browser's own storage is created for it, so the
+   * drop works before anything is connected. Returns the case's id. */
+  importCase: (markdown: string) => Promise<string>;
 }
 
 const DataStoreContext = createContext<DataStoreContextValue | null>(null);
@@ -82,6 +89,10 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
   /** Re-reads the registry and rebuilds the mounted children. Called on boot
    * and after anything that changes what is connected. */
   const refresh = useCallback(async () => {
+    // Before anything is listed: bring each folder's label in line with the
+    // `project.json` inside it, so four repos that all keep their cases in
+    // an `enloop.md/` are four names here rather than four identical rows.
+    await syncProjectNames();
     const entries = await listStorages();
     if (entries.length === 0) {
       setStorages([]);
@@ -147,6 +158,20 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
     }
   }, [refresh, setDefaultStorageId]);
 
+  const importCase = useCallback(
+    async (markdown: string): Promise<string> => {
+      if (store) return (await store.createTestCase(markdown)).id;
+      const entry = await ensureInboxStorage();
+      const handle = await getHandle(entry.id);
+      if (!handle) throw new Error("This browser's own storage is not available here.");
+      const meta = await new FsaDataStore(handle).createTestCase(markdown);
+      setDefaultStorageId(entry.id);
+      await refresh();
+      return joinId(entry.id, meta.id);
+    },
+    [store, refresh, setDefaultStorageId],
+  );
+
   const removeStorage = useCallback(
     async (id: string) => {
       await forgetStorage(id);
@@ -189,6 +214,7 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
         renameStorage,
         reconnect,
         refresh,
+        importCase,
       }}
     >
       {children}

@@ -17,6 +17,7 @@ import {
   emptyEnvironments,
   environmentsFileSchema,
   caseBookkeepingSchema,
+  caseContextSchema,
   countsByStep,
   filterToQuickSteps,
   freeRunFileSchema,
@@ -32,6 +33,8 @@ import {
   renderRunFeedback,
   renderRunReport,
   resolveRunValues,
+  screenshotStem,
+  shortId,
   mainDomainName,
   runFileSchema,
   stepComments,
@@ -51,6 +54,7 @@ import {
   type AgentQuestionFile,
   type CapturedEntry,
   type CaseBookkeeping,
+  type CaseContext,
   type CompatResult,
   type DataStore,
   type EnvironmentsFile,
@@ -58,9 +62,13 @@ import {
   type FreeRunFile,
   type Run,
   type RunFile,
+  type RunScreenshot,
   type RunStatus,
   type RunSummary,
   type RunTier,
+  type ScreenshotInput,
+  type ScreenshotPatch,
+  type ScreenshotVariant,
   type StepPatch,
   type SuiteSummary,
   type TestCaseMeta,
@@ -74,9 +82,11 @@ import {
   getDir,
   listDirNames,
   nowIso,
+  readBinaryFile,
   readJson,
   readTextFile,
   readTextTail,
+  removeFileIfPresent,
   writeBinaryFile,
   writeJson,
   writeTextFile,
@@ -88,6 +98,9 @@ import {
 
 const TEST_CASES_DIR = "test-cases";
 const RUNS_DIR = "runs";
+/** Authoring provenance beside a case, written by the plugin's guard hook —
+ * see `caseContextSchema`. Never written from here. */
+const CONTEXT_FILE = "context.json";
 const FREE_RUNS_DIR = "free-runs";
 const META_FILE = "meta.json";
 const CASE_FILE = "case.md";
@@ -104,6 +117,9 @@ const ENVIRONMENTS_FILE = "environments.json";
 const CONSOLE_RECORD_FILE = "console.jsonl";
 /** The same thing rendered for a person, written once when the run finishes. */
 const CONSOLE_FILE = "console.md";
+/** `screenshots/` beside `run.json` / `free-run.json`: `<NN>.source.png`
+ * as captured, `<NN>.png` as rendered — see `runScreenshotSchema`. */
+const SCREENSHOTS_DIR = "screenshots";
 
 // ---- the agent channel (`agent/`) — protocol in shared/src/schemas.ts ----
 const AGENT_DIR = "agent";
@@ -284,12 +300,136 @@ function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
     locations: doc.locations,
     mainOrigin: runFile.variables[mainDomainName(doc) ?? "BASE_URL"] ?? "",
     swaps: runFile.swaps,
+    screenshots: runFile.screenshots,
+    kind: doc.kind,
     steps,
   };
 }
 
+/** The screenshot bookkeeping shared by runs and free runs: the files
+ * under `screenshots/` and the records in the JSON beside it. Each function
+ * takes the folder and the current record list and hands back the new
+ * list; the caller writes its own JSON, since the two file shapes differ. */
+async function addScreenshotFiles(
+  dir: FileSystemDirectoryHandle,
+  existing: RunScreenshot[],
+  counter: number,
+  input: ScreenshotInput,
+): Promise<{ screenshots: RunScreenshot[]; screenshot: RunScreenshot; screenshotSeq: number }> {
+  let screenshots = existing;
+  // Retake: the earlier fill of the same slot goes, files and all.
+  if (input.slot !== null) {
+    const previous = existing.find((s) => s.stepId === input.stepId && s.slot === input.slot);
+    if (previous) screenshots = await removeScreenshotFiles(dir, existing, previous.id);
+  }
+  // Never below a number already handed out: a removed screenshot's stem
+  // must stay dead, or a `%PHOTO_n%` left in free-run notes would resolve
+  // to the wrong picture.
+  const seq = Math.max(counter, ...existing.map((s) => s.seq)) + 1;
+  const now = nowIso();
+  const screenshot: RunScreenshot = {
+    id: `shot-${shortId()}`,
+    seq,
+    stepId: input.stepId,
+    slot: input.slot,
+    takenAt: now,
+    updatedAt: now,
+    pageUrl: input.pageUrl,
+    caption: input.caption,
+    width: input.width,
+    height: input.height,
+    ops: input.ops,
+    missing: input.missing,
+  };
+  const shotsDir = await getDir(dir, SCREENSHOTS_DIR, { create: true });
+  const stem = screenshotStem(screenshot);
+  // Files first, record last: the record is what makes the screenshot
+  // exist to a reader, so a crash between the two leaves an orphan file
+  // rather than an entry whose bytes are missing.
+  await writeBinaryFile(shotsDir, `${stem}.source.png`, input.sourcePng);
+  await writeBinaryFile(shotsDir, `${stem}.png`, input.renderedPng ?? input.sourcePng);
+  return { screenshots: [...screenshots, screenshot], screenshot, screenshotSeq: seq };
+}
+
+async function updateScreenshotFiles(
+  dir: FileSystemDirectoryHandle,
+  existing: RunScreenshot[],
+  id: string,
+  patch: ScreenshotPatch,
+): Promise<RunScreenshot[]> {
+  const current = existing.find((s) => s.id === id);
+  if (!current) throw new NotFoundError(`Screenshot not found: ${id}`);
+  if (patch.ops && !patch.renderedPng) {
+    throw new Error("A new operation list needs the rendered image alongside it.");
+  }
+  const moved = patch.stepId !== undefined && patch.stepId !== current.stepId;
+  const updated: RunScreenshot = {
+    ...current,
+    caption: patch.caption ?? current.caption,
+    stepId: patch.stepId !== undefined ? patch.stepId : current.stepId,
+    // A moved screenshot no longer fills a slot of the step it left.
+    slot: patch.slot !== undefined ? patch.slot : moved ? null : current.slot,
+    ops: patch.ops ?? current.ops,
+    updatedAt: nowIso(),
+  };
+  if (patch.renderedPng) {
+    const shotsDir = await getDir(dir, SCREENSHOTS_DIR, { create: true });
+    await writeBinaryFile(shotsDir, `${screenshotStem(updated)}.png`, patch.renderedPng);
+  }
+  return existing.map((s) => (s.id === id ? updated : s));
+}
+
+async function removeScreenshotFiles(
+  dir: FileSystemDirectoryHandle,
+  existing: RunScreenshot[],
+  id: string,
+): Promise<RunScreenshot[]> {
+  const current = existing.find((s) => s.id === id);
+  if (!current) return existing;
+  const shotsDir = await tryGetDir(dir, SCREENSHOTS_DIR);
+  if (shotsDir) {
+    const stem = screenshotStem(current);
+    await removeFileIfPresent(shotsDir, `${stem}.source.png`);
+    await removeFileIfPresent(shotsDir, `${stem}.png`);
+  }
+  return existing.filter((s) => s.id !== id);
+}
+
+async function readScreenshotFile(
+  dir: FileSystemDirectoryHandle,
+  existing: RunScreenshot[],
+  id: string,
+  which: ScreenshotVariant,
+): Promise<Uint8Array> {
+  const current = existing.find((s) => s.id === id);
+  if (!current) throw new NotFoundError(`Screenshot not found: ${id}`);
+  const shotsDir = await getDir(dir, SCREENSHOTS_DIR);
+  const stem = screenshotStem(current);
+  return readBinaryFile(shotsDir, which === "source" ? `${stem}.source.png` : `${stem}.png`);
+}
+
 export class FsaDataStore implements DataStore {
   constructor(private readonly root: FileSystemDirectoryHandle) {}
+
+  /**
+   * One writer at a time per run folder. Every mutation of `run.json` or
+   * `free-run.json` is a read-modify-write, and the panel now has two of
+   * them in flight at once as a matter of course: the runner taking a
+   * photo while a verdict lands, an automated chain while a before-photo
+   * is written. Whichever wrote last used to win and silently drop the
+   * other's change. Keyed by the folder, so unrelated runs never wait.
+   */
+  private readonly folderLocks = new Map<string, Promise<unknown>>();
+
+  private locked<T>(key: string, work: () => Promise<T>): Promise<T> {
+    const previous = this.folderLocks.get(key) ?? Promise.resolve();
+    const next = previous.then(work, work);
+    this.folderLocks.set(
+      key,
+      next.catch(() => undefined),
+    );
+    return next;
+  }
 
   private async testCasesDir(create = false): Promise<FileSystemDirectoryHandle> {
     return getDir(this.root, TEST_CASES_DIR, { create });
@@ -582,6 +722,11 @@ export class FsaDataStore implements DataStore {
     return this.getEnvironments();
   }
 
+  async getCaseContext(testCaseId: string): Promise<CaseContext | null> {
+    const { dir } = await this.findCaseDir(testCaseId);
+    return tryReadJson(dir, CONTEXT_FILE, caseContextSchema);
+  }
+
   // ---- RunStore ----
 
   async listRuns(testCaseId?: string): Promise<RunSummary[]> {
@@ -619,6 +764,7 @@ export class FsaDataStore implements DataStore {
           failCount,
           warnCount,
           skipCount,
+          screenshots: runFile.screenshots.length,
         });
       }
     }
@@ -704,6 +850,8 @@ export class FsaDataStore implements DataStore {
       finishedAt: null,
       variables: resolvedValues,
       swaps: [],
+      screenshots: [],
+      screenshotSeq: 0,
       steps: doc.steps.map((s) => ({
         stepId: s.id,
         // An extra step is opt-in: it starts the run already skipped, so the
@@ -730,21 +878,23 @@ export class FsaDataStore implements DataStore {
     stepId: string,
     patch: StepPatch,
   ): Promise<Run> {
-    const runDir = await this.getRunDir(testCaseId, runId);
-    const [{ text: rawMarkdown }, runFile] = await Promise.all([
-      readTextFile(runDir, CASE_FILE),
-      readJson(runDir, RUN_FILE, runFileSchema),
-    ]);
-    const index = runFile.steps.findIndex((s) => s.stepId === stepId);
-    if (index === -1) throw new Error(`Step not found in run: ${stepId}`);
-    runFile.steps[index] = { ...runFile.steps[index], ...patch };
-    await writeJson(runDir, RUN_FILE, runFile);
+    return this.locked(`runs/${testCaseId}/${runId}`, async () => {
+      const runDir = await this.getRunDir(testCaseId, runId);
+      const [{ text: rawMarkdown }, runFile] = await Promise.all([
+        readTextFile(runDir, CASE_FILE),
+        readJson(runDir, RUN_FILE, runFileSchema),
+      ]);
+      const index = runFile.steps.findIndex((s) => s.stepId === stepId);
+      if (index === -1) throw new Error(`Step not found in run: ${stepId}`);
+      runFile.steps[index] = { ...runFile.steps[index], ...patch };
+      await writeJson(runDir, RUN_FILE, runFile);
 
-    const doc = parseCaseDocument(rawMarkdown, {
-      version: runFile.testCaseVersion,
-      createdAt: runFile.startedAt,
+      const doc = parseCaseDocument(rawMarkdown, {
+        version: runFile.testCaseVersion,
+        createdAt: runFile.startedAt,
+      });
+      return composeRun(doc, runFile);
     });
-    return composeRun(doc, runFile);
   }
 
   async updateRun(
@@ -752,25 +902,27 @@ export class FsaDataStore implements DataStore {
     runId: string,
     patch: { comment?: string; consoleInReport?: boolean; rating?: number | null },
   ): Promise<Run> {
-    const runDir = await this.getRunDir(testCaseId, runId);
-    const [{ text: rawMarkdown }, runFile] = await Promise.all([
-      readTextFile(runDir, CASE_FILE),
-      readJson(runDir, RUN_FILE, runFileSchema),
-    ]);
-    const updated: RunFile = {
-      ...runFile,
-      comment: patch.comment ?? runFile.comment,
-      consoleInReport: patch.consoleInReport ?? runFile.consoleInReport,
-      // `null` is a value here — clearing the stars — so `??` would be wrong.
-      rating: patch.rating === undefined ? runFile.rating : patch.rating,
-    };
-    await writeJson(runDir, RUN_FILE, updated);
+    return this.locked(`runs/${testCaseId}/${runId}`, async () => {
+      const runDir = await this.getRunDir(testCaseId, runId);
+      const [{ text: rawMarkdown }, runFile] = await Promise.all([
+        readTextFile(runDir, CASE_FILE),
+        readJson(runDir, RUN_FILE, runFileSchema),
+      ]);
+      const updated: RunFile = {
+        ...runFile,
+        comment: patch.comment ?? runFile.comment,
+        consoleInReport: patch.consoleInReport ?? runFile.consoleInReport,
+        // `null` is a value here — clearing the stars — so `??` would be wrong.
+        rating: patch.rating === undefined ? runFile.rating : patch.rating,
+      };
+      await writeJson(runDir, RUN_FILE, updated);
 
-    const doc = parseCaseDocument(rawMarkdown, {
-      version: updated.testCaseVersion,
-      createdAt: updated.startedAt,
+      const doc = parseCaseDocument(rawMarkdown, {
+        version: updated.testCaseVersion,
+        createdAt: updated.startedAt,
+      });
+      return composeRun(doc, updated);
     });
-    return composeRun(doc, updated);
   }
 
   async appendConsole(
@@ -781,73 +933,149 @@ export class FsaDataStore implements DataStore {
     await appendCapture(await this.getRunDir(testCaseId, runId), entries);
   }
 
+  async readRunConsole(testCaseId: string, runId: string): Promise<CapturedEntry[]> {
+    return readCapture(await this.getRunDir(testCaseId, runId));
+  }
+
   async finishRun(testCaseId: string, runId: string, status: RunStatus): Promise<Run> {
-    const runDir = await this.getRunDir(testCaseId, runId);
-    const [{ text: rawMarkdown }, runFile, captured] = await Promise.all([
-      readTextFile(runDir, CASE_FILE),
-      readJson(runDir, RUN_FILE, runFileSchema),
-      readCapture(runDir),
-    ]);
+    return this.locked(`runs/${testCaseId}/${runId}`, async () => {
+      const runDir = await this.getRunDir(testCaseId, runId);
+      const [{ text: rawMarkdown }, runFile, captured] = await Promise.all([
+        readTextFile(runDir, CASE_FILE),
+        readJson(runDir, RUN_FILE, runFileSchema),
+        readCapture(runDir),
+      ]);
 
-    // Counts are folded in here rather than on every append: they are only
-    // ever read after a run finishes, and rewriting run.json every few seconds
-    // for the sake of three integers would fight the step patches for the same
-    // file. Entries that arrived outside any step are in `console.md` and in
-    // the digest, but belong to no step's tally.
-    const byStep = countsByStep(captured);
-    const updated: RunFile = {
-      ...runFile,
-      status,
-      finishedAt: nowIso(),
-      steps: runFile.steps.map((step) => ({
-        ...step,
-        // A comment left in the box is a comment. Promoting it here means the
-        // stored run is canonical from the moment it finishes, rather than
-        // every future reader having to remember the box existed.
-        comments: stepComments(step),
-        draft: null,
-        ...(byStep.get(step.stepId) ?? ZERO_CAPTURE_COUNTS),
-      })),
-    };
-    await writeJson(runDir, RUN_FILE, updated);
+      // Counts are folded in here rather than on every append: they are only
+      // ever read after a run finishes, and rewriting run.json every few seconds
+      // for the sake of three integers would fight the step patches for the same
+      // file. Entries that arrived outside any step are in `console.md` and in
+      // the digest, but belong to no step's tally.
+      const byStep = countsByStep(captured);
+      const updated: RunFile = {
+        ...runFile,
+        status,
+        finishedAt: nowIso(),
+        steps: runFile.steps.map((step) => ({
+          ...step,
+          // A comment left in the box is a comment. Promoting it here means the
+          // stored run is canonical from the moment it finishes, rather than
+          // every future reader having to remember the box existed.
+          comments: stepComments(step),
+          draft: null,
+          ...(byStep.get(step.stepId) ?? ZERO_CAPTURE_COUNTS),
+        })),
+      };
+      await writeJson(runDir, RUN_FILE, updated);
 
-    const doc = parseCaseDocument(rawMarkdown, {
-      version: updated.testCaseVersion,
-      createdAt: updated.startedAt,
+      const doc = parseCaseDocument(rawMarkdown, {
+        version: updated.testCaseVersion,
+        createdAt: updated.startedAt,
+      });
+
+      if (captured.length > 0) {
+        const labels = stepNumberLabels(doc.steps);
+        const stepNumbers = new Map(doc.steps.map((step, index) => [step.id, labels[index]]));
+        await writeTextFile(
+          runDir,
+          CONSOLE_FILE,
+          renderCaptureLog(captured, {
+            title: doc.title,
+            subtitle: `Run ${updated.id} of v${updated.testCaseVersion}, started ${updated.startedAt}.`,
+            stepLabel: (stepId) => {
+              const number = stepNumbers.get(stepId);
+              const step = doc.steps.find((s) => s.id === stepId);
+              return number && step ? `Step ${number} — ${step.title}` : stepId;
+            },
+          }),
+        );
+      }
+
+      // The digest is what crosses into the two files an agent reads, so it is
+      // built only when the tester said it may. `console.md` stays on disk
+      // either way: the checkbox governs what is handed on, not what is kept.
+      const digest =
+        captured.length > 0 && updated.consoleInReport ? buildCaptureDigest(captured) : null;
+
+      // Human-readable artifact for sharing outside the extension (e.g. email)
+      // — run.json stays the JSON source of truth the UI actually reads back.
+      await writeTextFile(runDir, REPORT_FILE, renderRunReport(doc, updated, digest));
+
+      const feedback = renderRunFeedback(doc, updated, digest);
+      if (feedback) await writeTextFile(runDir, FEEDBACK_FILE, feedback);
+
+      return composeRun(doc, updated);
     });
+  }
 
-    if (captured.length > 0) {
-      const labels = stepNumberLabels(doc.steps);
-      const stepNumbers = new Map(doc.steps.map((step, index) => [step.id, labels[index]]));
-      await writeTextFile(
+  async addScreenshot(
+    testCaseId: string,
+    runId: string,
+    input: ScreenshotInput,
+  ): Promise<{ run: Run; screenshot: RunScreenshot }> {
+    return this.locked(`runs/${testCaseId}/${runId}`, async () => {
+      const runDir = await this.getRunDir(testCaseId, runId);
+      const runFile = await readJson(runDir, RUN_FILE, runFileSchema);
+      if (runFile.status !== "in_progress") throw new Error("The run is finished; no more screenshots.");
+      const { screenshots, screenshot, screenshotSeq } = await addScreenshotFiles(
         runDir,
-        CONSOLE_FILE,
-        renderCaptureLog(captured, {
-          title: doc.title,
-          subtitle: `Run ${updated.id} of v${updated.testCaseVersion}, started ${updated.startedAt}.`,
-          stepLabel: (stepId) => {
-            const number = stepNumbers.get(stepId);
-            const step = doc.steps.find((s) => s.id === stepId);
-            return number && step ? `Step ${number} — ${step.title}` : stepId;
-          },
-        }),
+        runFile.screenshots,
+        runFile.screenshotSeq,
+        input,
       );
-    }
+      const updated: RunFile = { ...runFile, screenshots, screenshotSeq };
+      await writeJson(runDir, RUN_FILE, updated);
+      return { run: composeRun(await this.readFrozenCase(runDir, updated), updated), screenshot };
+    });
+  }
 
-    // The digest is what crosses into the two files an agent reads, so it is
-    // built only when the tester said it may. `console.md` stays on disk
-    // either way: the checkbox governs what is handed on, not what is kept.
-    const digest =
-      captured.length > 0 && updated.consoleInReport ? buildCaptureDigest(captured) : null;
+  async updateScreenshot(
+    testCaseId: string,
+    runId: string,
+    id: string,
+    patch: ScreenshotPatch,
+  ): Promise<Run> {
+    return this.locked(`runs/${testCaseId}/${runId}`, async () => {
+      const runDir = await this.getRunDir(testCaseId, runId);
+      const runFile = await readJson(runDir, RUN_FILE, runFileSchema);
+      const updated: RunFile = {
+        ...runFile,
+        screenshots: await updateScreenshotFiles(runDir, runFile.screenshots, id, patch),
+      };
+      await writeJson(runDir, RUN_FILE, updated);
+      return composeRun(await this.readFrozenCase(runDir, updated), updated);
+    });
+  }
 
-    // Human-readable artifact for sharing outside the extension (e.g. email)
-    // — run.json stays the JSON source of truth the UI actually reads back.
-    await writeTextFile(runDir, REPORT_FILE, renderRunReport(doc, updated, digest));
+  async removeScreenshot(testCaseId: string, runId: string, id: string): Promise<Run> {
+    return this.locked(`runs/${testCaseId}/${runId}`, async () => {
+      const runDir = await this.getRunDir(testCaseId, runId);
+      const runFile = await readJson(runDir, RUN_FILE, runFileSchema);
+      const updated: RunFile = {
+        ...runFile,
+        screenshots: await removeScreenshotFiles(runDir, runFile.screenshots, id),
+      };
+      await writeJson(runDir, RUN_FILE, updated);
+      return composeRun(await this.readFrozenCase(runDir, updated), updated);
+    });
+  }
 
-    const feedback = renderRunFeedback(doc, updated, digest);
-    if (feedback) await writeTextFile(runDir, FEEDBACK_FILE, feedback);
+  async readScreenshot(
+    testCaseId: string,
+    runId: string,
+    id: string,
+    which: ScreenshotVariant,
+  ): Promise<Uint8Array> {
+    const runDir = await this.getRunDir(testCaseId, runId);
+    const runFile = await readJson(runDir, RUN_FILE, runFileSchema);
+    return readScreenshotFile(runDir, runFile.screenshots, id, which);
+  }
 
-    return composeRun(doc, updated);
+  /** The run's frozen `case.md`, parsed against the run's own version and
+   * start time — the same way `getRun` reads it. */
+  private async readFrozenCase(runDir: FileSystemDirectoryHandle, runFile: RunFile): Promise<TestCaseVersion> {
+    const { text } = await readTextFile(runDir, CASE_FILE);
+    return parseCaseDocument(text, { version: runFile.testCaseVersion, createdAt: runFile.startedAt });
   }
 
   async getRunFeedback(testCaseId: string, runId: string): Promise<string | null> {
@@ -898,7 +1126,14 @@ export class FsaDataStore implements DataStore {
   async createFreeRun(title: string): Promise<FreeRun> {
     const id = newFreeRunId();
     const dir = await getDir(await this.freeRunsDir(true), id, { create: true });
-    const file: FreeRunFile = { id, title, startedAt: nowIso(), finishedAt: null };
+    const file: FreeRunFile = {
+      id,
+      title,
+      startedAt: nowIso(),
+      finishedAt: null,
+      screenshots: [],
+      screenshotSeq: 0,
+    };
     await writeJson(dir, FREE_RUN_FILE, file);
     await writeTextFile(dir, NOTES_FILE, "");
     await writeTextFile(dir, FEEDBACK_FILE, renderFreeRunFeedback(file, ""));
@@ -906,17 +1141,19 @@ export class FsaDataStore implements DataStore {
   }
 
   async updateFreeRun(id: string, patch: { title?: string; notes?: string }): Promise<FreeRun> {
-    const dir = await getDir(await this.freeRunsDir(true), id);
-    const [file, existingNotes] = await Promise.all([
-      readJson(dir, FREE_RUN_FILE, freeRunFileSchema),
-      tryReadTextFile(dir, NOTES_FILE),
-    ]);
-    const updated: FreeRunFile = { ...file, title: patch.title ?? file.title };
-    const notes = patch.notes ?? existingNotes?.text ?? "";
-    await writeJson(dir, FREE_RUN_FILE, updated);
-    await writeTextFile(dir, NOTES_FILE, notes);
-    await writeTextFile(dir, FEEDBACK_FILE, renderFreeRunFeedback(updated, notes));
-    return { ...updated, notes };
+    return this.locked(`free-runs/${id}`, async () => {
+      const dir = await getDir(await this.freeRunsDir(true), id);
+      const [file, existingNotes] = await Promise.all([
+        readJson(dir, FREE_RUN_FILE, freeRunFileSchema),
+        tryReadTextFile(dir, NOTES_FILE),
+      ]);
+      const updated: FreeRunFile = { ...file, title: patch.title ?? file.title };
+      const notes = patch.notes ?? existingNotes?.text ?? "";
+      await writeJson(dir, FREE_RUN_FILE, updated);
+      await writeTextFile(dir, NOTES_FILE, notes);
+      await writeTextFile(dir, FEEDBACK_FILE, renderFreeRunFeedback(updated, notes));
+      return { ...updated, notes };
+    });
   }
 
   async appendFreeRunConsole(id: string, entries: CapturedEntry[]): Promise<void> {
@@ -924,32 +1161,96 @@ export class FsaDataStore implements DataStore {
   }
 
   async finishFreeRun(id: string): Promise<FreeRun> {
-    const dir = await getDir(await this.freeRunsDir(true), id);
-    const [file, notesFile, captured] = await Promise.all([
-      readJson(dir, FREE_RUN_FILE, freeRunFileSchema),
-      tryReadTextFile(dir, NOTES_FILE),
-      readCapture(dir),
-    ]);
-    const notes = notesFile?.text ?? "";
-    const updated: FreeRunFile = { ...file, finishedAt: nowIso() };
-    await writeJson(dir, FREE_RUN_FILE, updated);
-    await writeTextFile(dir, FEEDBACK_FILE, renderFreeRunFeedback(updated, notes));
-    // A free run has no steps to hang entries off, so everything groups under
-    // the session. It is also why nothing from here reaches `feedback.md`:
-    // there is no finish bar to ask the question in, and an unasked question
-    // is not consent.
-    if (captured.length > 0) {
-      await writeTextFile(
+    return this.locked(`free-runs/${id}`, async () => {
+      const dir = await getDir(await this.freeRunsDir(true), id);
+      const [file, notesFile, captured] = await Promise.all([
+        readJson(dir, FREE_RUN_FILE, freeRunFileSchema),
+        tryReadTextFile(dir, NOTES_FILE),
+        readCapture(dir),
+      ]);
+      const notes = notesFile?.text ?? "";
+      const updated: FreeRunFile = { ...file, finishedAt: nowIso() };
+      await writeJson(dir, FREE_RUN_FILE, updated);
+      await writeTextFile(dir, FEEDBACK_FILE, renderFreeRunFeedback(updated, notes));
+      // A free run has no steps to hang entries off, so everything groups under
+      // the session. It is also why nothing from here reaches `feedback.md`:
+      // there is no finish bar to ask the question in, and an unasked question
+      // is not consent.
+      if (captured.length > 0) {
+        await writeTextFile(
+          dir,
+          CONSOLE_FILE,
+          renderCaptureLog(captured, {
+            title: updated.title,
+            subtitle: `Free run ${updated.id}, started ${updated.startedAt}.`,
+            unstepped: "During the session",
+          }),
+        );
+      }
+      return { ...updated, notes };
+    });
+  }
+
+  async addFreeRunScreenshot(
+    id: string,
+    input: ScreenshotInput,
+  ): Promise<{ freeRun: FreeRun; screenshot: RunScreenshot }> {
+    return this.locked(`free-runs/${id}`, async () => {
+      const dir = await getDir(await this.freeRunsDir(true), id);
+      const [file, notesFile] = await Promise.all([
+        readJson(dir, FREE_RUN_FILE, freeRunFileSchema),
+        tryReadTextFile(dir, NOTES_FILE),
+      ]);
+      if (file.finishedAt) throw new Error("The session is finished; no more screenshots.");
+      const { screenshots, screenshot, screenshotSeq } = await addScreenshotFiles(
         dir,
-        CONSOLE_FILE,
-        renderCaptureLog(captured, {
-          title: updated.title,
-          subtitle: `Free run ${updated.id}, started ${updated.startedAt}.`,
-          unstepped: "During the session",
-        }),
+        file.screenshots,
+        file.screenshotSeq,
+        { ...input, stepId: null, slot: null },
       );
-    }
-    return { ...updated, notes };
+      const updated: FreeRunFile = { ...file, screenshots, screenshotSeq };
+      await writeJson(dir, FREE_RUN_FILE, updated);
+      return { freeRun: { ...updated, notes: notesFile?.text ?? "" }, screenshot };
+    });
+  }
+
+  async updateFreeRunScreenshot(id: string, shotId: string, patch: ScreenshotPatch): Promise<FreeRun> {
+    return this.locked(`free-runs/${id}`, async () => {
+      const dir = await getDir(await this.freeRunsDir(true), id);
+      const [file, notesFile] = await Promise.all([
+        readJson(dir, FREE_RUN_FILE, freeRunFileSchema),
+        tryReadTextFile(dir, NOTES_FILE),
+      ]);
+      const { stepId: _stepId, slot: _slot, ...rest } = patch;
+      const updated: FreeRunFile = {
+        ...file,
+        screenshots: await updateScreenshotFiles(dir, file.screenshots, shotId, rest),
+      };
+      await writeJson(dir, FREE_RUN_FILE, updated);
+      return { ...updated, notes: notesFile?.text ?? "" };
+    });
+  }
+
+  async removeFreeRunScreenshot(id: string, shotId: string): Promise<FreeRun> {
+    return this.locked(`free-runs/${id}`, async () => {
+      const dir = await getDir(await this.freeRunsDir(true), id);
+      const [file, notesFile] = await Promise.all([
+        readJson(dir, FREE_RUN_FILE, freeRunFileSchema),
+        tryReadTextFile(dir, NOTES_FILE),
+      ]);
+      const updated: FreeRunFile = {
+        ...file,
+        screenshots: await removeScreenshotFiles(dir, file.screenshots, shotId),
+      };
+      await writeJson(dir, FREE_RUN_FILE, updated);
+      return { ...updated, notes: notesFile?.text ?? "" };
+    });
+  }
+
+  async readFreeRunScreenshot(id: string, shotId: string, which: ScreenshotVariant): Promise<Uint8Array> {
+    const dir = await getDir(await this.freeRunsDir(true), id);
+    const file = await readJson(dir, FREE_RUN_FILE, freeRunFileSchema);
+    return readScreenshotFile(dir, file.screenshots, shotId, which);
   }
 
   // ---- AgentChannelStore ----
@@ -1195,44 +1496,46 @@ export class FsaDataStore implements DataStore {
     toVersion: string,
     questionId: string | null,
   ): Promise<Run> {
-    const { runDir, runFile, verdict, substitutedMarkdown, doc, allowStepIds } =
-      await this.prepareSwap(testCaseId, runId, toVersion, questionId);
-    if (!verdict.ok) {
-      throw new Error(`v${toVersion} is not compatible with this run: ${verdict.reasons.join("; ")}`);
-    }
-    // The asked step may have changed despite carrying a verdict — the one
-    // exemption `allowStepIds` buys. A verdict on text that no longer exists
-    // is not kept: the step goes back to undone (an extra to its resting
-    // skipped state) so the tester re-does it against the new instructions.
-    // Comments stay — the tester's words are about the situation, not the
-    // wording; the automated result goes — it ran the old script.
-    const reset = new Set(
-      allowStepIds.filter((id) => verdict.changedStepIds.includes(id)),
-    );
-    const steps = runFile.steps.map((state, i) => {
-      if (!reset.has(state.stepId)) return state;
-      if (state.status === "pending" || state.status === "running") return state;
-      return {
-        ...state,
-        status: (doc.steps[i]?.extra ? "skipped" : "pending") as "skipped" | "pending",
-        startedAt: null,
-        finishedAt: null,
-        automatedResult: null,
+    return this.locked(`runs/${testCaseId}/${runId}`, async () => {
+      const { runDir, runFile, verdict, substitutedMarkdown, doc, allowStepIds } =
+        await this.prepareSwap(testCaseId, runId, toVersion, questionId);
+      if (!verdict.ok) {
+        throw new Error(`v${toVersion} is not compatible with this run: ${verdict.reasons.join("; ")}`);
+      }
+      // The asked step may have changed despite carrying a verdict — the one
+      // exemption `allowStepIds` buys. A verdict on text that no longer exists
+      // is not kept: the step goes back to undone (an extra to its resting
+      // skipped state) so the tester re-does it against the new instructions.
+      // Comments stay — the tester's words are about the situation, not the
+      // wording; the automated result goes — it ran the old script.
+      const reset = new Set(
+        allowStepIds.filter((id) => verdict.changedStepIds.includes(id)),
+      );
+      const steps = runFile.steps.map((state, i) => {
+        if (!reset.has(state.stepId)) return state;
+        if (state.status === "pending" || state.status === "running") return state;
+        return {
+          ...state,
+          status: (doc.steps[i]?.extra ? "skipped" : "pending") as "skipped" | "pending",
+          startedAt: null,
+          finishedAt: null,
+          automatedResult: null,
+        };
+      });
+      const updated: RunFile = {
+        ...runFile,
+        testCaseVersion: toVersion,
+        testCaseTitle: doc.title,
+        swaps: [
+          ...runFile.swaps,
+          { fromVersion: runFile.testCaseVersion, toVersion, at: nowIso(), questionId },
+        ],
+        steps,
       };
+      await writeTextFile(runDir, CASE_FILE, substitutedMarkdown);
+      await writeJson(runDir, RUN_FILE, updated);
+      return composeRun(doc, updated);
     });
-    const updated: RunFile = {
-      ...runFile,
-      testCaseVersion: toVersion,
-      testCaseTitle: doc.title,
-      swaps: [
-        ...runFile.swaps,
-        { fromVersion: runFile.testCaseVersion, toVersion, at: nowIso(), questionId },
-      ],
-      steps,
-    };
-    await writeTextFile(runDir, CASE_FILE, substitutedMarkdown);
-    await writeJson(runDir, RUN_FILE, updated);
-    return composeRun(doc, updated);
   }
 
   async agentPresence(_testCaseId: string): Promise<AgentPresence | null> {

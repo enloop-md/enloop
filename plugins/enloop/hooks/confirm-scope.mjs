@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * UserPromptSubmit: a bare `/enloop:quick` or `/enloop:full` is usually
- * Enter pressed on an autocomplete, not a decision to author something
- * unnamed. The skills say what to do about it, but that instruction lives
+ * UserPromptSubmit: a bare `/enloop:quick`, `/enloop:full` or
+ * `/enloop:guide` is usually Enter pressed on an autocomplete, not a
+ * decision to author something unnamed. The skills say what to do about it, but that instruction lives
  * three lines into a file a weak model may not weigh; this injects the
  * same demand into the turn itself, deterministically, whenever the
  * invocation arrives with no scope. Anything else — arguments present,
@@ -16,7 +16,7 @@ try {
 } catch {
   process.exit(0);
 }
-if (!/^\/enloop:(quick|full)\s*$/.test(String(prompt).trim())) process.exit(0);
+if (!/^\/enloop:(quick|full|guide)\s*$/.test(String(prompt).trim())) process.exit(0);
 
 console.log(
   "The skill was invoked with no scope — usually Enter pressed on an autocomplete. " +
@@ -24,6 +24,6 @@ console.log(
     "against the default branch; on the default branch, uncommitted changes, else the last " +
     'commit) and ask ONE closed question — "Write the case for <that>? Yes — or name a ' +
     'ticket, branch or feature instead." Then wait for the answer. Never proceed on an ' +
-    "empty or guessed scope.",
+    "empty or guessed scope. (For /enloop:guide the question is the same, worded \"Write the guide for <that>?\".)",
 );
 process.exit(0);

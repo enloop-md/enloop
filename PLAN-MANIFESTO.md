@@ -2,9 +2,9 @@
 
 Status: **written 2026-09-05; phases 1–5 built the same day, uncommitted.**
 M6 landed without the schema change: a comment with no audience already
-exists in the model and `feedback.md` already keeps it, so the audience
-row and step rating moved under a closed disclosure and nothing on disk
-changed. Not built: the panel does not yet verify visually (no side-panel
+exists in the model and `feedback.md` already keeps it, so nothing on
+disk changed. The closed disclosure over the audience row shipped in
+0.14.0 and was reverted the same day — the row stays visible. Not built: the panel does not yet verify visually (no side-panel
 run was made); the repo-root folder search is untested against a real
 pick. The audit that produced this is summarised in section 1;
 `MANIFESTO.md` is the principle it serves. Phases are ordered so each one leaves the tree
@@ -49,7 +49,7 @@ Locked in; do not relitigate mid-flight.
 | M3 | **The goal is pinned in the run header** | Below the title, for the whole run. Subgoals keep their group headers. |
 | M4 | **A run does not start with an unresolved value** | Start is disabled; the form says which names are empty and how each is fixed. A defective case is refused, not run with literals. |
 | M5 | **Quick is the default start when the case defines it** | One primary button. "Full run" is a secondary control. With no quick steps there is one button, as today. |
-| M6 | **One comment per step; audiences are not the tester's job** | The textarea stays; audience checkboxes move under a closed "Address it to someone (optional)" disclosure. A comment with no audience is already a valid comment the model keeps and `feedback.md` renders, and the check skill already reads "or none at all" — so no schema change. Step and case ratings stay where they are; they are optional and never block. |
+| M6 | **One comment per step; audiences stay visible** | Tried as a closed disclosure in 0.14.0 and reverted 2026-09-05: the audience row is context the tester has in the moment, and hiding it cost more than it saved. The row stays as it was; a comment with no audience is still valid and routed at triage. Ratings stay optional and never block. |
 | M7 | **Credentials are environment values** | The contract says a test account's password is a variable the environment provides, written as a typeable value in the account prerequisite. "Vault item" survives only for deployments an environment must not hold (prod), and the linter warns on it. |
 | M8 | **Errors, not warnings, for what the manifesto names** | Missing `Goal:` / `You will:`; no `### Expected`; no `Selector:` on a step whose `Where:` is an address; no entry point when the case names addresses; `%DOMAIN%` without `@locations`. Prose `Where:` and "who is the tester" stay warnings — a terminal step and a login-less app are legitimate answers the grammar cannot express. |
 | M9 | **Every skill run ends with a link** | The `write` command appends the viewer-link comment and prints the link; the final report gives the link first, then the two extension steps. Requires `viewerLink`/`withViewerComment` in the bundled validator. |

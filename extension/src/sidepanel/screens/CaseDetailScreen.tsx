@@ -35,6 +35,7 @@ import { useReadyStore } from "../store/DataStoreProvider.js";
 import { useCaptureSettings } from "../useCapture.js";
 import { getActivePageUrl } from "../../lib/automation.js";
 import { useActivePageUrl } from "../../lib/use-active-page.js";
+import { readTypedValues, writeTypedValues } from "../../lib/value-memory.js";
 import { downloadTextFile, fileSlug } from "../../lib/download.js";
 
 export function CaseDetailScreen({
@@ -74,6 +75,11 @@ export function CaseDetailScreen({
   // the moment the run began rather than the moment this screen opened.
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [edited, setEdited] = useState<Record<string, string>>({});
+  /** Names filled from the last run rather than typed just now. They are
+   * "soft": shown as such, and given up to an environment that has its own
+   * answer — see `applyEnvironment`. A value typed in this session is the
+   * tester's decision about *this* run and outranks everything. */
+  const [remembered, setRemembered] = useState<string[]>([]);
   /** Page values a domain's or a page variable's `Match:` refused, by name
    * — shown so the tester knows why a field is not following the open tab. */
   const [pageRefused, setPageRefused] = useState<Record<string, string>>({});
@@ -238,6 +244,49 @@ export function CaseDetailScreen({
     setSelectedEnvId(envId);
     if (envId) localStorage.setItem(envMemoryKey, envId);
     else localStorage.removeItem(envMemoryKey);
+
+    // Picking a deployment must not run against the address remembered from
+    // the last one. Only remembered values give way; one typed in this
+    // session stays, because the tester typed it knowing what they picked.
+    const picked = envId ? offered.find((e) => e.id === envId) : undefined;
+    const provided = picked ? environmentValues(picked) : undefined;
+    if (!provided || remembered.length === 0) return;
+    const given = remembered.filter((name) =>
+      (provided.domains[name] ?? provided.values[name] ?? "").trim(),
+    );
+    if (given.length === 0) return;
+    setEdited((prev) => {
+      const next = { ...prev };
+      for (const name of given) delete next[name];
+      return next;
+    });
+    setRemembered((prev) => prev.filter((name) => !given.includes(name)));
+  }
+
+  /**
+   * A value the tester typed: kept for the next run of this case, and no
+   * longer "remembered" — they have just made it their own.
+   *
+   * Written here rather than from an effect on `edited`, because not every
+   * change to that map is a decision worth keeping: the restore filters
+   * itself, and switching environment drops values that must still be there
+   * when the tester switches back.
+   */
+  function editValue(name: string, value: string) {
+    const next = { ...edited, [name]: value };
+    setEdited(next);
+    writeTypedValues(testCaseId, next);
+    setRemembered((prev) => prev.filter((n) => n !== name));
+  }
+
+  /** Back to auto: the case decides this value again, here and on the next
+   * run — forgetting is how a remembered value is got rid of. */
+  function resetValue(name: string) {
+    const next = { ...edited };
+    delete next[name];
+    setEdited(next);
+    writeTypedValues(testCaseId, next);
+    setRemembered((prev) => prev.filter((n) => n !== name));
   }
 
   // Pick the starting environment once both the environment list and the
@@ -247,9 +296,26 @@ export function CaseDetailScreen({
     if (envRestored.current || !envFile || !variablesLoaded || !meta) return;
     envRestored.current = true;
     const saved = localStorage.getItem(envMemoryKey);
-    const remembered = saved ? offered.find((e) => e.id === saved) : undefined;
-    const initial = remembered ?? defaultEnvironment(envFile, project);
+    const rememberedEnv = saved ? offered.find((e) => e.id === saved) : undefined;
+    const initial = rememberedEnv ?? defaultEnvironment(envFile, project);
     if (initial) setSelectedEnvId(initial.id);
+
+    // The values this tester typed the last time they ran this case. Held
+    // back where the starting environment answers for the same name: a
+    // remembered address is a note about the deployment you were on, and
+    // "Staging" is the deployment you are on now.
+    const provided = initial ? environmentValues(initial) : undefined;
+    const restored = Object.fromEntries(
+      Object.entries(
+        readTypedValues(testCaseId, [...domains, ...variables].map((e) => e.name)),
+      ).filter(
+        ([name]) => !(provided?.domains[name] ?? provided?.values[name] ?? "").trim(),
+      ),
+    );
+    if (Object.keys(restored).length > 0) {
+      setEdited(restored);
+      setRemembered(Object.keys(restored));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot restore
   }, [envFile, variablesLoaded, meta]);
 
@@ -445,10 +511,25 @@ export function CaseDetailScreen({
       <Header title={meta.title} onBack={onBack} onSettings={onSettings} />
       <div className="flex-1 overflow-y-auto p-3">
         <ErrorNotice error={error} className="mb-2" />
-        {(version?.project || meta.project) && (
+        {(version?.project || meta.project || version?.kind === "guide") && (
           <div className="mb-2 flex items-baseline gap-1.5 text-xs">
-            <span className="font-medium text-slate-500">Project:</span>
-            <span className="text-slate-600">{version?.project || meta.project}</span>
+            {(version?.project || meta.project) && (
+              <>
+                <span className="font-medium text-slate-500">Project:</span>
+                <span className="text-slate-600">{version?.project || meta.project}</span>
+              </>
+            )}
+            {/* Same badge as an automated step: a fact about how the case
+                is written, not a status. A guide runs like any case; the
+                verdicts read Done / Could not, and a finished run exports. */}
+            {version?.kind === "guide" && (
+              <span
+                className="ml-auto rounded bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-700"
+                title="A user guide: written for an end user, run like a case, exported with its screenshots"
+              >
+                guide
+              </span>
+            )}
           </div>
         )}
         {(version?.author || version?.formatVersion) && (
@@ -640,14 +721,9 @@ export function CaseDetailScreen({
             sourceOf={sourceOf}
             open={valuesOpen}
             onToggle={() => setValuesOpen((o) => !o)}
-            onChange={(name, value) => setEdited((prev) => ({ ...prev, [name]: value }))}
-            onReset={(name) =>
-              setEdited((prev) => {
-                const next = { ...prev };
-                delete next[name];
-                return next;
-              })
-            }
+            remembered={remembered}
+            onChange={editValue}
+            onReset={resetValue}
           />
         )}
         <CaptureToggles
@@ -955,6 +1031,7 @@ function RunValues({
   locations,
   previews,
   edited,
+  remembered,
   refused,
   sourceOf,
   open,
@@ -969,6 +1046,10 @@ function RunValues({
   locations: string[];
   previews: Record<string, string>;
   edited: Record<string, string>;
+  /** Of the edited names, the ones carried over from the last run rather
+   * than typed just now — labelled, so a value that appears in a field
+   * nobody touched today says where it came from. */
+  remembered: string[];
   refused: Record<string, string>;
   sourceOf: (name: string, kind: "domain" | "variable") => string;
   open: boolean;
@@ -1017,12 +1098,17 @@ function RunValues({
             )}
           </label>
           {isEdited ? (
-            <button
-              onClick={() => onReset(row.name)}
-              className="shrink-0 text-[10px] text-sky-600 hover:underline"
-            >
-              ↺ back to auto
-            </button>
+            <span className="flex shrink-0 items-center gap-1.5">
+              {remembered.includes(row.name) && (
+                <span className="text-[10px] text-slate-400">from your last run</span>
+              )}
+              <button
+                onClick={() => onReset(row.name)}
+                className="text-[10px] text-sky-600 hover:underline"
+              >
+                ↺ back to auto
+              </button>
+            </span>
           ) : (
             source !== "no value" && (
               <span className="shrink-0 text-[10px] text-slate-400">

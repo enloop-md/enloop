@@ -115,7 +115,11 @@ function CaptureSection() {
 /**
  * One connected folder. The folder name sits under the label because Chrome
  * reports a name and never a path — with two directories both called
- * `test-cases`, the label you gave it is the only thing that tells them apart.
+ * `test-cases`, the name is the only thing that tells them apart.
+ *
+ * That name lives in the folder's `project.json`, so renaming here edits the
+ * file rather than a preference: the folder keeps its name on the next
+ * machine, and for whoever clones the repo.
  */
 function StorageRow({
   storage,
@@ -164,6 +168,12 @@ function StorageRow({
           )}
         </div>
       )}
+      {editing && (
+        <p className="mt-1 text-[11px] text-slate-400">
+          Written to <span className="font-mono">project.json</span> in the folder, so the name
+          travels with the repo.
+        </p>
+      )}
       <p className="mt-0.5 font-mono text-[11px] text-slate-400">{storage.folderName}/</p>
 
       <div className="mt-2 flex flex-wrap gap-2">
@@ -176,7 +186,13 @@ function StorageRow({
           </button>
         )}
         <button
-          onClick={() => setEditing((e) => !e)}
+          onClick={() => {
+            // Re-seed from the current name: a folder that named itself
+            // since this row mounted must not be renamed back by a stale
+            // draft.
+            setDraft(storage.label);
+            setEditing((e) => !e);
+          }}
           className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
         >
           Rename

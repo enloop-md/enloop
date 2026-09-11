@@ -6,13 +6,28 @@ import {
   type CaptureCounts,
   type CaptureDigest,
 } from "./capture.js";
-import { COMMENT_AUDIENCES, VARIABLE_GENERATORS } from "./schemas.js";
+import {
+  COMMENT_AUDIENCES,
+  DEFAULT_PHOTO_PAD,
+  DEFAULT_SHOT_COLOR,
+  PHOTO_MODE,
+  PHOTO_TAKE,
+  VARIABLE_GENERATORS,
+} from "./schemas.js";
 import { describeRating, isExemplaryRating, isPoorRating } from "./rating.js";
 import { stripViewerComment } from "./viewer-link.js";
-import { IMPLICIT_DOMAIN_NAMES, coldLocation, isMainDomainName } from "./variables.js";
+import {
+  IMPLICIT_DOMAIN_NAMES,
+  coldLocation,
+  isMainDomainName,
+  joinResolvedValue,
+} from "./variables.js";
 import type {
+  CaseKind,
   CommentAudience,
   FreeRunFile,
+  PhotoSpec,
+  RunScreenshot,
   RunComment,
   RunCommentDraft,
   RunFile,
@@ -33,7 +48,7 @@ import type {
  * v1.md/v2.md version history, which tracks edits to a case's *content*
  * under this same grammar.
  */
-export const CURRENT_FORMAT_VERSION = "0.0.11";
+export const CURRENT_FORMAT_VERSION = "0.0.13";
 
 /**
  * Grammar. There is no separate spec by design: this comment is it, sitting
@@ -54,6 +69,12 @@ export const CURRENT_FORMAT_VERSION = "0.0.11";
  *                                                belongs to, so a reader
  *                                                opening the file cold knows
  *                                                what they are looking at)
+ *   @kind guide                                (optional — a user guide:
+ *                                                the same grammar and run,
+ *                                                written for an end user;
+ *                                                exported with its
+ *                                                screenshots. Absent =
+ *                                                an ordinary case)
  *   Tags: auth, smoke
  *   @locations: localhost:8080, *.acme.com     (host globs — where this
  *                                                case is meant to run; see
@@ -202,8 +223,10 @@ export const CURRENT_FORMAT_VERSION = "0.0.11";
  *   else empty) and replaces every `%NAME%` placeholder anywhere in the rest
  *   of the document (title, description, step instructions, selectors,
  *   scripts) with the resolved value. A name that resolves to nothing is
- *   not substituted at all: the step keeps the literal `%NAME%`. See
- *   `substituteVariables`.
+ *   not substituted at all: the step keeps the literal `%NAME%`. A value
+ *   ending in `/` where a `/` follows it loses the slash, so `%DOMAIN%/orders`
+ *   is one slash deep whether or not the address was recorded with a
+ *   trailing one. See `substituteVariables`.
  *
  *   # Dependencies                              (optional, bullet list)
  *   - Seeded test user
@@ -252,6 +275,14 @@ export const CURRENT_FORMAT_VERSION = "0.0.11";
  *                                                 this step, so "which app
  *                                                 am I in?" stays out of the
  *                                                 instructions prose)
+ *   Via: Settings → Users → the user's row     (how the page is reached in
+ *                                                 the app's own UI. Required
+ *                                                 whenever the step moves to
+ *                                                 a page the previous step
+ *                                                 was not on; `Via: link
+ *                                                 only` says the UI has no
+ *                                                 path — a deep link, a
+ *                                                 redirect target)
  *   Kind: quick                                 (optional — marks this step
  *                                                 as part of the core happy
  *                                                 path. A "quick" run
@@ -292,9 +323,20 @@ export const CURRENT_FORMAT_VERSION = "0.0.11";
  *                                                 the page wins)
  *   Free text instructions (manual step — no code fence found).
  *
- *   `Where:`, `Selector:` and `Kind:` form a header block directly under
- *   the step title and may appear in any order; the first line that is none
- *   of them ends the header and begins the instructions.
+ *   `Where:`, `Via:`, `Selector:` and `Kind:` form a header block directly
+ *   under the step title and may appear in any order; the first line that
+ *   is none of them ends the header and begins the instructions.
+ *
+ *   `Where:` is never the only way to find a page. Its address may point
+ *   at a deployment the tester is not on, or be incomplete, and a Go
+ *   control that opens the wrong page is worse than none — so a step that
+ *   moves to a new page also says how a person gets there from the app's
+ *   own screens: `Via: Settings → Users → the row for the account`. The
+ *   panel shows it under the address. When the UI genuinely has no path —
+ *   a link from an email, a redirect the app performs, a page only a URL
+ *   reaches — the step says so with `Via: link only`, so the tester knows
+ *   not to look for a menu. A step on the same page as the one before it
+ *   needs no `Via:`.
  *
  *   A `Where:` that is a route (`/admin/x`), an absolute URL, or a local
  *   address (`localhost:3000/admin`) gets a Go control in the run screen
@@ -347,6 +389,38 @@ export const CURRENT_FORMAT_VERSION = "0.0.11";
  *   pass/fail: rationale, regression history, caveats. Keeping it out of
  *   `### Expected` is the whole point — Expected stays scannable.
  *   `### Expected` and `### Note` may appear in either order.
+ *
+ *   ### Photo                                   (optional, repeatable —
+ *   Crop: #order-form                            what the runner should
+ *   Pad: 24                                      photograph for this step,
+ *   Mark: #save-button                           and how to mark it up:
+ *   Point: .toast                                `Crop:` the container to
+ *   Callout: #email — The address on the invoice  cut to (viewport when
+ *   Blur: [data-testid="card-number"]            absent), `Pad:` css px
+ *   Take: after                                  around it (24); `Mark:` a
+ *   Mode: confirm                                box, `Point:` an arrow,
+ *   Color: #E5484D                               `Callout:` a numbered disc
+ *   Caption: The order form, ready to save       with an optional legend
+ *                                                after " — ", `Blur:`
+ *                                                pixelated — each a selector,
+ *                                                each repeatable, resolved
+ *                                                on the page when the photo
+ *                                                is taken. `Take:` before |
+ *                                                after | manual — when: as
+ *                                                the step becomes current,
+ *                                                as its verdict is given, or
+ *                                                by a button. `Mode:` auto |
+ *                                                confirm — keep silently, or
+ *                                                offer Keep / Retake / Edit /
+ *                                                Discard. Only the keys that
+ *                                                differ from these defaults
+ *                                                need writing.)
+ *
+ *   The n-th `### Photo` of a step fills `%PHOTO_n%` wherever that appears
+ *   in the step's instructions or `### Expected` — the place the picture
+ *   belongs when the run is exported as a guide. `PHOTO_` is a reserved
+ *   prefix: `%PHOTO_n%` is never a variable and never substituted. A photo
+ *   with no placeholder is placed after the instructions.
  *
  *   ## Another step title
  *   ```js
@@ -414,6 +488,7 @@ export function parseCaseDocument(
   let formatVersion = CURRENT_FORMAT_VERSION;
   let author = "";
   let project = "";
+  let kind: CaseKind = "case";
   let tags: string[] = [];
   let locations: string[] = [];
   let goal = "";
@@ -426,6 +501,7 @@ export function parseCaseDocument(
     const versionMatch = /^@version\s+(.*)$/i.exec(line);
     const authorMatch = /^@author\s+(.*)$/i.exec(line);
     const projectMatch = /^@project\s+(.*)$/i.exec(line);
+    const kindMatch = /^@kind:?\s+(.*)$/i.exec(line);
     const tagsMatch = /^Tags:\s*(.*)$/i.exec(line);
     // With or without the colon: `@locations:` reads as a list the way
     // `Tags:` does, and `@locations` matches the other `@` lines.
@@ -443,6 +519,15 @@ export function parseCaseDocument(
     }
     if (projectMatch) {
       project = projectMatch[1].trim();
+      i++;
+      continue;
+    }
+    if (kindMatch) {
+      const value = kindMatch[1].trim().toLowerCase();
+      if (value !== "case" && value !== "guide") {
+        throw new Error(`@kind must be case or guide, not "${kindMatch[1].trim()}".`);
+      }
+      kind = value;
       i++;
       continue;
     }
@@ -529,6 +614,7 @@ export function parseCaseDocument(
     formatVersion,
     author,
     project,
+    kind,
     changeNote,
     title,
     goal,
@@ -672,6 +758,24 @@ function parseOneVariable(name: string, body: string): TestCaseVariable {
 
 const PLACEHOLDER_RE = /%([A-Za-z_][A-Za-z0-9_]*)%/g;
 
+/** `%PHOTO_n%` — where the n-th `### Photo` of the step lands on export.
+ * Reserved: never a variable (see `isPhotoPlaceholder`). */
+export const PHOTO_PLACEHOLDER_RE = /%PHOTO_(\d+)%/g;
+
+export function isPhotoPlaceholder(name: string): boolean {
+  return /^PHOTO_\d+$/.test(name);
+}
+
+/** The distinct `n`s of every `%PHOTO_n%` in `text`, in order of first use. */
+export function photoPlaceholders(text: string): number[] {
+  const seen: number[] = [];
+  for (const m of text.matchAll(PHOTO_PLACEHOLDER_RE)) {
+    const n = Number(m[1]);
+    if (n > 0 && !seen.includes(n)) seen.push(n);
+  }
+  return seen;
+}
+
 /** Replaces every `%NAME%` placeholder in `text` with its resolved value.
  *
  * A variable is only used when it actually has a value. A placeholder with
@@ -682,9 +786,13 @@ const PLACEHOLDER_RE = /%([A-Za-z_][A-Za-z0-9_]*)%/g;
  * reading the run to tell that a value was ever meant to be there. Leaving
  * the placeholder says exactly what happened. */
 export function substituteVariables(text: string, values: Record<string, string>): string {
-  return text.replace(PLACEHOLDER_RE, (match, name: string) =>
-    values[name]?.trim() ? values[name] : match,
-  );
+  return text.replace(PLACEHOLDER_RE, (match, name: string, offset: number, whole: string) => {
+    if (isPhotoPlaceholder(name)) return match;
+    const value = values[name];
+    if (!value?.trim()) return match;
+    // One slash at the seam, never two — see `joinResolvedValue`.
+    return joinResolvedValue(value, whole.slice(offset + match.length));
+  });
 }
 
 /**
@@ -724,9 +832,15 @@ export function renderBulletList(items: string[]): string {
 }
 
 const FENCE_RE = /```([^\n]*)\n([\s\S]*?)```/;
-const SUBSECTION_RE = /^###\s+(Expected|Note)\s*$/i;
+const SUBSECTION_RE = /^###\s+(Expected|Note|Photo)\s*$/i;
+const PHOTO_KEY_RE = /^([A-Za-z]+):\s*(.*)$/;
 const SELECTOR_RE = /^Selector:\s*(.*)$/i;
 const WHERE_RE = /^Where:\s*(.*)$/i;
+const VIA_RE = /^Via:\s*(.*)$/i;
+
+/** The `Via:` values that say "the UI offers no path to this page" — an
+ * explicit answer, not a missing one. */
+export const VIA_LINK_ONLY_RE = /^(link only|direct link( only)?|url only|none|no ui path)$/i;
 const KIND_RE = /^Kind:\s*(.*)$/i;
 
 /** Splits a step body into its lead text and any `### Expected` / `### Note`
@@ -735,10 +849,12 @@ function splitStepSubsections(text: string): {
   lead: string;
   expected?: string;
   note?: string;
+  photos: PhotoSpec[];
 } {
   const lead: string[] = [];
   const expected: string[] = [];
   const note: string[] = [];
+  const photoBlocks: string[][] = [];
   let current = lead;
   let sawExpected = false;
   let sawNote = false;
@@ -746,9 +862,13 @@ function splitStepSubsections(text: string): {
   for (const line of text.split("\n")) {
     const match = SUBSECTION_RE.exec(line);
     if (match) {
-      if (match[1].toLowerCase() === "expected") {
+      const which = match[1].toLowerCase();
+      if (which === "expected") {
         current = expected;
         sawExpected = true;
+      } else if (which === "photo") {
+        current = [];
+        photoBlocks.push(current);
       } else {
         current = note;
         sawNote = true;
@@ -762,7 +882,111 @@ function splitStepSubsections(text: string): {
     lead: lead.join("\n").trim(),
     expected: sawExpected ? expected.join("\n").trim() || undefined : undefined,
     note: sawNote ? note.join("\n").trim() || undefined : undefined,
+    photos: photoBlocks.map(parsePhotoBlock),
   };
+}
+
+/** Splits `#email — The address` into selector and legend text; the dash
+ * may be an em dash or ` - ` with spaces, so a plain-keyboard author is
+ * not punished. A selector never contains either surrounded by spaces. */
+function splitCalloutLine(value: string): { selector: string; text: string } {
+  const m = /^(.*?)\s+(?:—|–|-)\s+(.*)$/.exec(value);
+  return m ? { selector: m[1].trim(), text: m[2].trim() } : { selector: value.trim(), text: "" };
+}
+
+/** One `### Photo` block's `Key: value` lines into a spec. Unknown keys
+ * and bad values throw — a photo spec the runner would misread is worse
+ * than a parse error at authoring time. */
+function parsePhotoBlock(lines: string[]): PhotoSpec {
+  const spec: PhotoSpec = {
+    crop: "",
+    pad: DEFAULT_PHOTO_PAD,
+    marks: [],
+    points: [],
+    callouts: [],
+    blurs: [],
+    take: "after",
+    mode: "confirm",
+    color: DEFAULT_SHOT_COLOR,
+    caption: "",
+  };
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    const m = PHOTO_KEY_RE.exec(line);
+    if (!m) throw new Error(`A \`### Photo\` block holds only \`Key: value\` lines, not "${line}".`);
+    const key = m[1].toLowerCase();
+    const value = m[2].trim();
+    switch (key) {
+      case "crop":
+        spec.crop = value;
+        break;
+      case "pad": {
+        // A blank value means the default, not zero.
+        if (!value) break;
+        if (!/^\d+$/.test(value)) throw new Error(`\`Pad:\` must be a whole number of pixels, not "${value}".`);
+        spec.pad = Number(value);
+        break;
+      }
+      case "mark":
+        if (value) spec.marks.push(value);
+        break;
+      case "point":
+        if (value) spec.points.push(value);
+        break;
+      case "callout":
+        if (value) spec.callouts.push(splitCalloutLine(value));
+        break;
+      case "blur":
+        if (value) spec.blurs.push(value);
+        break;
+      case "take": {
+        const take = value.toLowerCase();
+        if (!(PHOTO_TAKE as readonly string[]).includes(take)) {
+          throw new Error(`\`Take:\` must be before, after or manual, not "${value}".`);
+        }
+        spec.take = take as PhotoSpec["take"];
+        break;
+      }
+      case "mode": {
+        const mode = value.toLowerCase();
+        if (!(PHOTO_MODE as readonly string[]).includes(mode)) {
+          throw new Error(`\`Mode:\` must be auto or confirm, not "${value}".`);
+        }
+        spec.mode = mode as PhotoSpec["mode"];
+        break;
+      }
+      case "color":
+      case "colour":
+        spec.color = value.toUpperCase();
+        break;
+      case "caption":
+        spec.caption = value;
+        break;
+      default:
+        throw new Error(`Unknown \`### Photo\` key "${m[1]}" — the keys are Crop, Pad, Mark, Point, Callout, Blur, Take, Mode, Color, Caption.`);
+    }
+  }
+  return spec;
+}
+
+/** `parsePhotoBlock`'s inverse: only the keys that differ from defaults. */
+function renderPhotoBlock(spec: PhotoSpec): string[] {
+  const out = ["### Photo"];
+  if (spec.crop.trim()) out.push(`Crop: ${spec.crop.trim()}`);
+  if (spec.pad !== DEFAULT_PHOTO_PAD) out.push(`Pad: ${spec.pad}`);
+  for (const s of spec.marks) if (s.trim()) out.push(`Mark: ${s.trim()}`);
+  for (const s of spec.points) if (s.trim()) out.push(`Point: ${s.trim()}`);
+  for (const c of spec.callouts) {
+    if (!c.selector.trim()) continue;
+    out.push(`Callout: ${c.selector.trim()}${c.text.trim() ? ` — ${c.text.trim()}` : ""}`);
+  }
+  for (const s of spec.blurs) if (s.trim()) out.push(`Blur: ${s.trim()}`);
+  if (spec.take !== "after") out.push(`Take: ${spec.take}`);
+  if (spec.mode !== "confirm") out.push(`Mode: ${spec.mode}`);
+  if (spec.color.toUpperCase() !== DEFAULT_SHOT_COLOR) out.push(`Color: ${spec.color.toUpperCase()}`);
+  if (spec.caption.trim()) out.push(`Caption: ${spec.caption.trim()}`);
+  return out;
 }
 
 function parseOneStep(title: string, body: string, index: number, group?: string): Step {
@@ -776,16 +1000,19 @@ function parseOneStep(title: string, body: string, index: number, group?: string
   // order, and the highlighter walks them until one matches.
   const selectors: string[] = [];
   let where: string | undefined;
+  let via: string | undefined;
   let quick = false;
   let extra = false;
   for (; i < lines.length; i++) {
     const selectorMatch = SELECTOR_RE.exec(lines[i]);
     const whereMatch = WHERE_RE.exec(lines[i]);
+    const viaMatch = VIA_RE.exec(lines[i]);
     const kindMatch = KIND_RE.exec(lines[i]);
     if (selectorMatch) {
       const candidate = selectorMatch[1].trim();
       if (candidate) selectors.push(candidate);
     } else if (whereMatch) where = whereMatch[1].trim() || undefined;
+    else if (viaMatch) via = viaMatch[1].trim() || undefined;
     else if (kindMatch) {
       // One `Kind:` per step — a later line replaces an earlier one, so the
       // two marks stay mutually exclusive however the header is edited.
@@ -808,7 +1035,7 @@ function parseOneStep(title: string, body: string, index: number, group?: string
     ).trim();
   }
 
-  const { lead, expected, note } = splitStepSubsections(remaining);
+  const { lead, expected, note, photos } = splitStepSubsections(remaining);
 
   const type: StepType = script !== undefined ? "automated" : "manual";
 
@@ -822,10 +1049,12 @@ function parseOneStep(title: string, body: string, index: number, group?: string
     script,
     selectors,
     where,
+    via,
     quick,
     extra,
     note,
     group,
+    photos,
   };
 }
 
@@ -882,6 +1111,7 @@ export function renderCaseMarkdown(doc: TestCaseVersion): string {
   out.push(`@version ${doc.formatVersion || CURRENT_FORMAT_VERSION}`);
   if (doc.author.trim()) out.push(`@author ${doc.author.trim()}`);
   if (doc.project.trim()) out.push(`@project ${doc.project.trim()}`);
+  if (doc.kind === "guide") out.push("@kind guide");
   if (doc.tags.length > 0) out.push(`Tags: ${doc.tags.join(", ")}`);
   if (doc.locations.length > 0) out.push(`@locations: ${doc.locations.join(", ")}`);
   if (doc.goal.trim()) out.push(`Goal: ${doc.goal.trim()}`);
@@ -961,6 +1191,7 @@ export function renderCaseMarkdown(doc: TestCaseVersion): string {
     // `Where:`/`Selector:`/`Kind:` are a header block in any order; this
     // order is the one the grammar's own examples use.
     if (step.where?.trim()) out.push(`Where: ${step.where.trim()}`);
+    if (step.via?.trim()) out.push(`Via: ${step.via.trim()}`);
     for (const selector of step.selectors) {
       if (selector.trim()) out.push(`Selector: ${selector.trim()}`);
     }
@@ -978,6 +1209,10 @@ export function renderCaseMarkdown(doc: TestCaseVersion): string {
       out.push("");
       out.push("### Expected");
       out.push(step.expected.trim());
+    }
+    for (const photo of step.photos ?? []) {
+      out.push("");
+      out.push(...renderPhotoBlock(photo));
     }
     if (step.note?.trim()) {
       out.push("");
@@ -1019,6 +1254,7 @@ Describe why this test case exists.
 
 ## First step
 Where: %DOMAIN%/
+Via: the menu path that reaches this page, or "link only"
 Selector:
 Describe the single action the tester should take.
 
@@ -1235,6 +1471,26 @@ function renderGroupSummary(doc: TestCaseVersion, run: RunFile): string[] {
   return lines;
 }
 
+/** The file stem of a screenshot — `01`, `02`, … — shared by every
+ * writer and reader of `screenshots/`. */
+export function screenshotStem(shot: { seq: number }): string {
+  return String(shot.seq).padStart(2, "0");
+}
+
+/** A screenshot's alt text: its caption, else which photo it is. */
+export function screenshotAlt(shot: RunScreenshot): string {
+  if (shot.caption.trim()) return shot.caption.trim();
+  return shot.slot ? `Photo ${shot.slot}` : `Screenshot ${shot.seq}`;
+}
+
+/** One `![…](screenshots/NN.png)` line per screenshot, in capture order —
+ * relative paths, since the report sits beside the folder. */
+function screenshotLines(shots: RunScreenshot[]): string[] {
+  return [...shots]
+    .sort((a, b) => a.seq - b.seq)
+    .map((s) => `![${screenshotAlt(s)}](screenshots/${screenshotStem(s)}.png)`);
+}
+
 export function renderRunReport(
   doc: TestCaseVersion,
   run: RunFile,
@@ -1247,6 +1503,7 @@ export function renderRunReport(
   lines.push(`# ${doc.title} — Run Report`);
   lines.push("");
   if (doc.project) lines.push(`- Project: ${doc.project}`);
+  if (doc.kind === "guide") lines.push("- Kind: guide");
   lines.push(`- Version: v${run.testCaseVersion}`);
   // A quick run and a full run are not the same evidence — a report that
   // does not say which one it was invites "but it passed" about a pass that
@@ -1283,6 +1540,13 @@ export function renderRunReport(
   // seen it.
   if (digest) {
     lines.push(renderCaptureDigest(digest, labelStep));
+  }
+  const runShots = screenshotLines(run.screenshots.filter((s) => s.stepId === null));
+  if (runShots.length > 0) {
+    lines.push("## Screenshots of the run");
+    lines.push("");
+    lines.push(...runShots);
+    lines.push("");
   }
   const groupSummary = renderGroupSummary(doc, run);
   if (groupSummary.length > 0) {
@@ -1321,6 +1585,11 @@ export function renderRunReport(
       for (const comment of comments) {
         lines.push(`- ${audiencePrefix(comment)}${comment.text}`);
       }
+    }
+    const stepShots = screenshotLines(run.screenshots.filter((s) => s.stepId === step.id));
+    if (stepShots.length > 0) {
+      lines.push("");
+      lines.push(...stepShots);
     }
     if (state?.automatedResult?.error) {
       lines.push("");
@@ -1895,6 +2164,7 @@ export function renderReadableCase(
     }
     if (step.where) {
       lines.push(`**Where:** ${prose(step.where)}`);
+      if (step.via) lines.push(`**Via:** ${prose(step.via)}`);
       lines.push("");
     }
     if (step.instructions?.trim()) {
@@ -1939,7 +2209,7 @@ function stepBodyIsQuick(body: string): boolean {
     if (line.trim() === "") continue;
     const kindMatch = KIND_RE.exec(line);
     if (kindMatch) return kindMatch[1].trim().toLowerCase() === "quick";
-    if (!SELECTOR_RE.test(line) && !WHERE_RE.test(line)) return false;
+    if (!SELECTOR_RE.test(line) && !WHERE_RE.test(line) && !VIA_RE.test(line)) return false;
   }
   return false;
 }

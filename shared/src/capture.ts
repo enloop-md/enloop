@@ -207,7 +207,7 @@ export function parseJsonl(text: string): CapturedEntry[] {
 
 // ---- the readable artifact: console.md ----
 
-const LEVEL_LABEL: Record<CaptureLevel, string> = {
+export const LEVEL_LABEL: Record<CaptureLevel, string> = {
   log: "log",
   info: "info",
   warn: "warn",

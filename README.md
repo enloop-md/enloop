@@ -112,6 +112,10 @@ skills as `$setup`, `$quick <ticket>`. Details and Codex caveats:
   answers "how do I check this?" from the step itself — with your screenshot
   and page structure in hand — patches the case if the step was the problem,
   and runs a case's setup commands when you click them in the panel.
+  **guide** writes a case for an end user instead of a tester, with photo
+  specs the runner turns into marked-up screenshots as it runs, and
+  **export-guide** turns the finished run into a Markdown folder or one
+  HTML page — a [user guide](docs/guides.md) nobody had to screenshot by hand.
 
 ## Start here
 
@@ -124,6 +128,7 @@ skills as `$setup`, `$quick <ticket>`. Details and Codex caveats:
 | Understand what the skills do | [docs/skills.md](docs/skills.md) |
 | Answer questions with no session open (enloopd) | [docs/daemon.md](docs/daemon.md) |
 | Write or read a case by hand | [docs/case-format.md](docs/case-format.md) |
+| Take screenshots on a run, write and export a user guide | [docs/guides.md](docs/guides.md) |
 | Share a case with someone | [the viewer](https://enloop-md.github.io/enloop/) |
 
 ---

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useDataStore } from "../store/DataStoreProvider.js";
+import { DropCase } from "../../components/DropCase.js";
 
 const DOCS_URL = "https://github.com/enloop-md/enloop#readme";
 
@@ -17,7 +18,7 @@ const DOCS_URL = "https://github.com/enloop-md/enloop#readme";
  * three working folders behind one stale grant.
  */
 export function ConnectScreen() {
-  const { state, storages, addStorage, reconnect } = useDataStore();
+  const { state, storages, addStorage, reconnect, importCase } = useDataStore();
 
   if (state.status === "loading") {
     return <Centered>Loading…</Centered>;
@@ -40,8 +41,17 @@ export function ConnectScreen() {
               onClick={() => void reconnect(storage.id)}
               className="flex w-full items-center justify-between gap-2 rounded bg-slate-800 px-3 py-2 text-left text-sm font-medium text-white hover:bg-slate-700"
             >
-              <span className="truncate">
-                Reconnect <span className="font-mono">{storage.label}</span>
+              {/* The folder name under the project name, not instead of it:
+                  every repo keeps its cases in a folder called `enloop.md`,
+                  so the directory alone makes this list four identical
+                  buttons. The name comes from the folder's `project.json`. */}
+              <span className="min-w-0 flex-1 truncate">
+                Reconnect <span className="font-medium">{storage.label}</span>
+                {storage.folderName !== storage.label && (
+                  <span className="block truncate font-mono text-[10px] font-normal text-slate-400">
+                    {storage.folderName}/
+                  </span>
+                )}
               </span>
               {storage.permission === "missing" && (
                 <span className="shrink-0 text-[10px] font-normal text-slate-300">not found</span>
@@ -58,6 +68,7 @@ export function ConnectScreen() {
         >
           Connect another folder…
         </button>
+        <DropCase onImport={(md) => importCase(md).then(() => undefined)} />
       </Centered>
     );
   }
@@ -83,6 +94,7 @@ export function ConnectScreen() {
         </p>
       </div>
       {state.status === "error" && <p className="text-sm text-red-600">{state.message}</p>}
+      <DropCase onImport={(md) => importCase(md).then(() => undefined)} />
       <button
         onClick={() => void addStorage()}
         className="rounded bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700"

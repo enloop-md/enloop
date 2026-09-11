@@ -65,6 +65,7 @@ had no match, even though the sync creates the record.
 
 ## Check the contact on the mailer side
 Where: %MAILER%/contacts
+Via: Mailer admin → Contacts
 Selector: [data-testid="contact-search"]
 Search for "**%TEST_CONTACT_EMAIL%**".
 
@@ -84,11 +85,53 @@ tester's hands before step 1, rendered open above Start). The description
 is background; the goal is its own line. See [MANIFESTO.md](../MANIFESTO.md)
 for why a tester reads these four things before pressing Start.
 
-Key fields: `Where:` (the route or screen the tester starts from), `Selector:`
+`@kind guide` under `@project` marks a **guide**: a case whose prose is
+addressed to an end user rather than a tester. The grammar is unchanged;
+the panel reads *Done / Could not* and *You should see*, and the linter
+stops asking for quick marks. See [screenshots and guides](guides.md).
+
+Key fields: `Where:` (the route or screen the tester starts from), `Via:`
+(how that page is reached in the app's own menus — required when a step
+moves to a new page, since the address may be for another environment;
+`Via: link only` when the UI has no path), `Selector:`
 (the extension scrolls it into view and flashes it), `### Expected` (pass
-criteria only), `### Note` (background, rendered dimmed). A fenced code block
+criteria only), `### Note` (background, rendered dimmed), `### Photo` (what
+the runner should photograph for this step — see below). A fenced code block
 in place of instructions makes the step **automated** — the script runs in the
 page's own world with DOM access and calls `api.fail(msg)` to fail the step.
+
+## Photos
+
+A step may carry one or more `### Photo` blocks — `Key: value` lines, all
+optional — saying what the runner should capture when the step runs and how
+to mark it up:
+
+```markdown
+### Photo
+Crop: [data-testid="order-form"]
+Callout: [data-testid="order-customer"] — Customer
+Callout: [data-testid="order-save"] — Save
+Blur: [data-testid="order-card-number"]
+Take: after
+Mode: confirm
+Caption: The order form, ready to save
+```
+
+`Crop:` is the container to cut to (the viewport when absent, `Pad:` CSS
+pixels around it); `Mark:` boxes an element, `Point:` arrows at one,
+`Callout:` puts a numbered disc on one with the text after ` — ` as its
+legend, `Blur:` pixelates one — each a selector, each repeatable, resolved
+on the live page when the photo is taken. `Take:` is `after` (the verdict),
+`before` (the step becoming current) or `manual` (a button); `Mode:` is
+`confirm` (shown first) or `auto`; `Color:` one of the palette. The n-th
+block fills **`%PHOTO_n%`** wherever it is written in the step's
+instructions or `### Expected` — that is where the picture goes when the
+run is exported as a guide, and the panel shows a `📷 n` chip there.
+`PHOTO_` is a reserved prefix: never a variable, never substituted, never
+an undeclared-variable finding. A block with no placeholder lands after the
+instructions. Linter rule `10` refuses a `%PHOTO_n%` with no n-th block and
+a selector both blurred and called out. The whole feature — modes, the
+editor, the export — is in [screenshots and guides](guides.md).
 
 ## Selectors
 
@@ -252,6 +295,13 @@ host and port — so one case runs against your branch, a review app, a
 local dev server or a customer's instance without being edited. Typing an
 address under **Start run**, or picking an environment, overrides the tab.
 A case guesses no host, so a wrong guess can never make it unrunnable.
+
+Write the route with its leading slash and do not worry about the other
+side: an address that ends in one — pasted from a browser bar, typed into an
+environment card, written as a `Default:` — loses it at the seam, so
+`%DOMAIN%/orders` is `https://app.test/orders` either way and never
+`https://app.test//orders`. Nothing is added, only the duplicate removed:
+`%DOMAIN%?next=/x` and a `%HOST%:8080` join stay exactly as written.
 
 What a case does say is where it is *meant* to run, in one line under the
 title:

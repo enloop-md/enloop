@@ -1,0 +1,5 @@
+interface:
+  display_name: "Enloop: export guide"
+  short_description: Turn a finished run into a Markdown folder or an HTML page with its screenshots.
+policy:
+  allow_implicit_invocation: false

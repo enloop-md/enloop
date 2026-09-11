@@ -12,8 +12,23 @@
  */
 export { lintCase } from "./lint.js";
 export type { LintResult, LintFinding } from "./lint.js";
-export { newTestCaseId } from "./id.js";
-export { CURRENT_FORMAT_VERSION, parseCaseDocument, stepNumberLabels } from "./markdown.js";
+export { newTestCaseId, fileSlug } from "./id.js";
+export {
+  guideSteps,
+  renderGuideMarkdown,
+  renderGuideHtml,
+  renderFreeRunGuideMarkdown,
+  renderFreeRunGuideHtml,
+} from "./guide.js";
+export { freeRunFileSchema } from "./schemas.js";
+export {
+  CURRENT_FORMAT_VERSION,
+  parseCaseDocument,
+  renderCaseMarkdown,
+  stepNumberLabels,
+  photoPlaceholders,
+  screenshotStem,
+} from "./markdown.js";
 export { runFileSchema } from "./schemas.js";
 export { viewerLink, withViewerComment, stripViewerComment } from "./viewer-link.js";
 export { describeRating, isExemplaryRating, isPoorRating, ratingStars } from "./rating.js";

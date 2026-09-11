@@ -1,5 +1,5 @@
 # The step contract
-<!-- Read by the quick and full skills. Also the reference enloop-demo
+<!-- Read by the quick, full and guide skills. Also the reference enloop-demo
      should follow for any case it writes.
 
      Every rule here is one an author has to apply while writing. The
@@ -248,6 +248,27 @@ line is how the tester makes it. So it must be an address there above all: a
 prose `Where:` on a step that changes location leaves them to find their own
 way, silently.
 
+**The address is never the only way there.** A link may point at a
+deployment the tester is not on, or be incomplete, and a Go control that
+opens the wrong page is worse than none. So every step that moves also
+says how the page is reached from the app's own screens:
+
+    ## Open the user's record
+    Where: %DOMAIN%/admin/users/42
+    Via: Settings → Users → the row for "**%QA_EMAIL%**"
+
+The linter requires `Via:` on a move (an error) and objects to one on a
+step that stays on the previous page. When the UI genuinely has no path —
+the page is reached from a link in an email, a redirect the app performs,
+a QR code, a URL someone is given — the step says so:
+
+    Via: link only
+
+and the instructions or a `### Note` say where the link comes from, so the
+tester knows there is no menu to look for. Take the path from the app's
+navigation source (the menu component, the route tree), never from
+memory; a wrong menu path is the same defect as a wrong selector.
+
 ### 2c. A place named in prose carries its link
 
 The `Where:` line already says where the tester is and hands them Go, so
@@ -443,6 +464,22 @@ not. Where a duration matters, give a number.
 check exists, what bug it guards, a caveat about flaky data. It is
 rendered dimmed and is explicitly skippable.
 
+### `### Photo` says what the runner photographs
+
+A step's third subsection, optional and repeatable, in any order with
+`### Expected` and `### Note`: `Key: value` lines naming what to capture
+for this step and how to mark it — `Crop:` the container to cut to,
+`Mark:` a box, `Point:` an arrow, `Callout:` a numbered disc with a legend,
+`Blur:` a region to pixelate, each a selector taken from source the way
+`Selector:` is; `Take:` before / after / manual says when, `Mode:` auto /
+confirm whether the tester sees it first, `Caption:` what the reader is
+looking at. The n-th block fills `%PHOTO_n%` in the instructions or
+`### Expected`; a block with no placeholder lands after the instructions.
+Nothing in a photo spec is a pass criterion, and nothing in it reaches the
+reader of a guide except the picture, its caption and the callout legends —
+which is why a selector belongs here and never in the prose. Keys and
+defaults are in `grammar.md`.
+
 ## 6. Test data is resolved before the run, never during it — and by Enloop, never by asking
 
 Every variable in `# Variables` gets one of:
@@ -588,7 +625,8 @@ mechanical half** — run it, read what it says, and do not re-walk those items
 by hand:
 
 > a missing `Goal:` or `You will:` line, a goal too long for one line ·
-> missing or prose `Where:` · a bare-route `Where:` · addresses built
+> missing or prose `Where:` · a bare-route `Where:` · a step that moves to
+> a new page with no `Via:` · addresses built
 > without a domain, `%DOMAIN%` used with no `@locations:` line, a location
 > that is not a host glob, a declared domain without a `Default:`, a
 > default that is not an origin, a name declared as both domain and

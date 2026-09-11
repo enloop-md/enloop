@@ -2,6 +2,9 @@ import type { z } from "zod";
 import type {
   stepTypeSchema,
   stepSchema,
+  photoSpecSchema,
+  screenshotOpSchema,
+  runScreenshotSchema,
   stepGroupSchema,
   variableGeneratorSchema,
   testCaseDomainSchema,
@@ -36,6 +39,15 @@ import type {
 } from "./schemas.js";
 
 export type StepType = z.infer<typeof stepTypeSchema>;
+/** A `### Photo` block — what the runner captures for a step. */
+export type PhotoSpec = z.infer<typeof photoSpecSchema>;
+/** `case` or `guide` — see `testCaseVersionSchema.kind`. */
+export type CaseKind = z.infer<typeof testCaseVersionSchema>["kind"];
+/** One drawn operation on a screenshot. */
+export type ScreenshotOp = z.infer<typeof screenshotOpSchema>;
+export type CropOp = Extract<ScreenshotOp, { tool: "crop" }>;
+/** One screenshot record inside `run.json` / `free-run.json`. */
+export type RunScreenshot = z.infer<typeof runScreenshotSchema>;
 /** One step, parsed out of a case document's `## Steps` section. */
 export type Step = z.infer<typeof stepSchema>;
 export type StepGroup = z.infer<typeof stepGroupSchema>;
@@ -207,4 +219,7 @@ export interface RunSummary {
    * and ordinary steps the tester declined. Counted so a summary can tell
    * "5/5 passed, 2 skipped" apart from a run that was abandoned midway. */
   skipCount: number;
+  /** Screenshots in the run — the way to find the run worth exporting as
+   * a guide from a list. */
+  screenshots: number;
 }

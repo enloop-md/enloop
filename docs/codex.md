@@ -33,6 +33,8 @@ Mention a skill explicitly with `$`, or run `/skills` to list what is loaded:
 | Prepare an app repo, once | `$setup` |
 | Write a quick case — happy path only | `$quick` |
 | Write the full case, edges and cleanup | `$full` |
+| Write a user guide the runner photographs | `$guide` |
+| Export a finished run as a guide | `$export-guide` |
 | Triage a finished run | `$check` |
 | Backfill test selectors | `$instrument` |
 | Serve the panel's live requests | `$serve` |

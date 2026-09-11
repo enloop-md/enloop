@@ -4,6 +4,140 @@ Versions are the extension's; the plugin and the case grammar carry their
 own numbers and are listed where they moved. Store uploads are the
 `enloop-extension-v<version>.zip` attached to each GitHub release.
 
+## Unreleased
+
+Plugin 0.19.0 · grammar 0.0.13
+
+### Writing cases
+
+- **`Via:` — the address is never the only way to a page.** A step that
+  moves to a new page also says how it is reached from the app's own
+  menus (`Via: Settings → Users → the row`), shown under the address in
+  the panel, the viewer and the downloaded page. The linter requires it
+  on a move and accepts `Via: link only` when the UI genuinely has no
+  path — a deep link, a redirect — provided the step says where the link
+  comes from.
+- **`enloop.md/` is the in-repo data folder.** The skills offer to create
+  `<repo>/enloop.md/`; `enloop/`, `test-cases/` and `.enloop/` are still
+  recognised.
+
+### Running cases
+
+- **↗ Bring me to the tab.** A question card shows the link whenever the
+  tab you asked from is not the one in front of you — an answer takes a
+  while, and you were in another tab by the time it came. It brings that
+  very tab forward, not a fresh copy of its address, and disappears once
+  you are back. Remembered for the browser session, with the page's
+  address as the fallback.
+- **⚒ Prompt to fix this.** On the current step and every decided one:
+  one click gathers the step's text, your comments and their audiences,
+  the question thread, earlier findings in the run, the console and
+  network output captured while the step was current, and which project
+  the fix belongs in — the case's `@project` and the repo it was authored
+  from — into one Markdown prompt, copied and shown. Paste it into Claude
+  Code in the app's repo. Works with no agent watching the folder.
+- **Drop a case on the panel.** A dashed block on the Connect screen and
+  at the top of the Library takes a case file — dropped, or picked with a
+  click — and makes it a case you can run. With no folder connected the
+  file lands in the browser's own storage, listed as *Inbox (this
+  browser)*, so a case handed to you is one drop from a run with nothing
+  set up. Several files at once are fine; a file that is not a case is
+  refused by name.
+- **The values you type come back next run.** A value typed under **Start
+  run** — a record id, the account a bug needs, the address of a branch
+  deployment — is kept for the next run of that case and shown *from your
+  last run* beside the field. Only typed values: a generated one is fresh
+  at start, and an address that follows the open tab keeps following it.
+  **↺ back to auto** forgets it, and picking an environment that answers
+  for the same name drops the remembered value rather than running one
+  deployment against another's address. Kept in this browser, not in the
+  folder.
+- **One slash between a domain and its route.** An address that ends in
+  `/` — pasted from the address bar, typed into an environment card,
+  written as a `Default:` — loses it where a route follows, so
+  `%DOMAIN%/orders` is `https://app.test/orders` and never
+  `https://app.test//orders`, which most routers treat as a different path
+  and answer with a 404 mid-run. Everywhere: the panel, the run's frozen
+  case, the report, the viewer and a downloaded page as its values are
+  edited. Nothing is added — `%DOMAIN%?next=/x` is left as written.
+- **Every folder says which project it is.** Connected folders are listed
+  by the name in their own `project.json` — `{ "name": "Acme Shop" }` at
+  the data folder root — with the directory name under it, in the
+  reconnect list, the Library's storage picker and Settings. Four repos
+  that each keep their cases in an `enloop.md/` are no longer four
+  identical rows. Nobody has to write the file: on connect, and on every
+  refresh, a folder with no name recorded is named after the `@project`
+  its cases agree on, else the repository directory you picked, and the
+  answer is written back so it travels with the repo. **Rename** in
+  Settings edits the same file. A folder holding several projects' cases
+  keeps its directory name — the Library groups those by `@project`
+  already.
+- **Comment audiences are back in view.** The closed disclosure 0.14.0 put
+  over the "This comment is for" checkboxes is gone; the row shows as it
+  did before.
+- **The daemon is off the menu for now.** Every "no agent connected"
+  state points at one `/enloop:serve` pass in Claude Code; the enloopd
+  daemon stays in the repo until it is fixed and debugged.
+- **Screenshots.** Every step of every run — and every free run — has
+  **📷 Screenshot** and **📷 Screenshot & edit**, and the run header a
+  **📷** for the current step or the run itself. Chrome photographs a tab
+  only after the extension is invoked on it, so the first picture on a
+  tab is **Alt+Shift+S** or the page's **Take an Enloop screenshot**
+  menu item; from then on the buttons and the runner work there. Site
+  access stays per site — nothing asks for every site. Each one is a thumbnail
+  under its step with a caption, **✎ Edit**, **↺ Original**, **Move** to
+  another step, and **✕**. Edit opens the picture in its own tab: Crop,
+  Blur, Line, Arrow, Rect and numbered Callout in seven colours, Undo,
+  keys `1`–`6`, `Esc`, `Ctrl+Z`, `Ctrl+Enter` to save; the capture itself
+  is never touched, so Original is always exact. Pictures land in
+  `screenshots/` beside `run.json` — `01.source.png` as captured,
+  `01.png` as edited — and `report.md` lists them under their steps. In a
+  free run each capture drops a `%PHOTO_n%` into the notes at the caret.
+  Same per-site grant as Highlight; on a page Enloop cannot see, the
+  buttons are the grant notice.
+- **Photos the runner takes.** A step's `### Photo` block says what the
+  picture is — `Crop:` the container, `Mark:` a box, `Point:` an arrow,
+  `Callout:` a numbered disc with a legend, `Blur:` a region, each a
+  selector — and the runner takes it when the step becomes current
+  (`Take: before`) or when you give the verdict (`Take: after`), finds
+  the elements on the page, draws the marks and drops the result where
+  the author wrote `%PHOTO_1%`. `Mode: confirm` shows it first with
+  **Keep · Retake · Edit · Discard**; `Mode: auto` keeps it with a
+  two-second toast; `Take: manual` leaves a **📷 Photo n** button. A
+  selector that matches nothing is skipped and the step says *n not
+  found*; a page with no grant says *Photo n not taken* and the mark
+  still lands.
+- **⬇ Download guide.** A finished run with at least one screenshot, any
+  finished run of a guide, and a finished free run with screenshots offer
+  one HTML file with every picture inlined: the steps in run order with
+  their photos, captions and callout legends, *You should see* where the
+  case had Expected, and none of the selectors, scripts, verdicts or
+  comments. Opens offline; mail it as it is.
+
+### Guides
+
+- **`@kind guide`.** A header line beside `@project` that says the case's
+  reader is an end user: the verdict buttons read **Done / Could not**,
+  the Expected block **You should see**, the Library shows a *guide*
+  badge, and the linter stops asking for `Kind: quick`. Nothing else
+  changes — a guide is a case, run in the same panel, with the same
+  contract behind it. Grammar 0.0.13 also brings `### Photo` and the
+  reserved `%PHOTO_n%` placeholder, with linter rule `10` over them.
+- **`/enloop:guide`.** Writes a guide from the app's source the way
+  **full** writes a case: routes, labels and selectors read in the
+  session, validated with the real parser, landed with `write` — in
+  second person, one action per step, no internal names, with a photo
+  spec on every step that changes the screen. Run it in the panel and the
+  runner takes the pictures. A bare `/enloop:guide` gets the same
+  confirm-scope question as `quick` and `full`.
+- **`/enloop:export-guide`.** Picks the finished run (one closed question
+  when there are several), and writes `<data folder>/guides/<slug>/` —
+  `README.md` with `images/`, `index.html` with the pictures inlined, or
+  both — through the validator's new `list-guides` and `export-guide`
+  commands, which need nothing but `node`. Fixes tester-voice sentences in
+  the exported file and never in the case. `runs/` stays git-ignored;
+  `guides/` is the deliverable.
+
 ## 0.14.0 — 2026-09-05
 
 Extension 0.14.0 · plugin 0.17.0 · grammar 0.0.11 · daemon 0.1.0
