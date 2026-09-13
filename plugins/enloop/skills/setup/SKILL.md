@@ -30,7 +30,10 @@ into every session in this repo, which is the only mechanism that keeps new
 code instrumented without anyone remembering to ask.
 
 $ARGUMENTS may name the project. Otherwise it is derived and confirmed in
-step 2.
+step 2. `environments` as the argument runs only step 3 and step 9's
+environments lines — the way to add or repair environments after setup:
+a new staging, a preview deployment for the afternoon, a reach that was
+not recorded the first time.
 
 ## 1. Confirm where you are
 
@@ -73,63 +76,22 @@ and an admin console, a marketing site and the product it signs into, one
 host per tenant. Every case builds its addresses on `%DOMAIN%` — the tab
 the run starts from, or the **environment** the tester picks — names the
 hosts it is meant for in an `@locations:` line, and declares a domain
-only for a second host (`%ADMIN%/audit`). This step records both,
-once, in the data folder's `environments.json` — the file the panel's
-Environments screen edits and the authoring skills read.
+only for a second host (`%ADMIN%/audit`). Each environment may also carry
+a **reach** — how an agent gets to that deployment's data, through
+Teleport, a command, or a sentence for a human — so a value that lives
+in staging's database can be looked up rather than asked for. This step
+records all of it, once, in the data folder's `environments.json` (and
+`environments.local.json`, git-ignored, for deployments that exist for an
+afternoon) — the files the panel's Environments screen edits and the
+authoring skills read.
 
-Resolve the plugin and the folder the way every skill does:
-
-```bash
-ENLOOP_PLUGIN="<the installed plugin root, two levels above this skill>"
-node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" data-folder
-node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" environments "$DATA_DIR" "<project name>"
-```
-
-`data-folder` prints the folder — `AMBIGUOUS`/`NONE` mean ask rather than
-guess; `references/data-folder.md` at the plugin root says how.
-`environments` prints what is already recorded for this project.
-
-Then **derive the deployments from the repo** — the same way the authoring
-skills derive routes, and for the same reason: a remembered address is an
-invented one.
-
-```bash
-rg -n -i '(APP|BASE|PUBLIC|SITE|API|ADMIN|FRONTEND|BACKEND)_?URL|HOST(NAME)?=' .env.example .env.* 2>/dev/null
-rg -n -i 'baseURL|baseUrl' playwright.config.* cypress.config.* 2>/dev/null
-rg -n -i 'ports:|hostname|VIRTUAL_HOST|\.localhost' docker-compose*.yml compose*.yml 2>/dev/null
-rg -n -i 'staging|production|prod\.|demo\.' README.md fly.toml vercel.json netlify.toml app.yaml 2>/dev/null | head -20
-```
-
-From that, decide:
-
-- **The domain names.** `DOMAIN` for the app under test — the name every
-  case uses without declaring it. A second name only for a host that is
-  genuinely separate — an admin console on its own host, a second tenant,
-  the site the flow starts from. A path under the same host is a route,
-  not a domain.
-- **The environments.** One per deployment you can name an address for —
-  `local` from the dev server port, `staging` and `prod` from the deploy
-  config or README. Which one is the **default** — the deployment cases
-  are normally run against, whose host leads every case's `@locations:`
-  line and whose addresses become a declared domain's `Default:`:
-  staging when there is one, local when the project has nothing deployed,
-  never prod unless the user says so.
-
-Show the user what you derived and where each address came from, in one
-block, and confirm it once. This is the one moment in Enloop where an
-address is put to a person — because it is written once here and read by
-every case after — so make it cheap: propose the complete set, let them
-correct a value, do not ask open questions.
-
-Record it:
-
-```bash
-node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" environments "$DATA_DIR" "<project name>" \
-  --domain DOMAIN --domain ADMIN \
-  --env local --set DOMAIN=http://localhost:3000 --set ADMIN=http://localhost:3001
-node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" environments "$DATA_DIR" "<project name>" \
-  --env staging --set DOMAIN=https://staging.example.test --set ADMIN=https://admin.staging.example.test --default
-```
+Follow `../../references/environment-master.md` in full — the plugin's
+`references/` folder, two levels above this one. It derives `local` from
+the repo without a question, adds every other deployment from what the
+user pastes, probes each reach, marks the default and ends with a report;
+come back here when that report is printed. The rule for the default
+stays what it was: staging when there is one, local when the project has
+nothing deployed, never prod unless the user says so.
 
 Write a `README.md` into the data folder if there is none — three
 sentences a teammate who clones the repo can follow with nothing else:
@@ -143,7 +105,8 @@ Environments are scoped to the project name, so one folder serving
 several repos keeps each product's staging apart. Values that differ per
 deployment and are not addresses — the QA account, a tenant id — belong
 here too (`--variable QA_EMAIL --env staging --set QA_EMAIL=…`); take them
-from seeds and fixtures, or leave the value empty and say so in the
+from seeds and fixtures, or from a lookup through the environment's reach
+as the master's step 5 does, or leave the value empty and say so in the
 report. What is empty shows as a hole in the panel's Environments screen,
 which is where a teammate fills it.
 
@@ -364,8 +327,10 @@ that deserves its own turn with its own review.
 
 - The project name recorded, and where it was written.
 - The domains and environments recorded — each address and the repo file
-  it came from, which environment is the default, and every value left
-  empty for someone to fill in the panel's Environments screen.
+  it came from, which environment is the default, which are temporary and
+  until when, each reach and what its probe said, every `tsh login` line
+  the user still has to run, and every value left empty for someone to
+  fill in the panel's Environments screen.
 - The selector convention detected (with the usage count that established
   it) or chosen, and which instructions file it now lives in.
 - Whether the production build strips test attributes, and what you

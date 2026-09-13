@@ -112,8 +112,10 @@ skills as `$setup`, `$quick <ticket>`. Details and Codex caveats:
   answers "how do I check this?" from the step itself — with your screenshot
   and page structure in hand — patches the case if the step was the problem,
   and runs a case's setup commands when you click them in the panel.
-  **guide** writes a case for an end user instead of a tester, with photo
-  specs the runner turns into marked-up screenshots as it runs, and
+  **guide** writes a case for an end user instead of a tester — less in
+  it, and written last, on the final build of the feature, because its
+  screenshots are the UI at the moment of the run — with photo specs the
+  runner turns into marked-up screenshots as it runs, and
   **export-guide** turns the finished run into a Markdown folder or one
   HTML page — a [user guide](docs/guides.md) nobody had to screenshot by hand.
 

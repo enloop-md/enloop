@@ -4,6 +4,80 @@ Versions are the extension's; the plugin and the case grammar carry their
 own numbers and are listed where they moved. Store uploads are the
 `enloop-extension-v<version>.zip` attached to each GitHub release.
 
+## Unreleased
+
+Plugin 0.20.0 · grammar 0.0.13
+
+### Writing cases
+
+- **Environments before cases.** `full` and `quick` read the project's
+  environments before any source, and when there are none they stop and
+  ask once — set them up now, or continue with local only — and never go
+  on without an answer. Setting up is the environment master, which
+  `/enloop:setup environments` also runs on its own: local is recorded
+  from the repo without a question, then each further deployment from what
+  you paste — a `tsh` line, a command, an address, a sentence — and one
+  more question, the address, only when the paste did not give one. A
+  name like `prod` marks it production; a preview name makes it
+  temporary. Each environment may carry a **reach**, how an agent gets to
+  its data: Teleport (`tsh`), a command that exits 0 when the deployment
+  answers, or a sentence for a human. The validator probes a reach as
+  soon as it is recorded and keeps the result either way;
+  `enloop-case.mjs reach` probes again. `tsh login` is the one step left
+  to you, shown as the exact line to run. Nothing written is a secret — a
+  pasted connection URL loses its password before it is recorded — and
+  the panel only shows the reach; it never opens a tunnel.
+- **A value left to the environment must exist somewhere.** With the data
+  folder in view, the linter refuses a case whose environment-provided
+  variable or domain has a value in no environment of its project — that
+  run would have to ask — and warns, naming them, when some environments
+  have it and others do not. Where the value differs per deployment and
+  the environment has a reach, the skills record a **lookup** — a
+  read-only `select` kept on the environment — and `enloop-case.mjs lookup
+  … --record` runs it through the tunnel and writes the answer into the
+  file. Production answers only with `--production`, and never records:
+  what is found there stays with the tester.
+
+### Running cases
+
+- **Temporary environments.** A Shipyard or ArgoCD preview that exists
+  for one branch has a home: **Add temporary** under Settings →
+  Environments, or `--temporary` / `--until YYYY-MM-DD` from the skills.
+  They live in `environments.local.json` beside `environments.json`,
+  git-ignored, and each expires — the end of today unless a date says
+  otherwise — after which it is gone from the picker, the screen and the
+  file. The picker lists one as `pr-42 · until Sep 11`, a production one
+  as `prod · production`; a temporary environment is never the default. A
+  card with a reach shows it in one read-only line, with the last probe's
+  verdict.
+- **The editor opens over the page.** Edit no longer opens a tab of its
+  own: the editor is framed into the tab under test, full size, and over
+  the side panel when that page cannot be scripted. A tab of its own took
+  the connected folder's grant with it when it closed, and the save
+  failed; a frame does not. Drawn shapes can now be **selected, moved,
+  resized, recoloured and deleted** after the fact, with undo and redo
+  over the whole history — a runner-drawn callout and a hand-drawn one
+  alike.
+- **A capture that keeps the page's focus.** A click on the panel takes
+  focus from the page, and the dropdown you opened there closes before
+  the picture is taken. So every capture button also fires when you
+  **hover it with Ctrl+Shift held**, and there is a delayed capture that
+  counts down three seconds on the button while you click back into the
+  page and open what should be in the picture.
+
+### Guides
+
+- **A guide comes last.** The docs and the **guide** skill now say what
+  a guide is for and when to write it: it is for the end user, so it
+  carries less than a case — selectors, notes, test data, verdicts and
+  comments never reach the reader — and it is written once, on the final
+  version of the feature, right before the push that ships it, because
+  its screenshots are the UI at the moment of the run. The skill looks at
+  the tree first and, when UI files are still uncommitted, asks once
+  whether to write now or after the last change lands. **export-guide**
+  ends by saying that a change to the feature means a new run and a new
+  export, never an edit to the images.
+
 ## 0.15.0 — 2026-09-11
 
 Extension 0.15.0 · plugin 0.19.0 · grammar 0.0.13 · daemon 0.1.0
@@ -86,7 +160,7 @@ Extension 0.15.0 · plugin 0.19.0 · grammar 0.0.13 · daemon 0.1.0
   menu item; from then on the buttons and the runner work there. Site
   access stays per site — nothing asks for every site. Each one is a thumbnail
   under its step with a caption, **✎ Edit**, **↺ Original**, **Move** to
-  another step, and **✕**. Edit opens the picture in its own tab: Crop,
+  another step, and **✕**. Edit opens the picture over the page: Crop,
   Blur, Line, Arrow, Rect and numbered Callout in seven colours, Undo,
   keys `1`–`6`, `Esc`, `Ctrl+Z`, `Ctrl+Enter` to save; the capture itself
   is never touched, so Original is always exact. Pictures land in

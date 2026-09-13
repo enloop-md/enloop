@@ -71,6 +71,10 @@ still comes from source, and the case is still parsed with the real parser
 and checked against the step contract before it is written.
 Quick means smaller, not looser.
 
+Environments come first. If the project has none, §2b asks whether to
+set them up before any source is read. That is the intended order — an
+address written before the deployments are known is an invented one.
+
 ## In your report
 
 Say plainly that this is a quick case — that it covers the happy path, that

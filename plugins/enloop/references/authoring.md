@@ -15,6 +15,7 @@ skill that sent you here**, and it changes four things and nothing else:
 | App map (§6) | read only the screens the path touches; do not build or refresh the cached map | build or refresh it | read only the screens the path touches; no app map |
 | `Kind: quick` | on every step | on the core path only | never |
 | `### Photo` specs (§8b) | none | none | on every step that changes the screen; the prose rules are in the guide skill |
+| When | early, as the feature takes shape | when the feature is reviewable | last — on the final version, right before the push; the pictures are the UI at the time of the run |
 
 Everything below applies to all three. Two failure modes the procedure exists
 to prevent, whichever tier you are in:
@@ -102,9 +103,10 @@ one input here that came from someone who has actually run these cases.
 
 The prose sections bind as rules. An older rules file may still carry a
 `Base URL: <origin>` structured line — the pre-domains way of recording the
-deployment cases default to. Read it as the main domain's address only when
-the environments file below has nothing, and record it there so it is not
-needed again.
+deployment cases default to. It is not an environment: when §2b finds none
+recorded, the question there is still asked, and this line is the answer
+to the master's address question for the deployment it names, recorded
+then so it is not needed again.
 
 **They are binding.** A rule outranks a habit and outranks anything below in
 this file that is not the grammar. If you believe one is wrong, say so in your
@@ -130,32 +132,46 @@ this project with its values, and a `defaults` line: the addresses that
 become the case's `@locations:` hosts and any declared domain's `Default:`
 in step 8.
 
-`(none declared)` is the normal answer for a project nobody has set up yet.
-It is not a reason to ask. Derive the deployments from the repo the same way
-you derive routes: `.env.example` / `.env.*` (`APP_URL`, `BASE_URL`,
-`NEXT_PUBLIC_*_URL`, `VITE_*_URL`), `docker-compose*.yml` ports and
-hostnames, deploy config (`fly.toml`, `vercel.json`, `netlify.toml`,
-`app.yaml`, Helm values, `Procfile` + a hosting README), a Playwright or
-Cypress config's `baseURL`, the README's "staging"/"demo"/"local
-development" sections. Then **record** what you found so the next case —
-and the panel — finds it:
+If it prints `environments (none for <project>)`, stop. Nothing else —
+no route, no source file, no ticket — is read until the user has
+answered; the question is the next thing that happens. Ask one closed
+question: *"No environments are recorded for <project>. Set them up now
+(local from the repo, then staging/prod from what you paste), or continue
+with local only?"* On "set up", follow `environment-master.md`, beside
+this file, in full, then continue here. On "local only", record local
+from the repo as the master's step 1 does and continue. Never continue
+without recording at least local: a case with no environment has no
+`@locations:` and no address to default to. Never continue on an empty
+answer — ask again. A `Base URL:` line in the rules file, a staging host
+in the README or in deploy config, is an address to propose inside the
+master, not a way past this question: the user decides whether the
+deployments are recorded now, and what was found only makes the
+recording cheaper. This is the one question authoring asks before the
+scope, and it is asked once per project, not once per case: the next case
+finds the environments recorded.
+
+On "local only", the recording is one line — the dev server's address,
+read from the repo the way the master's step 1 says, never a deployment
+the user just declined to set up:
 
 ```bash
 node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" environments "$DATA_DIR" "<project name>" \
-  --domain DOMAIN --env local --set DOMAIN=http://localhost:3000
-node "$ENLOOP_PLUGIN/validator/enloop-case.mjs" environments "$DATA_DIR" "<project name>" \
-  --env staging --set DOMAIN=https://staging.example.test --default
+  --env local --set DOMAIN=http://localhost:3000
 ```
 
-The app under test is `DOMAIN` — the name every case uses undeclared; an
-admin console on its own host, a second tenant, a marketing site the flow
-signs in from, each get a name of their own. Mark the deployment the project normally
-tests against `--default`; when nothing says which, staging beats local
-beats prod, and say so in the report. A value that differs per deployment
-and is not an address — a QA account, a tenant id — is recorded the same
-way (`--variable QA_EMAIL --env staging --set QA_EMAIL=…`). What you could
-not find stays empty in that environment, listed in the report as a hole;
-it is never a question to the user and never a blank in the case.
+`local` is then the default until the master runs and marks another; say
+so in the report. On "set up", the master has already recorded every
+environment, chosen the default and listed the holes — record nothing
+more here. Either way, the app under test is `DOMAIN` — the name every
+case uses undeclared; an admin console on its own host, a second tenant,
+a marketing site the flow signs in from, each get a name of their own,
+set on the same line. A value that differs per deployment and is not an
+address — a QA account, a tenant id — is recorded the same way
+(`--variable QA_EMAIL --env local --set QA_EMAIL=…`). What you could not
+find stays empty in that environment, listed in the report as a hole; it
+is never a question to the user and never a blank in the case — and a
+name the case then leaves to the environment must have a value in at
+least one of them, or step 9a refuses the case (see §8).
 
 ### 2c. Read what this project's testers rated
 
@@ -364,7 +380,17 @@ not say, and this skill does:
   `Generator:` for what must be fresh, or a name the project's
   environments provide (step 2b) for what differs per deployment. **Never
   ask the user for a value, and never leave one for the tester** — a
-  variable with none of the three is a linter error. When the repo cannot
+  variable with none of the three is a linter error. A variable left to
+  the environment must have a value in at least one environment *now*:
+  `validate --data-dir` refuses the case otherwise, because the run would
+  have to ask. The fix is `environments … --env <name> --set NAME=value`
+  from a seed or fixture, never a blank; and when the value differs per
+  deployment and the environment has a `tsh` or `command` reach, prefer
+  recording a lookup over a literal —
+  `environments … --env staging --lookup QA_EMAIL="select email from users where role='admin' and deleted_at is null order by id limit 1"`
+  then `lookup "$DATA_DIR" "<project name>" --env staging --variable QA_EMAIL --record` —
+  with the SQL taken from the repo's schema and seeds, read in this
+  session, like everything else. When the repo cannot
   tell you, write the best candidate you found as the `Default:` and mark
   it as an assumption in the report. A value the run itself produces — a
   created record's id — is not a variable and gets no invented default:

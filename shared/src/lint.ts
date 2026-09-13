@@ -75,6 +75,11 @@ export interface LintResult {
      * generator, provided by `environments.json`. Fine, and worth
      * knowing — a run without an environment picked will ask for them. */
     fromEnvironment: string[];
+    /** The subset of `fromEnvironment` that the contract promises and no
+     * environment of the project actually holds — a name every run would
+     * ask for. Each is a lint error already listed above; kept apart so a
+     * refusal can say which ones want `environments … --set`. */
+    unprovided: string[];
   };
 }
 
@@ -86,6 +91,18 @@ export interface LintOptions {
    * supplies it. Undefined = the caller could not read the file, which
    * is not the same as an empty contract. */
   environmentNames?: string[];
+  /** Name → the environments of the case's project that hold a non-empty
+   * value for it (`providersByName`). The contract says a name is
+   * provided; this says by whom, and a name nobody provides is the value
+   * the tester would be asked for at run time. Undefined = not computed,
+   * and the contract alone is trusted, as before. */
+  environmentProviders?: Record<string, string[]>;
+  /** Every environment of the case's project, by name, whether or not it
+   * holds a value for anything. The providers map only knows environments
+   * that provide something, and one that provides nothing is the one a
+   * run asks for the most — it would never be named without this. Absent
+   * = the union of the providers is used, which cannot name it. */
+  environmentsOfProject?: string[];
 }
 
 /** An origin a domain's `Default:` may be: scheme + host, optional port,
@@ -145,6 +162,20 @@ export function lintCase(raw: string, options: LintOptions = {}): LintResult {
   const createdAt = new Date().toISOString();
   const environmentNames = new Set(options.environmentNames ?? []);
   const environmentsKnown = options.environmentNames !== undefined;
+  // The contract lists a name; the providers say which environments back it;
+  // the project's environments say which are left. That third list is its
+  // own option because the providers map cannot yield it: an environment
+  // that holds no value at all is in none of its lists, and that is exactly
+  // the environment a warning has to name. Without it the union is the
+  // best available and an empty environment goes unmentioned.
+  const providers = options.environmentProviders;
+  const providersKnown = providers !== undefined;
+  const projectEnvironments =
+    options.environmentsOfProject ?? [...new Set(Object.values(providers ?? {}).flat())];
+  const providedBy = (name: string): string[] => providers?.[name] ?? [];
+  const missingIn = (name: string): string[] =>
+    projectEnvironments.filter((e) => !providedBy(name).includes(e));
+  const unprovided: string[] = [];
 
   const declared = parseCaseDocument(raw, { version: "1", createdAt });
   const values = resolveRunValues(declared, {});
@@ -248,8 +279,30 @@ export function lintCase(raw: string, options: LintOptions = {}): LintResult {
     }
   }
   for (const domain of declared.domains) {
-    if (domain.implicit) continue;
     const def = domain.defaultValue?.trim() ?? "";
+    // A domain the environments promise and none of them addresses. The
+    // implicit `%DOMAIN%` is included: it follows the open tab, and from a
+    // blank tab the environment is all it has.
+    if (!def && providersKnown && environmentNames.has(domain.name)) {
+      if (providedBy(domain.name).length === 0) {
+        unprovided.push(domain.name);
+        errors.push({
+          rule: "2b",
+          at: domain.name,
+          message: `%${domain.name}% is left to the environment, but no environment of this project has an address for it — the run would have to ask. Record one: enloop-case.mjs environments <folder> "<project>" --env <name> --set ${domain.name}=https://host, or run the environment master (/enloop:setup environments).`,
+        });
+      } else {
+        const missing = missingIn(domain.name);
+        if (missing.length > 0) {
+          warnings.push({
+            rule: "2b",
+            at: domain.name,
+            message: `${domain.name} has no address in ${missing.join(", ")} — a run there will ask.`,
+          });
+        }
+      }
+    }
+    if (domain.implicit) continue;
     if (!def) {
       warnings.push({
         rule: "2b",
@@ -311,7 +364,8 @@ export function lintCase(raw: string, options: LintOptions = {}): LintResult {
     // default, a generator, or the environments file. A description
     // telling the tester where to look used to pass here; it no longer
     // does, because "look it up before you start" is still a question.
-    if (!variable.defaultValue?.trim() && !variable.generator && !environmentNames.has(variable.name)) {
+    const leftToEnvironment = !variable.defaultValue?.trim() && !variable.generator;
+    if (leftToEnvironment && !environmentNames.has(variable.name)) {
       // Inside an address the missing value is a different defect: a
       // default cannot fix `/user.php?user=%USER_ID%` when the id does not
       // exist until the run creates it, and an invented one opens a wrong
@@ -325,6 +379,28 @@ export function lintCase(raw: string, options: LintOptions = {}): LintResult {
           : "No `Default:`, no `Generator:`, and no environment provides it — the run would have to ask. Give it a default (a fixture from the repo, a value from the rules file), a generator, or record it per environment: `enloop-case.mjs environments <data folder> \"<project>\" --variable NAME --env <name> --set NAME=value`." +
             (environmentsKnown ? "" : " (Pass --data-dir so environments.json is consulted.)"),
       });
+    } else if (leftToEnvironment && providersKnown) {
+      // The contract names it, so the old check passed — and that is how a
+      // case landed with a value nobody ever recorded. The name is only
+      // provided when some environment holds a value; every one that does
+      // not is a run that will ask.
+      if (providedBy(variable.name).length === 0) {
+        unprovided.push(variable.name);
+        errors.push({
+          rule: "6",
+          at: variable.name,
+          message: `%${variable.name}% is left to the environment, but no environment of this project has a value for it — the run would have to ask. Record one: enloop-case.mjs environments <folder> "<project>" --env <name> --set ${variable.name}=value, or run the environment master (/enloop:setup environments).`,
+        });
+      } else {
+        const missing = missingIn(variable.name);
+        if (missing.length > 0) {
+          warnings.push({
+            rule: "6",
+            at: variable.name,
+            message: `${variable.name} is empty in ${missing.join(", ")} — a run there will ask.`,
+          });
+        }
+      }
     }
     if (variable.name === "BASE_URL" || (variable.generator === "page-origin" && everyField.includes(`%${variable.name}%/`))) {
       warnings.push({
@@ -756,6 +832,6 @@ export function lintCase(raw: string, options: LintOptions = {}): LintResult {
     warnings,
     doc,
     quick: { marked: quickMarked, total: doc.steps.length, parses: quickParses },
-    cold: { navigableSteps, uiSteps: uiSteps.length, unresolved, asks, fromEnvironment },
+    cold: { navigableSteps, uiSteps: uiSteps.length, unresolved, asks, fromEnvironment, unprovided },
   };
 }

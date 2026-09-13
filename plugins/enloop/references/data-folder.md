@@ -17,6 +17,14 @@ the extension. It owns this layout:
 ```
 <data folder>/
 ├── project.json    what the folder is called: { "name": "<project>" }
+├── environments.json
+│                   the deployments: the domain and variable names, then one entry
+│                   per environment with its addresses, values, reach and lookups —
+│                   committed; never a password or a token
+├── environments.local.json
+│                   temporary environments, each with an `expires` — git-ignored,
+│                   this machine only; every reader merges it into the file above
+│                   and drops what has expired
 ├── test-cases/     one directory per case: <caseId>/meta.json + versions/v<n>.md
 ├── runs/           <caseId>/<runId>/{case.md, run.json, report.md, feedback.md}
 │                   + screenshots/<NN>.source.png and <NN>.png — git-ignored, like the run

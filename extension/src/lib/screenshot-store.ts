@@ -14,9 +14,7 @@
  */
 
 import type { DataStore, FreeRun, Run, RunScreenshot, ScreenshotInput, ScreenshotOp, ScreenshotPatch, ScreenshotVariant } from "@tcm/shared";
-import { EditorTooLargeError, newEditorToken, openEditor } from "./editor-handoff.js";
-import { currentTabRef } from "./question-tab.js";
-import { bytesToDataUrl, dataUrlToBytes } from "./screenshot-render.js";
+import { openEditor } from "./editor-host.js";
 
 export type ScreenshotOwner =
   | { kind: "run"; testCaseId: string; runId: string }
@@ -69,9 +67,6 @@ export function ownerKey(owner: ScreenshotOwner): string {
  * `ops` is what the editor starts from — the screenshot's own, or a crop
  * the caller proposes for a fresh capture. `sourcePng` skips the read when
  * the caller still holds the bytes it just captured.
- *
- * Throws `EditorTooLargeError` when the capture cannot fit through the
- * session-storage hand-off; every other failure is the store's.
  */
 export async function editScreenshot(
   api: ScreenshotApi,
@@ -80,21 +75,23 @@ export async function editScreenshot(
   ops: ScreenshotOp[],
   sourcePng?: Uint8Array,
 ): Promise<ScreenshotHolder | null> {
-  const source = sourcePng ?? (await api.read(shot.id, "source"));
-  // Read before the editor opens: the tester lands back on this tab when
-  // they save, and a tab switch while the editor is up must not change it.
-  const returnTo = await currentTabRef();
-  const result = await openEditor({
-    token: newEditorToken(),
-    title,
-    sourceDataUrl: bytesToDataUrl(source),
-    ops,
-    width: shot.width,
-    height: shot.height,
-    returnTo,
-  });
-  if (result.cancelled || !result.ops || !result.renderedDataUrl) return null;
-  return api.update(shot.id, { ops: result.ops, renderedPng: dataUrlToBytes(result.renderedDataUrl) });
+  // Each stage names itself in its failure: three different things can
+  // refuse here, and "the folder's permission lapsed" is the wrong advice
+  // for two of them.
+  const source = sourcePng ?? (await stage("reading the original", () => api.read(shot.id, "source")));
+  const result = await openEditor({ title, sourcePng: source, ops, width: shot.width, height: shot.height });
+  if (result.cancelled || !result.ops || !result.renderedPng) return null;
+  const { ops: nextOps, renderedPng } = result;
+  return stage("saving the edit", () => api.update(shot.id, { ops: nextOps, renderedPng }));
 }
 
-export { EditorTooLargeError };
+async function stage<T>(what: string, work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (e) {
+    const detail =
+      e instanceof DOMException ? `${e.name}: ${e.message}` : e instanceof Error ? e.message : String(e);
+    throw new Error(`Editing failed while ${what} — ${detail}`);
+  }
+}
+

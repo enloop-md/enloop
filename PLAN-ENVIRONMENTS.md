@@ -1,6 +1,37 @@
 # Environments before cases — implementation plan
 
-Status: **written 2026-09-11; not started.**
+Status: **written 2026-09-11; parts 1–7 built the same day, uncommitted; typecheck, extension build, build:plugin and Gates 1, 2, 3 and 6 pass against the validator; Gate 4 (panel in a loaded extension) and Gate 5's eval are left to the user.** Plugin bumped to 0.20.0.
+
+Decided while building, where the plan left it open or was found wrong:
+
+- A `tsh` reach needs proxy *or* service, not both — `tsh` remembers the
+  proxy of its last login, and a pasted `tsh db connect prod-postgres`
+  alone is a valid answer.
+- `lookup --variable NAME` on an environment with no lookup of that name
+  borrows the same-named lookup from another environment of the project
+  and says so; the schema is the same per deployment, only the answer
+  differs.
+- `--no-production` writes `production: false` rather than deleting the
+  flag, so the name match does not re-flag it on the next touch. The
+  match runs only while `production` is undefined.
+- `--default` on a temporary environment is refused; `--temporary` on
+  the default drops the flag. `--until` in the past is refused.
+- `isReadOnlySql` also refuses a `with …` whose body carries a modifying
+  verb outside string literals — Postgres allows `with x as (delete …)
+  select`.
+- Reach sub-flags given without `--reach` amend the existing reach and
+  re-probe; an unknown valued flag is refused rather than swallowed into
+  the project name.
+- The linter takes `environmentsOfProject` beside `environmentProviders`
+  so the E9 warning can name an environment that holds no value at all.
+  Both E9 rules fire only when the caller computed providers.
+- The panel writes an environments file only when its content changed,
+  with a trailing newline like the validator, so a temporary-only edit
+  never dirties the committed file.
+- A database URL pasted into the master becomes a `manual` reach holding
+  host and database name, not a `DOMAIN`.
+- The panel's temporary card takes its project from the storage label
+  when the label is not a layout folder name.
 
 This plan is written to be executed by a separate session ("implement
 PLAN-ENVIRONMENTS.md"). Every design decision below is locked; do not

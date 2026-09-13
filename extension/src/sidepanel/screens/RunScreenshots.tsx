@@ -1,4 +1,5 @@
 import { GESTURE_HINT } from "../../lib/page-capture.js";
+import { HOVER_HINT, useDelayedTrigger, useHoverTrigger } from "../../lib/hover-trigger.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PhotoSpec, RunScreenshot, RunStep } from "@tcm/shared";
 import { ErrorNotice } from "../../components/ErrorNotice.js";
@@ -7,7 +8,6 @@ import { getPageAccess, type PageAccess } from "../../lib/page-access.js";
 import { elementCrop, takePhoto, takePlainScreenshot, type TakenPhoto } from "../../lib/photo-runner.js";
 import { bytesToDataUrl } from "../../lib/screenshot-render.js";
 import {
-  EditorTooLargeError,
   editScreenshot,
   ownerKey,
   screenshotApi,
@@ -178,8 +178,7 @@ export function RunScreenshots({
       const next = await editScreenshot(api, shot, editorTitle, ops, sourcePng);
       if (next) onChanged(next);
     } catch (e) {
-      if (e instanceof EditorTooLargeError) setNotice("Screenshot too large to edit");
-      else setError(e);
+      setError(e);
     }
   }
 
@@ -223,6 +222,10 @@ export function RunScreenshots({
   const filledSlots = new Set(sorted.filter((s) => s.slot !== null).map((s) => s.slot as number));
   const hasSpecs = !!step && step.photos.length > 0;
 
+  const hoverPlain = useHoverTrigger(() => void capture(false), busy || readOnly);
+  const hoverEdit = useHoverTrigger(() => void capture(true), busy || readOnly);
+  const delayed = useDelayedTrigger(() => void capture(false));
+
   if (readOnly && sorted.length === 0 && !hasSpecs) return null;
 
   return (
@@ -252,8 +255,9 @@ export function RunScreenshots({
               type="button"
               disabled={busy}
               onClick={() => void capture(false)}
+              {...hoverPlain}
               className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              title={step ? "Capture the page for this step" : "Capture the page for the run as a whole"}
+              title={`${step ? "Capture the page for this step" : "Capture the page for the run as a whole"}, ${HOVER_HINT}`}
             >
               📷 Screenshot
             </button>
@@ -261,10 +265,24 @@ export function RunScreenshots({
               type="button"
               disabled={busy}
               onClick={() => void capture(true)}
+              {...hoverEdit}
               className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              title="Capture, then crop and mark it up"
+              title={`Capture, then crop and mark it up, ${HOVER_HINT}`}
             >
               📷 Screenshot &amp; edit
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={delayed.start}
+              className={`rounded border px-2 py-1 text-[11px] font-medium disabled:opacity-50 ${
+                delayed.counting
+                  ? "border-amber-300 bg-amber-50 text-amber-800"
+                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+              title="Capture in three seconds — time to click into the page and open what the picture needs. Press again to cancel."
+            >
+              {delayed.counting ? `⏱ ${delayed.left}…` : "⏱ 3 s"}
             </button>
             {busy && <span className="text-[10px] text-slate-400">capturing…</span>}
             {notice && <span className="text-[10px] text-amber-700">{notice}</span>}
@@ -331,6 +349,8 @@ function SpecRow({
 }) {
   const label = spec.caption.trim() || spec.crop || "";
   const missing = shot?.missing ?? [];
+  const hoverTake = useHoverTrigger(onTake, busy || readOnly || filled);
+  const delayedTake = useDelayedTrigger(onTake);
   const pending = !filled && !notice && spec.take !== "manual";
   return (
     <li className="flex flex-wrap items-center gap-1.5 text-[11px]">
@@ -352,9 +372,26 @@ function SpecRow({
           type="button"
           disabled={busy}
           onClick={onTake}
+          {...hoverTake}
+          title={`Take photo ${slot} now, ${HOVER_HINT}`}
           className="rounded bg-sky-600 px-2 py-0.5 text-[11px] font-medium text-white hover:bg-sky-500 disabled:opacity-50"
         >
           Take
+        </button>
+      )}
+      {!readOnly && !filled && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={delayedTake.start}
+          title={`Take photo ${slot} in three seconds — time to open what it needs on the page. Press again to cancel.`}
+          className={`rounded border px-1.5 py-0.5 text-[11px] font-medium disabled:opacity-50 ${
+            delayedTake.counting
+              ? "border-amber-300 bg-amber-50 text-amber-800"
+              : "border-sky-300 bg-white text-sky-700 hover:bg-sky-50"
+          }`}
+        >
+          {delayedTake.counting ? `⏱ ${delayedTake.left}…` : "⏱ 3 s"}
         </button>
       )}
       {!readOnly && pending && (

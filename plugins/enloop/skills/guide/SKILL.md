@@ -33,6 +33,28 @@ the guide for `feat/coupon-banner` ('Add coupon banner', 3 commits)?
 Yes — or name a ticket, branch or feature instead."* — and wait for the
 answer. A yes costs one keystroke; a guessed scope costs a whole guide.
 
+## Then check that the feature is finished
+
+A guide is written once, on the final version of the feature, right
+before the push that ships it. Its screenshots are the UI at the moment
+of the run; a label renamed afterwards makes every picture that shows it
+wrong, and nobody runs a guide twice to find out. Cases are written
+early and often — a guide is the last thing written for a feature.
+
+So look before writing:
+
+```bash
+git status --porcelain | head -20
+git log --oneline -5
+```
+
+If the tree has uncommitted changes to UI files, or the branch is
+visibly mid-work (a WIP commit, a failing case in the folder for this
+scope), say so in one line and ask one closed question — *"The branch
+still has uncommitted UI changes; a guide photographs the UI as it is.
+Write it now anyway, or after the last change lands?"* — and wait. On a
+clean tree, or when the user says now, proceed without comment.
+
 ## First, print the brief
 
 ```bash
@@ -126,5 +148,8 @@ them by hand.
 Report as `authoring.md` §11 says — title, id, absolute path, the `cold
 run` line, what you assumed — and then, verbatim:
 
-Open the case in the Enloop panel and run it — the runner takes the photos;
-confirm or retake each. When the run is finished, run `/enloop:export-guide`.
+Open the case in the Enloop panel and run it on the build that will ship —
+the runner takes the photos; confirm or retake each. When the run is
+finished, run `/enloop:export-guide`. If the feature changes after that,
+run the guide again and export again; the pictures are the UI at the time
+of the run.

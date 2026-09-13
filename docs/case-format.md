@@ -388,6 +388,20 @@ them first, but it never stops the run to ask. A variable that ends up with
 no value is left alone, so the step reads `%NAME%` rather than a blank where
 a value should have been.
 
+"Provided by the environment" has to mean provided. With the data folder in
+view — `--data-dir`, which the skills always pass — the linter refuses a
+case whose environment-provided variable or domain has a value in **no**
+environment of its project: the name is in the contract, nothing holds a
+value, and the run would have to ask. When some environments have it and
+others do not, it warns and names the ones with the hole, since a run
+there will ask. The value comes from a seed or fixture, or from a
+**lookup** recorded on the environment — `lookups: { QA_EMAIL: "select
+email from users …" }` — a read-only `select` the validator runs through
+the environment's reach and writes back with `lookup … --record`. A
+production environment answers a lookup only when asked with
+`--production`, and what it answers is never recorded: the value stays
+with the tester.
+
 ```markdown
 ## QA_EMAIL
 The QA account — provided per environment.

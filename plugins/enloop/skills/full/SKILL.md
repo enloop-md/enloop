@@ -78,3 +78,7 @@ Read `../../references/authoring.md` — the plugin's `references/` folder,
 two levels above this one — and follow it in full. It is the same procedure
 the **quick** skill uses; the table at the top is the only place the two
 differ, and you have just been told which column you are in.
+
+Environments come first. If the project has none, §2b asks whether to
+set them up before any source is read. That is the intended order — an
+address written before the deployments are known is an invented one.

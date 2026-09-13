@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  describeReach,
+  endOfDayIso,
+  isLayoutFolderName,
   missingEnvironmentValues,
   newEnvironmentId,
   type Environment,
@@ -16,10 +19,17 @@ import { useWorkspace } from "../store/DataStoreProvider.js";
  * The names are edited once, at the top, and every environment below shows
  * the same rows — that is the point. An environment missing a value shows an
  * empty input, not an absent row, so "staging never got the admin console's
- * address" is a visible hole here instead of a surprise mid-run. Deployments
- * whose values exist only per-PR (a Shipyard preview, a colleague's tunnel)
- * deliberately have no home on this screen: they are the "no environment,
- * follow the open tab" path on the case screen.
+ * address" is a visible hole here instead of a surprise mid-run.
+ *
+ * Deployments that exist for an afternoon — a Shipyard preview, a
+ * colleague's tunnel — go under *Temporary*: they are written to
+ * `environments.local.json`, which is git-ignored, and each carries an
+ * expiry, so a committed file never learns about them and the list does
+ * not grow a graveyard of dead previews.
+ *
+ * A deployment's *reach* — how an agent gets to its data — is shown but
+ * never edited here. Only the validator opens a tunnel or runs a probe; the
+ * panel has no business holding that much of a developer's machine.
  *
  * The authoring skills write this same file (`enloop-case.mjs environments`)
  * when they derive a deployment from the repo, so what shows up here is
@@ -33,7 +43,13 @@ export function EnvironmentsScreen({
   onBack: () => void;
 }) {
   const { storages, getEnvironmentsIn, saveEnvironmentsIn } = useWorkspace();
-  const storageLabel = storages.find((s) => s.id === storageId)?.label ?? "storage";
+  const storage = storages.find((s) => s.id === storageId);
+  const storageLabel = storage?.label ?? "storage";
+  /** The label is the folder's `project.json` name once the registry has
+   * resolved one; until then it is the directory name, which is only a
+   * project name when it is not a layout name like `enloop.md`. */
+  const projectName =
+    storage?.kind === "fsa" && !isLayoutFolderName(storage.label) ? storage.label : "";
 
   const [file, setFile] = useState<EnvironmentsFile | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -92,6 +108,29 @@ export function EnvironmentsScreen({
     });
   }
 
+  /** A temporary environment: this machine only, gone at the end of today
+   * unless its date is moved. It takes the storage's project so the picker
+   * offers it to this folder's cases without anyone typing the name. */
+  function addTemporaryEnvironment() {
+    if (!file) return;
+    const name = nextEnvironmentName(file.environments);
+    void update({
+      ...file,
+      environments: [
+        ...file.environments,
+        {
+          id: newEnvironmentId(),
+          name,
+          project: projectName || undefined,
+          local: true,
+          expires: endOfDayIso(),
+          domains: {},
+          values: {},
+        },
+      ],
+    });
+  }
+
   function patchEnvironment(id: string, patch: Partial<Environment>) {
     if (!file) return;
     void update({
@@ -121,6 +160,12 @@ export function EnvironmentsScreen({
     if (!file) return;
     void update({ ...file, environments: file.environments.filter((e) => e.id !== id) });
   }
+
+  // `local` is what the store stamped on read from which file an entry
+  // came; the split on save follows the same flag, so the two lists here
+  // are the two files.
+  const shared = file?.environments.filter((e) => !e.local) ?? [];
+  const temporary = file?.environments.filter((e) => e.local) ?? [];
 
   return (
     <div className="flex h-full flex-col">
@@ -172,9 +217,9 @@ export function EnvironmentsScreen({
 
             <section className="space-y-2">
               <h2 className="text-xs font-semibold uppercase text-slate-400">
-                Environments ({file.environments.length})
+                Environments ({shared.length})
               </h2>
-              {file.environments.map((env) => (
+              {shared.map((env) => (
                 <EnvironmentCard
                   key={env.id}
                   env={env}
@@ -194,9 +239,36 @@ export function EnvironmentsScreen({
               </button>
             </section>
 
+            <section className="space-y-2">
+              <h2 className="text-xs font-semibold uppercase text-slate-400">
+                Temporary ({temporary.length})
+              </h2>
+              <p className="text-xs text-slate-400">
+                This machine only, never committed. Each one expires; expired ones disappear.
+              </p>
+              {temporary.map((env) => (
+                <EnvironmentCard
+                  key={env.id}
+                  env={env}
+                  domains={file.domains}
+                  variables={file.variables}
+                  missing={missingEnvironmentValues(file, env)}
+                  onPatch={(patch) => patchEnvironment(env.id, patch)}
+                  onRemove={() => removeEnvironment(env.id)}
+                />
+              ))}
+              <button
+                onClick={addTemporaryEnvironment}
+                className="w-full rounded border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Add temporary…
+              </button>
+            </section>
+
             {savedAt != null && (
               <p className="text-center text-[10px] text-slate-300">
-                Saved to environments.json in this folder.
+                Saved to environments.json in this folder
+                {temporary.length > 0 ? "; temporary ones to environments.local.json" : ""}.
               </p>
             )}
           </>
@@ -273,7 +345,12 @@ function NameContract({
 }
 
 /** One deployment's card: its name, which project it belongs to, whether
- * it is the default, and a value per declared domain and variable. */
+ * it is the default, and a value per declared domain and variable.
+ *
+ * A temporary card (no `onDefault`) trades the default toggle for an
+ * expiry date: a preview that lasts an afternoon is never what a run
+ * should start on by itself, and the date is the only thing about it that
+ * changes after it is written. */
 function EnvironmentCard({
   env,
   domains,
@@ -288,7 +365,8 @@ function EnvironmentCard({
   variables: string[];
   missing: string[];
   onPatch: (patch: Partial<Environment>) => void;
-  onDefault: (on: boolean) => void;
+  /** Absent on a temporary environment, which can never be the default. */
+  onDefault?: (on: boolean) => void;
   onRemove: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
@@ -342,18 +420,59 @@ function EnvironmentCard({
           title="The @project this environment belongs to. Leave empty to offer it to every case in the folder."
           className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 text-xs"
         />
-        <label
-          className="flex shrink-0 items-center gap-1 text-[11px] text-slate-600"
-          title="Pre-selected for a run when nothing was remembered, and the addresses the authoring skills write into each domain's Default:"
-        >
-          <input
-            type="checkbox"
-            checked={!!env.default}
-            onChange={(e) => onDefault(e.target.checked)}
-          />
-          default
-        </label>
+        {onDefault ? (
+          <>
+            <label
+              className="flex shrink-0 items-center gap-1 text-[11px] text-slate-600"
+              title="Pre-selected for a run when nothing was remembered, and the addresses the authoring skills write into each domain's Default:"
+            >
+              <input
+                type="checkbox"
+                checked={!!env.default}
+                onChange={(e) => onDefault(e.target.checked)}
+              />
+              default
+            </label>
+            <label
+              className="flex shrink-0 items-center gap-1 text-[11px] text-slate-600"
+              title="Real people's data. The skills only look values up here when told to, and never record what they find."
+            >
+              <input
+                type="checkbox"
+                checked={!!env.production}
+                onChange={(e) => onPatch({ production: e.target.checked || undefined })}
+              />
+              production
+            </label>
+          </>
+        ) : (
+          <label
+            className="flex shrink-0 items-center gap-1 text-[11px] text-slate-600"
+            title="Gone after the end of this day, local time. Move the date to keep it longer."
+          >
+            until
+            <input
+              type="date"
+              value={(env.expires ?? "").slice(0, 10)}
+              onChange={(e) => onPatch({ expires: endOfDayIso(e.target.value || undefined) })}
+              className="rounded border border-slate-300 px-1 py-0.5 text-[11px]"
+            />
+          </label>
+        )}
       </div>
+      {env.reach && (
+        <div className="space-y-0.5">
+          <p
+            className="truncate font-mono text-[11px] text-slate-600"
+            title={env.reach.verifyError ?? describeReach(env.reach)}
+          >
+            {describeReach(env.reach)}
+          </p>
+          <p className="text-[10px] text-slate-400">
+            Set from the repo with /enloop:setup environments; the panel never opens tunnels.
+          </p>
+        </div>
+      )}
       {domains.map((name, index) => (
         <div key={`d-${name}`} className="space-y-0.5">
           <label className="font-mono text-[11px] text-slate-500">

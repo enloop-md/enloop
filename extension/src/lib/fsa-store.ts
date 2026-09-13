@@ -16,6 +16,8 @@ import {
   versionIdFromFileName,
   emptyEnvironments,
   environmentsFileSchema,
+  mergeEnvironmentFiles,
+  splitEnvironmentFiles,
   caseBookkeepingSchema,
   caseContextSchema,
   countsByStep,
@@ -112,6 +114,9 @@ const NOTES_FILE = "notes.md";
 const SUITE_FILE = "suite.md";
 /** Named value sets for runs — see shared/src/environments.ts. */
 const ENVIRONMENTS_FILE = "environments.json";
+/** Temporary environments — this machine only, git-ignored, each with an
+ * expiry. Read merged with the shared file, written split from it. */
+const ENVIRONMENTS_LOCAL_FILE = "environments.local.json";
 /** What the page printed, as it arrived: one JSON object per line, appended a
  * batch at a time. The machine record — see `shared/src/capture.ts`. */
 const CONSOLE_RECORD_FILE = "console.jsonl";
@@ -708,12 +713,50 @@ export class FsaDataStore implements DataStore {
   // ---- EnvironmentStore ----
 
   async getEnvironments(): Promise<EnvironmentsFile> {
-    const file = await tryReadJson(this.root, ENVIRONMENTS_FILE, environmentsFileSchema);
-    return file ?? emptyEnvironments();
+    const [shared, local] = await Promise.all([
+      tryReadJson(this.root, ENVIRONMENTS_FILE, environmentsFileSchema),
+      tryReadJson(this.root, ENVIRONMENTS_LOCAL_FILE, environmentsFileSchema),
+    ]);
+    return mergeEnvironmentFiles(shared ?? emptyEnvironments(), local);
   }
 
   async saveEnvironments(file: EnvironmentsFile): Promise<void> {
-    await writeJson(this.root, ENVIRONMENTS_FILE, file);
+    const { shared, local } = splitEnvironmentFiles(file);
+    // Only the file whose content moved is rewritten: an edit to a
+    // temporary environment must not dirty the committed environments.json
+    // in git — that file is what a teammate reviews, and a diff that is
+    // nothing but a re-serialisation is a diff nobody can review.
+    await this.writeJsonIfChanged(ENVIRONMENTS_FILE, shared);
+    // The local file exists only once something temporary was recorded;
+    // a folder that never used one should not grow an empty file that
+    // then wants a .gitignore line explained.
+    if (local.environments.length > 0 || (await this.hasFile(ENVIRONMENTS_LOCAL_FILE))) {
+      await this.writeJsonIfChanged(ENVIRONMENTS_LOCAL_FILE, local);
+    }
+  }
+
+  private async writeJsonIfChanged(name: string, data: unknown): Promise<void> {
+    const next = JSON.stringify(data, null, 2);
+    const existing = await tryReadTextFile(this.root, name);
+    if (existing) {
+      try {
+        if (JSON.stringify(JSON.parse(existing.text), null, 2) === next) return;
+      } catch {
+        // Unparseable: overwrite with something that parses.
+      }
+    }
+    // A trailing newline, like the validator writes — so the two writers
+    // never take turns flipping the last byte of a committed file.
+    await writeTextFile(this.root, name, `${next}\n`);
+  }
+
+  private async hasFile(name: string): Promise<boolean> {
+    try {
+      await this.root.getFileHandle(name);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** One folder, one set of environments — the id only matters to the
