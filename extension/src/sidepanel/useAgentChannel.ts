@@ -21,6 +21,13 @@ export interface AskDraft {
   pageHtml: string | null;
 }
 
+/** A question still owed an answer: unanswered and not taken back. A
+ * withdrawn one is settled from the panel's side the moment the flag is
+ * written — whatever a server does with it afterwards changes nothing. */
+export function questionPending(question: AgentQuestion): boolean {
+  return question.answer === null && !question.withdrawn;
+}
+
 /** A command still owed a change: the agent has yet to pick it up, is
  * running it, or has been asked to stop it. */
 export function commandPending(command: AgentCommand): boolean {
@@ -73,8 +80,7 @@ export function useAgentChannel(
     void refresh();
   }, [refresh]);
 
-  const waiting =
-    questions.some((q) => q.answer === null) || commands.some(commandPending);
+  const waiting = questions.some(questionPending) || commands.some(commandPending);
 
   useEffect(() => {
     if (!active || !waiting) return;
@@ -93,6 +99,14 @@ export function useAgentChannel(
     [store, testCaseId, runId, refresh],
   );
 
+  const withdraw = useCallback(
+    async (questionId: string) => {
+      await store.withdrawQuestion(testCaseId, questionId);
+      await refresh();
+    },
+    [store, testCaseId, refresh],
+  );
+
   const runCommand = useCallback(
     async (command: string, stepId: string | null, sourceField: AgentCommandSourceField) => {
       await store.requestCommand(testCaseId, runId, { command, stepId, sourceField });
@@ -109,5 +123,5 @@ export function useAgentChannel(
     [store, testCaseId, refresh],
   );
 
-  return { questions, commands, watcher, ask, runCommand, kill, refresh };
+  return { questions, commands, watcher, ask, withdraw, runCommand, kill, refresh };
 }

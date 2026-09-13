@@ -433,7 +433,8 @@ in repo-hosted folders):
 ├── questions/<id>/       question.json (+ screenshot.png, page.html —
 │                         the tester's page as pixels and as greppable,
 │                         style-stripped structure) → ack.json ("working
-│                         on it") → answer.md + answer.json
+│                         on it") → answer.md + answer.json; a `withdrawn`
+│                         file is the tester taking it back
 └── commands/<id>/        request.json → run.sh, pid, status.json,
                           output.log, exit-code; a `kill` file is the
                           Stop button

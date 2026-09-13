@@ -60,6 +60,7 @@ function splitRun(run: Run): { doc: Omit<TestCaseVersion, "description">; file: 
       networkFailures,
       requests,
       rating,
+      jumpedOver,
       ...definition
     } = s;
     steps.push({ id: stepId, ...definition });
@@ -76,6 +77,7 @@ function splitRun(run: Run): { doc: Omit<TestCaseVersion, "description">; file: 
       networkFailures,
       requests,
       rating,
+      jumpedOver,
     });
   }
   return {

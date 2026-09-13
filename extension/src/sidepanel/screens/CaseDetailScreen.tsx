@@ -28,11 +28,13 @@ import {
   type VersionSummary,
 } from "@tcm/shared";
 import { CaptureToggles } from "../../components/CaptureToggles.js";
+import { ScreenshotToggle } from "../../components/ScreenshotToggle.js";
 import { ErrorNotice } from "../../components/ErrorNotice.js";
 import { Header } from "../../components/Header.js";
 import { Markdown } from "../../components/Markdown.js";
 import { useReadyStore } from "../store/DataStoreProvider.js";
 import { useCaptureSettings } from "../useCapture.js";
+import { useScreenshotPrefs } from "../useScreenshotPrefs.js";
 import { getActivePageUrl } from "../../lib/automation.js";
 import { useActivePageUrl } from "../../lib/use-active-page.js";
 import { readTypedValues, writeTypedValues } from "../../lib/value-memory.js";
@@ -100,6 +102,7 @@ export function CaseDetailScreen({
   // only starts from the page's next load — so it has to be decided before the
   // run, not once something interesting has already scrolled past.
   const capture = useCaptureSettings();
+  const [screenshotPrefs, setScreenshotPrefs] = useScreenshotPrefs();
 
   useEffect(() => {
     let cancelled = false;
@@ -733,6 +736,16 @@ export function CaseDetailScreen({
           compact
           className="border-b border-slate-100 bg-slate-50 px-3 py-2"
         />
+        {/* A test hides its screenshot tools unless asked; a guide never
+            asks, so the box is not offered for one. */}
+        {version?.kind !== "guide" && (
+          <ScreenshotToggle
+            prefs={screenshotPrefs}
+            onChange={setScreenshotPrefs}
+            compact
+            className="border-b border-slate-100 bg-slate-50 px-3 py-2"
+          />
+        )}
         <div className="space-y-2 p-3">
           {unresolvedNames.length > 0 && (
             <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-800">

@@ -46,6 +46,15 @@ export function buildBrief(opts: {
     `- The exact case text this run executes: ${path.join(runDirPath, "case.md")}`,
     `- Run state (which steps already have verdicts): ${path.join(runDirPath, "run.json")}`,
     step?.instructions ? `- The step's current text: ${step.instructions.replace(/\n/g, " ")}` : ``,
+    existsSync(path.join(runDirPath, "console.jsonl"))
+      ? `- ${path.join(runDirPath, "console.jsonl")} — what the page printed and` +
+        ` requested while this run was being driven, one JSON entry per line` +
+        ` (level, at, url, text, stepId). Live: written every few seconds` +
+        ` while capture is on. Grep it for errors and for the step in question` +
+        ` when the question is about what the page did. Empty of console lines` +
+        ` on a page loaded before capture was turned on — say so rather than` +
+        ` concluding the page logged nothing.`
+      : ``,
     existsSync(path.join(qDir, "page.html"))
       ? `- ${path.join(qDir, "page.html")} — the tester's page as a sanitized DOM` +
         ` snapshot (scripts/styles stripped, ids/classes/testids kept). Grep` +

@@ -141,6 +141,13 @@ A `pending` status at the end of a run means the tester stopped there.
 That is a finding — usually a blocker earlier in the case — not an
 omission to skip over.
 
+A `skipped` step with `jumpedOver: true` is the opposite of a finding: the
+tester used *Skip to this step* to start a restarted run further in,
+because the steps before it were done in the run they abandoned. It is
+not a vote against the step — never propose dropping it or marking it
+`Kind: extra` on that evidence — and `feedback.md` already leaves such
+steps out of *Steps the tester skipped*.
+
 ### What the page itself said
 
 A run may also carry what the page printed while it was being driven — console

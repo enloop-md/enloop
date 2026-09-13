@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { CaptureToggles } from "../../components/CaptureToggles.js";
 import { Header } from "../../components/Header.js";
+import { ScreenshotToggle } from "../../components/ScreenshotToggle.js";
 import { useWorkspace } from "../store/DataStoreProvider.js";
 import { useCaptureSettings } from "../useCapture.js";
+import { useScreenshotPrefs } from "../useScreenshotPrefs.js";
 import { getBuildInfo } from "../../lib/build-info.js";
 import { relativeTime } from "../../lib/time.js";
 
@@ -48,6 +50,8 @@ export function SettingsScreen({
         </section>
 
         <CaptureSection />
+
+        <ScreenshotSection />
 
         <section className="space-y-2">
           <h2 className="text-xs font-semibold uppercase text-slate-400">Remote (coming later)</h2>
@@ -106,6 +110,20 @@ function CaptureSection() {
         settings={capture.settings}
         wrapper={capture.wrapper}
         onChange={capture.set}
+        className="rounded border border-slate-200 p-3 text-sm"
+      />
+    </section>
+  );
+}
+
+function ScreenshotSection() {
+  const [prefs, setPrefs] = useScreenshotPrefs();
+  return (
+    <section className="space-y-2">
+      <h2 className="text-xs font-semibold uppercase text-slate-400">Screenshots during runs</h2>
+      <ScreenshotToggle
+        prefs={prefs}
+        onChange={setPrefs}
         className="rounded border border-slate-200 p-3 text-sm"
       />
     </section>

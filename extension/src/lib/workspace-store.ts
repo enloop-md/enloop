@@ -457,6 +457,11 @@ export class WorkspaceStore implements DataStore {
     return rows.map((q) => this.tagQuestion(storageId, q));
   }
 
+  async withdrawQuestion(testCaseId: string, questionId: string): Promise<void> {
+    const { store, localId } = this.route(testCaseId);
+    return store.withdrawQuestion(localId, questionId);
+  }
+
   async requestCommand(
     testCaseId: string,
     runId: string,

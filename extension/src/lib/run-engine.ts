@@ -46,11 +46,41 @@ export async function markManualStep(
     status,
     startedAt: step?.startedAt ?? nowIso(),
     finishedAt: nowIso(),
+    // A verdict given by hand is the tester's own, even on a step a jump
+    // had passed over.
+    jumpedOver: false,
   });
   if (CONTINUES_CHAIN.includes(status)) {
     return chainAutomatedFrom(store, updated, stepId);
   }
   return updated;
+}
+
+/**
+ * "Skip to this step": every undecided step before `stepId` is marked
+ * skipped in one go, so the tester lands on the step they want without
+ * clicking through the ones they already did — the run before this one was
+ * too dirty to finish, and the early steps are not in question. Stamped
+ * `jumpedOver` so the report and feedback tell these apart from a step
+ * the tester declined: a jump is not a vote against the steps under it.
+ * Extra steps keep their resting skipped state; automated steps are not
+ * run. Nothing is chained afterwards — the target is the tester's to
+ * start, by hand or by its Run button.
+ */
+export async function skipToStep(store: DataStore, run: Run, stepId: string): Promise<Run> {
+  const target = run.steps.findIndex((s) => s.stepId === stepId);
+  if (target === -1) throw new Error(`Step not found in run: ${stepId}`);
+  let current = run;
+  for (const step of run.steps.slice(0, target)) {
+    if (step.status !== "pending") continue;
+    current = await store.updateStep(run.testCaseId, run.id, step.stepId, {
+      status: "skipped",
+      jumpedOver: true,
+      startedAt: step.startedAt ?? nowIso(),
+      finishedAt: nowIso(),
+    });
+  }
+  return current;
 }
 
 export async function runAutomatedStep(store: DataStore, run: Run, stepId: string): Promise<Run> {
@@ -60,6 +90,7 @@ export async function runAutomatedStep(store: DataStore, run: Run, stepId: strin
   await store.updateStep(run.testCaseId, run.id, stepId, {
     status: "running",
     startedAt: nowIso(),
+    jumpedOver: false,
   });
 
   // Checked before injecting rather than after failing: a step that never

@@ -17,6 +17,7 @@ import {
   agentQuestionFileSchema,
   agentWatcherSchema,
   compareVersionIds,
+  QUESTION_WITHDRAWN_FLAG,
   parseCaseDocument,
   runFileSchema,
   versionIdFromFileName,
@@ -77,6 +78,7 @@ export interface QuestionDir {
   question: AgentQuestionFile;
   ack: AgentQuestionAck | null;
   answered: boolean;
+  withdrawn: boolean;
 }
 
 export function listQuestions(dataDir: string): QuestionDir[] {
@@ -91,6 +93,7 @@ export function listQuestions(dataDir: string): QuestionDir[] {
       question,
       ack: readJson(path.join(dir, "ack.json"), agentQuestionAckSchema),
       answered: existsSync(path.join(dir, "answer.json")),
+      withdrawn: isWithdrawn(dir),
     });
   }
   return out.sort((a, b) => a.question.id.localeCompare(b.question.id));
@@ -116,6 +119,13 @@ export function readProgress(qDir: string): string | null {
 
 export function isAnswered(qDir: string): boolean {
   return existsSync(path.join(qDir, "answer.json"));
+}
+
+/** The tester took the question back — the panel's `withdrawn` flag. Read
+ * before claiming and polled while answering: it is the one signal that
+ * can stop an answer in flight. */
+export function isWithdrawn(qDir: string): boolean {
+  return existsSync(path.join(qDir, QUESTION_WITHDRAWN_FLAG));
 }
 
 export function writeAck(qDir: string, questionId: string, watcherId: string): void {

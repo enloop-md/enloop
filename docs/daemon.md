@@ -218,7 +218,8 @@ extension (panel)          Claude Code session           enloopd daemon
                 ├── heartbeat.json      panel touches every 20s
                 ├── watchers/<id>.json  each server announces itself
                 ├── questions/<id>/     question.json → ack.json
-                │                       → answer.md → answer.json
+                │                       → answer.md → answer.json;
+                │                       `withdrawn` takes it back
                 └── commands/<id>/      request.json → status.json,
                                         run.sh, output.log, exit-code, kill
 ```
@@ -263,6 +264,17 @@ without its evidence), then polls.
    the daemon aborts if an answer exists *or* its ack was taken over;
    Claude Code checks only that no `answer.json` exists. First complete
    answer wins; a late finisher discards its own work, never overwrites.
+
+*Withdrawal is the question's Stop button.* The panel writes an empty
+`withdrawn` file into the question's directory when the tester takes it
+back — the wrong text pasted, the wrong step asked from. An unclaimed
+question with the flag is never claimed; a claimed one is polled for the
+flag every two seconds while the backend thinks, and on the flag the
+daemon kills the CLI child (or cancels the API call) and writes nothing —
+no answer, no patch, the ack left as the record of who had it. The flag
+never comes off; a corrected question is a new one. A server too old to
+know the flag answers anyway, and the panel keeps that answer folded
+under the withdrawn line.
 
 The daemon retries only its **own** ack, and only once it is >15 minutes
 cold (a previous pass died mid-answer); it never touches a question held

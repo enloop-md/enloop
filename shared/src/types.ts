@@ -137,6 +137,10 @@ export interface AgentQuestion extends AgentQuestionFile {
    * writes one. Meaningful only while `answer` is null. */
   progress: { text: string; at: string } | null;
   answer: { markdown: string; meta: AgentAnswerMeta } | null;
+  /** The tester took it back (`withdrawn` flag). Wins over everything else
+   * in the panel: a server still working stops, an answer that landed
+   * anyway is folded away. */
+  withdrawn: boolean;
 }
 
 /** What the panel shows for a command. `queued` = no `status.json` yet (no
