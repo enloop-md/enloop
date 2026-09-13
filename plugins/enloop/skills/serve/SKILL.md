@@ -78,8 +78,11 @@ daemon does both. Never touch another watcher's file.
 ## 3. Answer questions
 
 A question directory holds `question.json`; your answer is `answer.md` plus
-`answer.json`. **A directory with `answer.json` is done — skip it.** For
-each one that is not:
+`answer.json`. **A directory with `answer.json` is done — skip it. A
+directory with a `withdrawn` file is taken back — skip it too**, acked or
+not: the tester pulled the question (wrong text pasted, wrong step), and
+nothing they see changes with anything you write there. For each one that
+is neither:
 
 1. **Acknowledge first, before reading anything else.** Write `ack.json`
    into the question's directory:
@@ -131,6 +134,15 @@ each one that is not:
      spinner that never resolved).
    Treat both as evidence of *that moment*, not of the current page — the
    tester may have navigated since.
+   A third source, when the tester had capture on: the run's
+   `console.jsonl` beside `run.json` — what the page printed and requested
+   while the run was driven, one JSON entry per line (`level`, `at`,
+   `url`, `text`, `stepId`), written every few seconds while the run is
+   live. Grep it for `"level":"error"`, for the step id, for the URL the
+   question names. It holds only what happened after capture was on *and*
+   the page reloaded — a page loaded before that contributes its requests
+   at most, none of its console — so a log with no console lines is a
+   page that was not wrapped, not a page that logged nothing; say which.
 5. Answer from evidence. Read the app source until the answer is concrete —
    the exact clicks, the exact field, `file:line` where it helps. The tester
    is standing in the page mid-run: the **first line of `answer.md` is the
@@ -174,7 +186,10 @@ each one that is not:
      concurrent write shifts it.
 7. Before writing, check the directory one more time: an `answer.json`
    that appeared meanwhile means another server finished first — a complete
-   answer is terminal, never overwrite one. Otherwise write `answer.md`,
+   answer is terminal, never overwrite one. A `withdrawn` file that
+   appeared meanwhile means the tester took the question back while you
+   worked — drop the answer, land no patch for it, and say so in the
+   report; the panel already shows it withdrawn. Otherwise write `answer.md`,
    then `answer.json` — **that order**; the panel treats `answer.json` as
    the completion marker:
 

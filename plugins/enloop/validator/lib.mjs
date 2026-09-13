@@ -3987,7 +3987,12 @@ var runStepStateSchema = objectType({
 	* five stars, null for the ordinary step nobody rated. Independent of
 	* the verdict: a step can fail and still be written excellently, and
 	* pass while being a chore. See `shared/src/rating.ts`. */
-	rating: ratingSchema.nullable().default(null)
+	rating: ratingSchema.nullable().default(null),
+	/** `skipped` because the tester jumped past it with *Skip to this
+	* step* — a run restarted after a dirty one, the early steps already
+	* done — not because they declined this step. Report and feedback
+	* keep the two apart: a jump says nothing about the step. */
+	jumpedOver: booleanType().default(false)
 }).transform(({ comment, notes, tasks, comments, ...rest }) => {
 	const migrated = [
 		...comment?.trim() ? [{
@@ -4182,7 +4187,8 @@ var runStepSchema = stepSchema.omit({ id: true }).extend({
 	consoleWarnings: numberType().int().nonnegative(),
 	networkFailures: numberType().int().nonnegative(),
 	requests: numberType().int().nonnegative(),
-	rating: ratingSchema.nullable()
+	rating: ratingSchema.nullable(),
+	jumpedOver: booleanType()
 });
 objectType({
 	id: stringType(),
@@ -4250,7 +4256,8 @@ objectType({
 	automatedResult: automatedResultSchema.nullable().optional(),
 	startedAt: stringType().nullable().optional(),
 	finishedAt: stringType().nullable().optional(),
-	rating: ratingSchema.nullable().optional()
+	rating: ratingSchema.nullable().optional(),
+	jumpedOver: booleanType().optional()
 });
 objectType({
 	id: stringType(),

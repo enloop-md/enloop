@@ -50,6 +50,7 @@ export function RunScreenshots({
   editorTitle,
   specNotices = {},
   compact = false,
+  tools = true,
 }: {
   owner: ScreenshotOwner;
   /** The step these belong to; null for the run itself and for free runs. */
@@ -73,6 +74,10 @@ export function RunScreenshots({
   specNotices?: SpecNotices;
   /** The run-level strip: no spec rows, tighter spacing. */
   compact?: boolean;
+  /** False hides the capture tools — the buttons, the delayed capture, the
+   * runner's unfilled photo slots — while pictures already taken stay
+   * editable. A test run's default; see useScreenshotPrefs.ts. */
+  tools?: boolean;
 }) {
   const store = useReadyStore();
   const key = ownerKey(owner);
@@ -220,35 +225,39 @@ export function RunScreenshots({
 
   const notices: SpecNotices = { ...specNotices, ...localNotices };
   const filledSlots = new Set(sorted.filter((s) => s.slot !== null).map((s) => s.slot as number));
-  const hasSpecs = !!step && step.photos.length > 0;
+  // With the tools hidden, only slots that hold a picture are rows.
+  const specRows = (step?.photos ?? [])
+    .map((spec, i) => ({ spec, slot: i + 1 }))
+    .filter(({ slot }) => tools || filledSlots.has(slot));
+  const hasSpecs = specRows.length > 0;
 
   const hoverPlain = useHoverTrigger(() => void capture(false), busy || readOnly);
   const hoverEdit = useHoverTrigger(() => void capture(true), busy || readOnly);
   const delayed = useDelayedTrigger(() => void capture(false));
 
-  if (readOnly && sorted.length === 0 && !hasSpecs) return null;
+  if ((readOnly || !tools) && sorted.length === 0 && !hasSpecs) return null;
 
   return (
     <div className={compact ? "space-y-1.5" : "space-y-2"}>
       {hasSpecs && (
         <ul className="space-y-1">
-          {step!.photos.map((spec, i) => (
+          {specRows.map(({ spec, slot }) => (
             <SpecRow
-              key={i}
+              key={slot}
               spec={spec}
-              slot={i + 1}
-              filled={filledSlots.has(i + 1)}
-              shot={sorted.find((s) => s.slot === i + 1) ?? null}
-              notice={filledSlots.has(i + 1) ? null : (notices[i + 1] ?? null)}
+              slot={slot}
+              filled={filledSlots.has(slot)}
+              shot={sorted.find((s) => s.slot === slot) ?? null}
+              notice={filledSlots.has(slot) ? null : (notices[slot] ?? null)}
               readOnly={readOnly}
               busy={busy}
-              onTake={() => void takeSpec(spec, i + 1)}
+              onTake={() => void takeSpec(spec, slot)}
             />
           ))}
         </ul>
       )}
 
-      {!readOnly && (
+      {!readOnly && tools && (
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <button

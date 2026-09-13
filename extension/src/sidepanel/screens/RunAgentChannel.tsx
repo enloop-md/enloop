@@ -91,6 +91,7 @@ export function StepQuestions({
   readOnly,
   watcher,
   onAsk,
+  onWithdraw,
   onSwapped,
 }: {
   run: Run;
@@ -99,6 +100,7 @@ export function StepQuestions({
   readOnly: boolean;
   watcher: AgentPresence | null;
   onAsk: (draft: AskDraft) => Promise<AgentQuestion>;
+  onWithdraw: (questionId: string) => Promise<void>;
   onSwapped: (run: Run) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -167,6 +169,7 @@ export function StepQuestions({
           question={q}
           readOnly={readOnly}
           watcher={watcher}
+          onWithdraw={onWithdraw}
           onSwapped={onSwapped}
         />
       ))}
@@ -326,14 +329,17 @@ function QuestionCard({
   question,
   readOnly,
   watcher,
+  onWithdraw,
   onSwapped,
 }: {
   run: Run;
   question: AgentQuestion;
   readOnly: boolean;
   watcher: AgentPresence | null;
+  onWithdraw: (questionId: string) => Promise<void>;
   onSwapped: (run: Run) => void;
 }) {
+  if (question.withdrawn) return <WithdrawnQuestion question={question} />;
   const waitedMs = Date.now() - Date.parse(question.askedAt);
   const proposed = question.answer?.meta.proposedVersion ?? null;
   // An offer is over once taken (it is in `swaps`) or overtaken (the run
@@ -383,12 +389,14 @@ function QuestionCard({
                 question.progress !== null,
               )}
             </span>
+            <WithdrawButton question={question} onWithdraw={onWithdraw} />
           </div>
         ) : (
           <div className="space-y-1 text-[11px] text-slate-400">
             <p>
               <span className="mr-1 inline-block animate-pulse">●</span>
               Waiting for an agent…
+              <WithdrawButton question={question} onWithdraw={onWithdraw} />
             </p>
             {(watcher === null || waitedMs > UNWATCHED_HINT_MS) && <AgentSetupHint />}
           </div>
@@ -406,6 +414,85 @@ function QuestionCard({
                 ? " — loaded into this run."
                 : " — this run has moved on."}
             </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The tester's way out of a question they should not have sent — the
+ * wrong text pasted, the wrong step asked from. Offered the whole time an
+ * answer is owed, so a misfire can be pulled back the second it is seen
+ * in the card, not a minute later when the answer to it arrives. One
+ * click, no confirmation: the cost of a wrong withdrawal is asking again,
+ * the cost of a wrong wait is a minute of an agent answering nonsense.
+ */
+function WithdrawButton({
+  question,
+  onWithdraw,
+}: {
+  question: AgentQuestion;
+  onWithdraw: (questionId: string) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          setError(null);
+          onWithdraw(question.id)
+            .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+            .finally(() => setBusy(false));
+        }}
+        className="ml-2 rounded border border-slate-300 px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-slate-50 disabled:opacity-50"
+        title={
+          question.pickedUpAt !== null
+            ? "Take the question back — the agent stops working on it"
+            : "Take the question back before an agent picks it up"
+        }
+      >
+        {busy ? "Withdrawing…" : "Withdraw"}
+      </button>
+      {error && <span className="ml-1 text-red-500">{error}</span>}
+    </>
+  );
+}
+
+/**
+ * A withdrawn question, folded: the text stays so the tester can see what
+ * they took back (and copy the good part into a new ask), the answer is
+ * not shown by default because it answers a question that was wrong — but
+ * it is one click away, for the case where the withdrawal was the
+ * mistake. Nothing on this card can be undone: a corrected question is a
+ * new question.
+ */
+function WithdrawnQuestion({ question }: { question: AgentQuestion }) {
+  const [showAnswer, setShowAnswer] = useState(false);
+  return (
+    <div className="space-y-1 rounded border border-slate-200 p-2 text-xs text-slate-400">
+      <p>
+        <span className="font-medium">Withdrawn:</span> {question.question}
+      </p>
+      {question.answer !== null && (
+        <>
+          <p className="text-[11px]">
+            An answer landed anyway.{" "}
+            <button
+              type="button"
+              onClick={() => setShowAnswer((v) => !v)}
+              className="text-sky-600 hover:underline"
+            >
+              {showAnswer ? "Hide it" : "Show it"}
+            </button>
+          </p>
+          {showAnswer && (
+            <Markdown text={question.answer.markdown} className="text-xs text-slate-500" />
           )}
         </>
       )}

@@ -12,6 +12,7 @@ import { answerViaCli } from "./backends/cli.js";
 import {
   freshClaudeCodeWatcher,
   isAnswered,
+  isWithdrawn,
   listQuestions,
   readAck,
   readCaseContext,
@@ -25,6 +26,12 @@ import {
 } from "./store.js";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** How often an answer in flight looks for the tester's `withdrawn` flag.
+ * A few seconds of extra thinking after a withdrawal cost nothing; the
+ * flag is what makes a wrong paste a two-second mistake instead of a
+ * ten-minute one. */
+const WITHDRAWN_POLL_MS = 2000;
 
 function binExists(bin: string): boolean {
   return spawnSync("which", [bin], { stdio: "ignore" }).status === 0;
@@ -77,6 +84,30 @@ async function answerOne(
   };
   onProgress("Reading the question, the case as run, and where the run stands");
 
+  // The tester can take the question back at any point — the flag is
+  // polled for the whole answer, and every backend stops on the signal:
+  // the CLI child is killed, the API tool loop abandons its next call.
+  const withdrawal = new AbortController();
+  const withdrawnPoll = setInterval(() => {
+    if (isWithdrawn(q.dir)) withdrawal.abort();
+  }, WITHDRAWN_POLL_MS);
+  try {
+    await answerClaimed(dataDir, q, backend, cfg, onProgress, withdrawal.signal);
+  } finally {
+    clearInterval(withdrawnPoll);
+  }
+}
+
+async function answerClaimed(
+  dataDir: string,
+  q: QuestionDir,
+  backend: BackendKind,
+  cfg: DaemonConfig,
+  onProgress: (text: string) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const { question } = q;
+
   const runFile = readRunFile(dataDir, question.testCaseId, question.runId);
   const frozen = readFrozenCase(
     dataDir,
@@ -121,6 +152,7 @@ async function answerOne(
           repo: context.cwd || repo,
           extraArgs: ["--resume", context.sessionId, "--fork-session", ...cfg.cliArgs.claude],
           onProgress,
+          signal,
           // The session lives in (and logs in from) its own config dir —
           // essential when several isolated CLAUDE_CONFIG_DIRs share one
           // machine and one daemon.
@@ -141,6 +173,7 @@ async function answerOne(
             model: cfg.model,
             canPatch,
             onProgress,
+            signal,
           })
         : answerViaCli({
             kind: backend,
@@ -148,6 +181,7 @@ async function answerOne(
             repo,
             extraArgs: backend === "claude-code" ? cfg.cliArgs.claude : cfg.cliArgs.codex,
             onProgress,
+            signal,
             env:
               backend === "claude-code" && cfg.claudeConfigDirs[dataDir]
                 ? { CLAUDE_CONFIG_DIR: cfg.claudeConfigDirs[dataDir] }
@@ -157,14 +191,23 @@ async function answerOne(
 
   let result: BackendResult | null = null;
   for (const attempt of attempts) {
+    if (signal.aborted) break;
     log(`question ${question.id}: answering via ${attempt.label} (repo ${repo})`);
     onProgress("Looking through the app's source for the answer");
     try {
       result = await attempt.run();
       break;
     } catch (e) {
+      if (signal.aborted) break;
       warn(`question ${question.id}: ${attempt.label} failed — ${e instanceof Error ? e.message : e}`);
     }
+  }
+  // Withdrawn: the tester no longer wants this answered, so nothing is
+  // written — not even a late result — and the ack stays as the record
+  // of who had it. The tick skips withdrawn questions, so no retry.
+  if (signal.aborted || isWithdrawn(q.dir)) {
+    log(`question ${question.id}: withdrawn by the tester; stopped`);
+    return;
   }
   if (result === null) return; // The ack stands; the next pass retries.
 
@@ -193,7 +236,7 @@ export async function questionsTick(
   cfg: DaemonConfig,
 ): Promise<void> {
   for (const q of listQuestions(dataDir)) {
-    if (q.answered) continue;
+    if (q.answered || q.withdrawn) continue;
     if (q.ack) {
       // Claimed. Ours with no answer means a previous pass died mid-answer —
       // retry only once the ack has clearly gone cold, and never touch a

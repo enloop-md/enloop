@@ -1572,7 +1572,7 @@ export function renderRunReport(
     lines.push(
       `### ${STATUS_ICON[status] ?? ""} ${numberLabels[index]}. ${step.title} (${status}${
         step.extra ? ", extra" : ""
-      })`,
+      }${state?.jumpedOver ? ", jumped over" : ""})`,
     );
     if (state?.rating != null) {
       lines.push("");
@@ -1622,8 +1622,9 @@ function hasStepSignal(step: Step, state: RunStepState): boolean {
     // A skip the tester chose is a small vote against the step — repeated
     // across runs it is the test writer's cue to drop it or mark it
     // `Kind: extra`. An extra step arriving skipped is the default doing its
-    // job, and says nothing.
-    (state.status === "skipped" && !step.extra) ||
+    // job, and says nothing; neither does a step jumped over on the way to
+    // a later one.
+    (state.status === "skipped" && !step.extra && !state.jumpedOver) ||
     stepComments(state).some((c) => c.text.trim().length > 0) ||
     !!state.automatedResult?.error ||
     // A console error during a step the tester marked passed is signal in its
@@ -1675,6 +1676,7 @@ export function renderRunFeedback(
   const failedCount = run.steps.filter((s) => s.status === "failed").length;
   const warningCount = run.steps.filter((s) => s.status === "warning").length;
   const skippedCount = signalSteps.filter(({ state }) => state.status === "skipped").length;
+  const jumpedCount = run.steps.filter((s) => s.status === "skipped" && s.jumpedOver).length;
   const noteCount = run.steps.reduce((n, s) => n + stepComments(s).length, 0);
 
   const captured: CaptureCounts = {
@@ -1733,8 +1735,9 @@ export function renderRunFeedback(
     }
     // An extra step skipped is the default; an ordinary step skipped is the
     // tester declining work the case asked for, and the test writer is the
-    // one who can act on that.
-    if (state.status === "skipped" && !step.extra) {
+    // one who can act on that. A step jumped over is neither — it was done
+    // in the run before this one.
+    if (state.status === "skipped" && !step.extra && !state.jumpedOver) {
       const detail = comments
         .map((c) => c.text.trim())
         .filter(Boolean)
@@ -1766,7 +1769,10 @@ export function renderRunFeedback(
   );
   lines.push(
     `${failedCount} failed, ${warningCount} warnings, ${noteCount} tester comments` +
-      `${skippedCount > 0 ? `, ${skippedCount} ${skippedCount === 1 ? "step" : "steps"} skipped` : ""}.`,
+      `${skippedCount > 0 ? `, ${skippedCount} ${skippedCount === 1 ? "step" : "steps"} skipped` : ""}` +
+      // Said so the reader does not go looking for the missing verdicts:
+      // the tester started at a later step on purpose.
+      `${jumpedCount > 0 ? `, ${jumpedCount} jumped over to start further in` : ""}.`,
   );
   if (run.rating != null) {
     lines.push(

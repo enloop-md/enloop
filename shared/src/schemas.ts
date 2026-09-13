@@ -408,6 +408,11 @@ export const runStepStateSchema = z
      * the verdict: a step can fail and still be written excellently, and
      * pass while being a chore. See `shared/src/rating.ts`. */
     rating: ratingSchema.nullable().default(null),
+    /** `skipped` because the tester jumped past it with *Skip to this
+     * step* — a run restarted after a dirty one, the early steps already
+     * done — not because they declined this step. Report and feedback
+     * keep the two apart: a jump says nothing about the step. */
+    jumpedOver: z.boolean().default(false),
   })
   .transform(({ comment, notes, tasks, comments, ...rest }) => {
     const migrated = [
@@ -565,6 +570,7 @@ export const runStepSchema = stepSchema.omit({ id: true }).extend({
   networkFailures: z.number().int().nonnegative(),
   requests: z.number().int().nonnegative(),
   rating: ratingSchema.nullable(),
+  jumpedOver: z.boolean(),
 });
 
 /** Composed, in-memory view of a run — case.md + run.json merged. This is
@@ -640,6 +646,7 @@ export const stepPatchSchema = z.object({
   startedAt: z.string().nullable().optional(),
   finishedAt: z.string().nullable().optional(),
   rating: ratingSchema.nullable().optional(),
+  jumpedOver: z.boolean().optional(),
 });
 
 // ---- the agent channel: `agent/` in the data folder ---------------------
@@ -656,7 +663,7 @@ export const stepPatchSchema = z.object({
 // derived from file presence — the panel document does not survive a click
 // into the page under test, and the agent only exists for one tick at a
 // time. Layout: `agent/questions/<id>/` (question.json, ack.json,
-// progress.json, answer.md, answer.json) and `agent/commands/<id>/`
+// progress.json, answer.md, answer.json, withdrawn) and `agent/commands/<id>/`
 // (request.json, run.sh, pid, status.json, output.log, exit-code, kill),
 // plus `agent/heartbeat.json`.
 
@@ -749,6 +756,15 @@ export const agentQuestionAckSchema = z.object({
   pickedUpAt: z.string(),
   by: z.object({ id: z.string(), kind: agentWatcherKindSchema }).optional(),
 });
+
+/** `withdrawn` — an empty flag file the panel writes when the tester takes
+ * a question back (asked from the wrong step, pasted the wrong text). The
+ * question's `kill`: a server that sees it never claims the question, and
+ * one already answering stops — the daemon aborts its backend, a serve pass
+ * checks before writing. Additive (protocol 1): an old server answers
+ * anyway, and the panel keeps the answer folded under the withdrawn line.
+ * The flag never comes off; a corrected question is a new one. */
+export const QUESTION_WITHDRAWN_FLAG = "withdrawn";
 
 /** On-disk `progress.json`, rewritten by the server while it works on an
  * acked question: one short line, in the server's own words, saying what

@@ -219,6 +219,30 @@ Claude Code installed hands a run to the developer or test writer who has
 it: paste the text into a ticket or a chat, or attach the file, and the
 **check** skill reads it as it would read the file in the run's folder.
 
+**Starting further in.** A run gets dirty — wrong data, a wrong turn at
+step 4 — and the honest thing is a fresh one. But the early steps were
+done and are not in question, and clicking Pass through them again is
+theatre. Open any step ahead of the one you are on and press **⤵ Skip to
+this step**: every undecided step before it is marked in one go, and that
+step becomes the current one. Steps passed this way carry a *jumped over*
+badge, and the report and `feedback.md` keep them apart from a step you
+chose to skip: a jump says nothing about the steps under it, so the
+**check** skill never reads them as steps the case should drop. Give one
+of them a verdict later and it is yours again.
+
+**Options, mid-run.** The status bar's **Options** (a green ● while
+capture is on) unfolds the same capture boxes as Settings and the start
+form — console output, failed requests, every request — plus the
+screenshot-tools box on a test run. They are there because the moment you
+want the console kept is the moment something odd just happened, and
+because turning capture on only reaches a page from its *next* load: the
+notice under the bar says so and offers **Reload page**, and a scenario
+you refresh anyway loses nothing. Entries land in the run's
+`console.jsonl` every few seconds from then on, which is what an agent
+answering a "what did the page say" question reads — it is told that a
+log with no console lines is a page that was not wrapped, not a page that
+logged nothing.
+
 Before finishing a run you can also leave a **comment on the run as a whole** —
 "ran against an old build", "felt slow throughout". It lands in `report.md`
 above the steps, and it counts as feedback signal on its own, so a run that
@@ -226,6 +250,18 @@ passed while worrying the tester still produces a `feedback.md` for
 the **check** skill to read.
 
 ### Screenshots
+
+**Shown on guides, hidden on tests unless you ask.** Pictures are what a
+guide is made of, so a guide run always shows the tools below. On a test
+they are evidence for the odd step and dead space under every other, so a
+test run hides them by default: no capture buttons, no delayed capture,
+no unfilled photo slots. Turn them on with **Show 📷** in the run's status
+bar, with **Screenshot tools on this run** in front of Start, or in
+Settings under *Screenshots during runs* — one setting for the whole
+extension, ticked anywhere, seen everywhere, like capture. Pictures
+already taken are always shown and stay editable, the runner still takes
+the photos a case's `### Photo` specs ask for, and the keyboard shortcut
+and the page's context-menu capture work either way.
 
 Every step has **📷 Screenshot** and **📷 Screenshot & edit**, and the run
 header has a **📷** that captures to the current step or, before there is
@@ -273,7 +309,13 @@ agent and shows setup instructions right where you'd otherwise wait:
   what it is doing right now, in the agent's own words: *Reading the reset
   form*, *Found it — the step names a renamed button*, *Writing the
   answer*. The line shows how long ago it last changed, so a long think is
-  visibly a think and not a crash.
+  visibly a think and not a crash. Sent the wrong thing — pasted text you
+  did not mean to, asked from the wrong step? **Withdraw** sits next to
+  that line the whole time an answer is owed: the agent stops working on
+  it (the daemon within seconds, a serve pass before it writes), and the
+  card folds to *Withdrawn* with your text still readable for the
+  corrected ask. An answer that lands anyway stays folded under it, one
+  click away.
   An answer takes a while, and you will have gone to other tabs by the
   time it lands: every question card shows **↗ Bring me to the tab**
   whenever the tab you asked from is not the one in front of you. It

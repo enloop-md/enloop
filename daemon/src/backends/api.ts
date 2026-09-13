@@ -39,6 +39,9 @@ export async function answerViaApi(opts: {
    * tool call, plus whatever the model says through its `progress` tool.
    * The daemon writes it where the panel reads it. */
   onProgress?: (text: string) => void;
+  /** Aborted when the tester withdraws the question: the in-flight API
+   * call is cancelled and the loop rejects. */
+  signal?: AbortSignal;
 }): Promise<BackendResult> {
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
   const progress = (text: string) => opts.onProgress?.(text);
@@ -172,13 +175,16 @@ export async function answerViaApi(opts: {
   }
   content.push({ type: "text", text: opts.brief + (opts.canPatch ? PATCH_TOOL_GUIDANCE : "") });
 
-  const runner = client.beta.messages.toolRunner({
-    model: opts.model,
-    max_tokens: 16000,
-    max_iterations: 30,
-    messages: [{ role: "user", content }],
-    tools,
-  });
+  const runner = client.beta.messages.toolRunner(
+    {
+      model: opts.model,
+      max_tokens: 16000,
+      max_iterations: 30,
+      messages: [{ role: "user", content }],
+      tools,
+    },
+    { signal: opts.signal },
+  );
   const final = await runner.runUntilDone();
 
   const markdown = final.content

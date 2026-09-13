@@ -16,15 +16,26 @@ const RUN_STYLES: Record<RunStatus, string> = {
   aborted: "bg-slate-200 text-slate-600",
 };
 
-export function StepStatusBadge({ status }: { status: RunStepStatus }) {
+export function StepStatusBadge({
+  status,
+  jumpedOver = false,
+}: {
+  status: RunStepStatus;
+  /** Skipped by *Skip to this step*, not by choice — worded apart so a
+   * tester scrolling back does not read their own jump as a decision. */
+  jumpedOver?: boolean;
+}) {
   // `pending` is the absence of a result rather than a result. Badging it
   // labels every step nobody has reached yet, which is most of the list for
   // most of a run — and the badge that means "nothing has happened here"
   // reads exactly like the ones that mean something did.
   if (status === "pending") return null;
   return (
-    <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${STEP_STYLES[status]}`}>
-      {status}
+    <span
+      className={`rounded px-1.5 py-0.5 text-xs font-medium ${STEP_STYLES[status]}`}
+      title={status === "skipped" && jumpedOver ? "Jumped over with Skip to this step" : undefined}
+    >
+      {status === "skipped" && jumpedOver ? "jumped over" : status}
     </span>
   );
 }

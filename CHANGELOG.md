@@ -4,6 +4,44 @@ Versions are the extension's; the plugin and the case grammar carry their
 own numbers and are listed where they moved. Store uploads are the
 `enloop-extension-v<version>.zip` attached to each GitHub release.
 
+## Unreleased
+
+Plugin 0.20.1 · daemon 0.1.0
+
+### Running cases
+
+- **Withdraw a question.** A question sent by mistake — the wrong text
+  pasted, the wrong step asked from — no longer has to be answered.
+  **Withdraw** sits beside the waiting line for as long as an answer is
+  owed; it writes a `withdrawn` flag into the question's directory, the
+  daemon stops its backend within seconds (the CLI child is killed, the
+  API call cancelled) and writes nothing, and a serve pass skips the
+  question or drops the answer it was about to write. The card folds to
+  *Withdrawn* with the text still readable; an answer that lands anyway
+  stays folded under it. Additive on protocol 1.
+- **Skip to this step.** A run restarted after a dirty one no longer has
+  to be clicked through: open any step ahead and **⤵ Skip to this step**
+  marks every undecided step before it in one go. Those steps carry a
+  *jumped over* badge and `jumpedOver: true` in `run.json`; the report
+  says so per step, and `feedback.md` leaves them out of *Steps the tester
+  skipped* — a jump is not a vote against the steps under it, and the
+  check skill is told as much. A verdict given later clears the mark.
+- **Screenshot tools hidden on test runs.** A guide run shows them as
+  before; a test run no longer has capture buttons, the delayed capture
+  and unfilled photo slots under every step. **Show 📷** in the run's
+  status bar, the box in front of Start, or *Screenshots during runs* in
+  Settings turns them on — one extension-wide setting. Pictures already
+  taken always show, the runner's `### Photo` specs still fire, and the
+  shortcut and context-menu capture keep working.
+- **Capture, changeable mid-run.** **Options** in the run's status bar
+  unfolds the console/requests capture boxes and the screenshot-tools
+  box without leaving the run; the reload notice sits under it, since a
+  page loaded before capture was on is wrapped only from its next load.
+  Both servers are now pointed at the run's `console.jsonl` when a
+  question is asked — the daemon's brief names it, the serve skill reads
+  it — and told that a log with requests but no console lines means the
+  page was never wrapped, not that it logged nothing.
+
 ## 0.16.0 — 2026-09-13
 
 Extension 0.16.0 · plugin 0.20.0 · grammar 0.0.13 · daemon 0.1.0

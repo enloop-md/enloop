@@ -28,13 +28,20 @@ import {
   type RunStepStatus,
 } from "@tcm/shared";
 import { CaptureNotice } from "../../components/CaptureNotice.js";
+import { CaptureToggles } from "../../components/CaptureToggles.js";
+import { ScreenshotToggle } from "../../components/ScreenshotToggle.js";
 import { ErrorNotice } from "../../components/ErrorNotice.js";
 import { Header } from "../../components/Header.js";
 import { Markdown } from "../../components/Markdown.js";
 import { PageAccessNotice } from "../../components/PageAccessNotice.js";
 import { RunStatusBadge, StepStatusBadge } from "../../components/StatusBadge.js";
 import { useReadyStore } from "../store/DataStoreProvider.js";
-import { chainAutomatedFrom, markManualStep, runAutomatedStep } from "../../lib/run-engine.js";
+import {
+  chainAutomatedFrom,
+  markManualStep,
+  runAutomatedStep,
+  skipToStep,
+} from "../../lib/run-engine.js";
 import { highlightSelectors } from "../../lib/highlight.js";
 import { getPageAccess, type PageAccess } from "../../lib/page-access.js";
 import { looksNavigable, whereAddress } from "../../lib/navigate.js";
@@ -48,6 +55,7 @@ import { HOVER_HINT, useHoverTrigger } from "../../lib/hover-trigger.js";
 import { useGestureScreenshot } from "../../lib/use-gesture-screenshot.js";
 import { editScreenshot, screenshotApi, type ScreenshotOwner } from "../../lib/screenshot-store.js";
 import { useCaptureRecorder } from "../useCapture.js";
+import { screenshotsShown, useScreenshotPrefs } from "../useScreenshotPrefs.js";
 import { commandPending, useAgentChannel, type AskDraft } from "../useAgentChannel.js";
 import { CommandList, StepQuestions } from "./RunAgentChannel.js";
 import { FixPrompt } from "./RunFixPrompt.js";
@@ -114,9 +122,18 @@ export function RunScreen({
   // spec row, never thrown: the verdict lands either way.
   const [specNotices, setSpecNotices] = useState<Record<string, string>>({});
   const [guideWarnings, setGuideWarnings] = useState<string[] | null>(null);
+  // The run's options — capture and screenshot tools — fold under the
+  // status bar. Closed by default: they are one line each, but a run is
+  // read top to bottom many times and looked at once.
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const [headerBusy, setHeaderBusy] = useState(false);
 
   const owner: ScreenshotOwner = { kind: "run", testCaseId, runId };
+  // Whether this run shows its screenshot tools: a guide always, a test
+  // only when asked — see useScreenshotPrefs.ts. Pictures already taken
+  // show regardless.
+  const [screenshotPrefs, setScreenshotPrefs] = useScreenshotPrefs();
+  const showShots = run ? screenshotsShown(run.kind, screenshotPrefs) : true;
 
   /** Every path that gets a new run from the store goes through here, so
    * the ref the photo loop reads is never behind the screen. */
@@ -429,6 +446,19 @@ export function RunScreen({
     }
   }
 
+  async function handleSkipTo(step: RunStep) {
+    if (!run) return;
+    setBusyStepId(step.stepId);
+    setError(null);
+    try {
+      applyRun(await skipToStep(store, runRef.current ?? run, step.stepId));
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusyStepId(null);
+    }
+  }
+
   async function handleRunAutomated(step: RunStep) {
     if (!run) return;
     setBusyStepId(step.stepId);
@@ -590,12 +620,12 @@ export function RunScreen({
           nobody should wonder what the click they are about to make is for.
           The camera beside it is the one-click capture that needs no step
           open: it lands on the step the tester is on, or on the run. */}
-      {(run.goal.trim() || !readOnly) && (
+      {(run.goal.trim() || (!readOnly && showShots)) && (
         <div className="flex items-start gap-2 border-b border-emerald-100 bg-emerald-50 px-3 py-1.5">
           <p className="flex-1 text-sm font-medium text-emerald-900" title="What this case proves">
             {run.goal}
           </p>
-          {!readOnly && (
+          {!readOnly && showShots && (
             <button
               type="button"
               onClick={() => void captureFromHeader()}
@@ -637,6 +667,23 @@ export function RunScreen({
           {skippedCount > 0 && <span> · {skippedCount} skipped</span>}
         </span>
         <span className="ml-auto flex items-center gap-1.5">
+          {/* Capture and the screenshot tools, changeable mid-run: the
+              moment a tester wants the console kept is when something odd
+              just happened, and a page they are about to refresh anyway
+              is a page the wrapper can still catch. */}
+          {!readOnly && (
+            <>
+              <button
+                onClick={() => setOptionsOpen((o) => !o)}
+                aria-expanded={optionsOpen}
+                className={`hover:underline ${capture.on ? "text-emerald-700" : "text-sky-600"}`}
+                title="Capture the console and requests, show the screenshot tools — for this run and every one after"
+              >
+                {capture.on ? "● Options" : "Options"}
+              </button>
+              <span className="text-slate-300">·</span>
+            </>
+          )}
           <button
             onClick={() => setExpandedIds(new Set(run.steps.map((s) => s.stepId)))}
             disabled={allExpanded}
@@ -662,7 +709,16 @@ export function RunScreen({
       <ErrorNotice error={error} className="px-3 pt-2" />
       {/* Settings is not where anyone is looking while the evidence is being
           lost, so the notice belongs here too. */}
-      {!readOnly && <CaptureNotice wrapper={capture.wrapper} className="mx-3 mt-2" />}
+      {!readOnly && optionsOpen && (
+        <div className="space-y-1.5 border-b border-slate-200 bg-slate-50 px-3 py-2">
+          <CaptureToggles settings={capture.settings} wrapper={capture.wrapper} onChange={capture.set} compact />
+          {run.kind !== "guide" && (
+            <ScreenshotToggle prefs={screenshotPrefs} onChange={setScreenshotPrefs} compact />
+          )}
+        </div>
+      )}
+      {/* The toggles carry the reload notice themselves while open. */}
+      {!readOnly && !optionsOpen && <CaptureNotice wrapper={capture.wrapper} className="mx-3 mt-2" />}
       {readOnly && hasFeedbackSignal && (
         <p className="border-b border-violet-100 bg-violet-50 px-3 py-2 text-xs text-violet-700">
           Feedback saved to feedback.md in this run's folder — point Claude Code
@@ -676,13 +732,14 @@ export function RunScreen({
         )}
         {/* Screenshots of the run as a whole — the landing page, the state
             before step 1 — and the home of anything moved off a step. */}
-        {(!readOnly || run.screenshots.some((s) => s.stepId === null)) && (
+        {((!readOnly && showShots) || run.screenshots.some((s) => s.stepId === null)) && (
           <div className="border-b border-slate-200 px-3 py-2">
             <RunScreenshots
             owner={owner}
             step={null}
             screenshots={run.screenshots.filter((s) => s.stepId === null)}
             readOnly={readOnly}
+            tools={showShots}
             onChanged={(next) => applyRun(next as Run)}
             moveTargets={moveTargets}
             editorTitle={`${run.testCaseTitle} — run`}
@@ -737,6 +794,7 @@ export function RunScreen({
                 })
               }
               onMark={(status) => handleMark(step, status)}
+              onSkipTo={() => handleSkipTo(step)}
               onRunAutomated={() => handleRunAutomated(step)}
               onUpdateFields={(patch) => updateStepFields(step, patch)}
               onDraftChange={(draft) =>
@@ -744,6 +802,7 @@ export function RunScreen({
               }
               onBeforePhotos={() => takeSlotPhotos(step.stepId, "before")}
               owner={owner}
+              showShots={showShots}
               screenshots={run.screenshots.filter((s) => s.stepId === step.stepId)}
               specNotices={specNoticesFor(step.stepId)}
               moveTargets={moveTargets}
@@ -754,6 +813,7 @@ export function RunScreen({
               commands={agent.commands.filter((c) => c.stepId === step.stepId)}
               watcher={agent.watcher}
               onAsk={agent.ask}
+              onWithdraw={agent.withdraw}
               onSwapped={applyRun}
               onRunCommand={(command, field) =>
                 void handleRunCommand(command, step.stepId, field)
@@ -1655,11 +1715,13 @@ function StepRow({
   readOnly,
   onToggle,
   onMark,
+  onSkipTo,
   onRunAutomated,
   onUpdateFields,
   onDraftChange,
   onBeforePhotos,
   owner,
+  showShots,
   screenshots,
   specNotices,
   moveTargets,
@@ -1670,6 +1732,7 @@ function StepRow({
   commands,
   watcher,
   onAsk,
+  onWithdraw,
   onSwapped,
   onRunCommand,
   onKillCommand,
@@ -1685,6 +1748,9 @@ function StepRow({
   readOnly: boolean;
   onToggle: () => void;
   onMark: (status: "success" | "failed" | "warning" | "skipped") => void;
+  /** Skip every undecided step before this one, making it the current
+   * step — see `skipToStep`. */
+  onSkipTo: () => void;
   onRunAutomated: () => void;
   onUpdateFields: (patch: Partial<RunStep>) => void;
   onDraftChange: (draft: RunCommentDraft | null) => void;
@@ -1692,6 +1758,9 @@ function StepRow({
    * its Highlight has settled. */
   onBeforePhotos: () => Promise<void>;
   owner: ScreenshotOwner;
+  /** Whether the screenshot tools are shown on this run; pictures already
+   * taken show either way. */
+  showShots: boolean;
   /** This step's screenshots only. */
   screenshots: RunScreenshot[];
   specNotices: SpecNotices;
@@ -1703,6 +1772,7 @@ function StepRow({
   commands: AgentCommand[];
   watcher: AgentPresence | null;
   onAsk: (draft: AskDraft) => Promise<AgentQuestion>;
+  onWithdraw: (questionId: string) => Promise<void>;
   onSwapped: (run: Run) => void;
   onRunCommand: (command: string, field: "instructions" | "note") => void;
   onKillCommand: (commandId: string) => Promise<void>;
@@ -1856,7 +1926,7 @@ function StepRow({
             ★{step.rating}
           </span>
         )}
-        <StepStatusBadge status={step.status} />
+        <StepStatusBadge status={step.status} jumpedOver={step.jumpedOver} />
       </button>
 
       <CollapsedFindings step={step} hidden={expanded} />
@@ -2001,17 +2071,20 @@ function StepRow({
             {/* The pictures of this step: what the case asked for, what was
                 taken by hand. After the prose they illustrate and before the
                 questions and comments about it. */}
-            <RunScreenshots
-              owner={owner}
-              step={step}
-              screenshots={screenshots}
-              readOnly={readOnly}
-              onChanged={(next) => onScreenshotsChanged(next as Run)}
-              matchedSelector={matchedSelector}
-              moveTargets={moveTargets}
-              editorTitle={editorTitle}
-              specNotices={specNotices}
-            />
+            {(showShots || screenshots.length > 0) && (
+              <RunScreenshots
+                owner={owner}
+                step={step}
+                screenshots={screenshots}
+                readOnly={readOnly}
+                tools={showShots}
+                onChanged={(next) => onScreenshotsChanged(next as Run)}
+                matchedSelector={matchedSelector}
+                moveTargets={moveTargets}
+                editorTitle={editorTitle}
+                specNotices={specNotices}
+              />
+            )}
 
             <CommandList
               commands={commands}
@@ -2068,6 +2141,7 @@ function StepRow({
               readOnly={readOnly}
               watcher={watcher}
               onAsk={onAsk}
+              onWithdraw={onWithdraw}
               onSwapped={onSwapped}
             />
 
@@ -2153,6 +2227,24 @@ function StepRow({
                     label="Rate how well this step is written"
                   />
                 </div>
+              </div>
+            )}
+            {/* The way to start further in: a run restarted after a dirty
+                one does not need its early steps clicked through one by
+                one. Only on a step ahead of the current one, and only a
+                link — it lands the tester here, it judges nothing. What it
+                skips is stamped as jumped over, so the test writer never
+                reads it as a step the tester declined. */}
+            {!readOnly && !isCurrent && step.status === "pending" && (
+              <div className="border-t border-slate-100 pt-2.5">
+                <button
+                  onClick={onSkipTo}
+                  disabled={busy}
+                  className="text-[11px] text-slate-400 hover:text-slate-600 hover:underline disabled:opacity-50"
+                  title="Mark every undecided step before this one as jumped over and start here — for a run restarted after a dirty one, when the early steps are already done"
+                >
+                  ⤵ Skip to this step
+                </button>
               </div>
             )}
             {readOnly && step.rating != null && (

@@ -30,9 +30,13 @@ export async function answerViaCli(opts: {
   timeoutMs?: number;
   /** One short line whenever the work changes shape; see api.ts. */
   onProgress?: (text: string) => void;
+  /** Aborted when the tester withdraws the question: the child is killed
+   * and the promise rejects — there is nobody left to answer. */
+  signal?: AbortSignal;
 }): Promise<BackendResult> {
   const timeoutMs = opts.timeoutMs ?? 10 * 60 * 1000;
   const env = opts.env ? { ...process.env, ...opts.env } : process.env;
+  if (opts.signal?.aborted) throw new Error("withdrawn before the CLI started");
 
   if (opts.kind === "codex") {
     opts.onProgress?.("Reading the app source with Codex");
@@ -41,6 +45,7 @@ export async function answerViaCli(opts: {
       env,
       timeout: timeoutMs,
       maxBuffer: 8_000_000,
+      signal: opts.signal,
     });
     const markdown = stdout.trim();
     if (!markdown) throw new Error("codex produced no output");
@@ -61,6 +66,11 @@ export async function answerViaCli(opts: {
       child.kill("SIGTERM");
       reject(new Error(`claude timed out after ${Math.round(timeoutMs / 1000)}s`));
     }, timeoutMs);
+    const onWithdrawn = () => {
+      child.kill("SIGTERM");
+      reject(new Error("withdrawn by the tester"));
+    };
+    opts.signal?.addEventListener("abort", onWithdrawn, { once: true });
 
     const onLine = (line: string) => {
       let event: any;
@@ -105,10 +115,12 @@ export async function answerViaCli(opts: {
     });
     child.on("error", (e) => {
       clearTimeout(timer);
+      opts.signal?.removeEventListener("abort", onWithdrawn);
       reject(e);
     });
     child.on("close", (code) => {
       clearTimeout(timer);
+      opts.signal?.removeEventListener("abort", onWithdrawn);
       if (buffered.trim()) onLine(buffered);
       const markdown = result ?? lastAssistantText;
       if (code !== 0 && !markdown) {

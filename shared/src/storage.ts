@@ -237,6 +237,10 @@ export interface AgentChannelStore {
     },
   ): Promise<AgentQuestion>;
   listQuestions(testCaseId: string, runId: string): Promise<AgentQuestion[]>;
+  /** Takes a question back: writes the `withdrawn` flag. A server that has
+   * not claimed it never will; one mid-answer stops at its next look. The
+   * panel shows it withdrawn from this moment, whatever lands later. */
+  withdrawQuestion(testCaseId: string, questionId: string): Promise<void>;
   requestCommand(
     testCaseId: string,
     runId: string,

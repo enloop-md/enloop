@@ -7,6 +7,7 @@ import {
   agentQuestionFileSchema,
   agentWatcherSchema,
   AGENT_PROTOCOL_VERSION,
+  QUESTION_WITHDRAWN_FLAG,
   buildCaptureDigest,
   buildRunSource,
   checkRunCompat,
@@ -143,6 +144,8 @@ const QUESTION_PAGE_FILE = "page.html";
 /** Agent-written the moment a pass sees the question — "working on it". */
 const QUESTION_ACK_FILE = "ack.json";
 const QUESTION_PROGRESS_FILE = "progress.json";
+/** Empty flag file: the tester took the question back; servers stop. */
+const QUESTION_WITHDRAWN_FILE = QUESTION_WITHDRAWN_FLAG;
 const ANSWER_FILE = "answer.md";
 const ANSWER_META_FILE = "answer.json";
 const COMMAND_REQUEST_FILE = "request.json";
@@ -262,6 +265,7 @@ function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
       finishedAt: null,
       ...ZERO_CAPTURE_COUNTS,
       rating: null,
+      jumpedOver: false,
     };
     // The definition is spread rather than copied field by field: `where`
     // and `note` are optional on the schema, so a list that forgot them
@@ -281,6 +285,7 @@ function composeRun(doc: TestCaseVersion, runFile: RunFile): Run {
       networkFailures: state.networkFailures,
       requests: state.requests,
       rating: state.rating,
+      jumpedOver: state.jumpedOver,
     };
   });
   return {
@@ -908,6 +913,7 @@ export class FsaDataStore implements DataStore {
         finishedAt: null,
         ...ZERO_CAPTURE_COUNTS,
         rating: null,
+        jumpedOver: false,
       })),
     };
     await writeJson(runDir, RUN_FILE, runFile);
@@ -1358,7 +1364,14 @@ export class FsaDataStore implements DataStore {
     }
     if (draft.pageHtml) await writeTextFile(qDir, QUESTION_PAGE_FILE, draft.pageHtml);
     await writeJson(qDir, QUESTION_FILE, question);
-    return { ...question, pickedUpAt: null, pickedUpBy: null, progress: null, answer: null };
+    return {
+      ...question,
+      pickedUpAt: null,
+      pickedUpBy: null,
+      progress: null,
+      answer: null,
+      withdrawn: false,
+    };
   }
 
   async listQuestions(testCaseId: string, runId: string): Promise<AgentQuestion[]> {
@@ -1372,11 +1385,12 @@ export class FsaDataStore implements DataStore {
       if (!question || question.testCaseId !== testCaseId || question.runId !== runId) continue;
       // The agent writes answer.md first and answer.json second; only the
       // pair counts as answered, so a half-written answer is never shown.
-      const [ack, progress, markdown, meta] = await Promise.all([
+      const [ack, progress, markdown, meta, withdrawn] = await Promise.all([
         tryReadJson(qDir, QUESTION_ACK_FILE, agentQuestionAckSchema),
         tryReadJson(qDir, QUESTION_PROGRESS_FILE, agentQuestionProgressSchema),
         tryReadTextFile(qDir, ANSWER_FILE),
         tryReadJson(qDir, ANSWER_META_FILE, agentAnswerMetaSchema),
+        tryReadTextFile(qDir, QUESTION_WITHDRAWN_FILE),
       ]);
       questions.push({
         ...question,
@@ -1384,10 +1398,16 @@ export class FsaDataStore implements DataStore {
         pickedUpBy: ack?.by?.kind ?? null,
         progress: progress?.text.trim() ? { text: progress.text.trim(), at: progress.at } : null,
         answer: markdown && meta ? { markdown: markdown.text, meta } : null,
+        withdrawn: withdrawn !== null,
       });
     }
     // Ids embed the asked-at stamp, so lexicographic is chronological.
     return questions.sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  async withdrawQuestion(_testCaseId: string, questionId: string): Promise<void> {
+    const qDir = await getDir(await this.questionsDir(), questionId);
+    await writeTextFile(qDir, QUESTION_WITHDRAWN_FILE, "");
   }
 
   private async composeCommand(
