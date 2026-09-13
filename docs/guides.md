@@ -13,6 +13,70 @@ See also — [the case format](case-format.md) for the grammar,
 [the extension](extension.md#screenshots) for the panel, and
 [the skills](skills.md#writing-a-guide) for having an agent write a guide.
 
+## Guide mode, start to finish
+
+The whole of it, in order. Each step is detailed further down and in the
+pages linked.
+
+1. **Write the guide last**, on the build that will ship, after its case
+   has passed. From the app's repo:
+
+   ```
+   /enloop:guide place an order      # Claude Code
+   $guide place an order             # Codex
+   ```
+
+   The **guide** skill writes a case with `@kind guide` in its header,
+   the happy path in end-user prose — second person, present tense, one
+   action per step, *Expected* in the words on screen — and a `### Photo`
+   block on every step that changes what is on screen. By hand, the same
+   thing: any case whose header says `@kind guide`
+   ([the header](#kind-guide)). No quick marks, no app map, no selectors
+   beyond what a photo needs.
+
+2. **Open it in the panel.** The Library and the case screen show a
+   *guide* badge. There is one **Start run** — a guide has no quick tier,
+   it is read whole — and the screenshot box in front of Start is not
+   offered: a guide always shows its screenshot tools.
+
+3. **Run it on the final UI.** The panel reads differently in guide mode:
+   the Expected block is **You should see**, the verdict buttons are
+   **Done / Could not** — this is a reader following the guide, not a
+   tester judging the app. Under every step sit **📷 Screenshot**,
+   **📷 Screenshot & edit**, the delayed capture, and the runner's photo
+   slots: each `### Photo` spec fires when the step becomes current or
+   when you press Done (`Take: before` / `after`), shows the picture with
+   **Keep · Retake · Edit · Discard** (`Mode: confirm`) or keeps it with a
+   toast (`Mode: auto`), and `Take: manual` leaves a **📷 Photo n** button
+   for you. Crop, blur, arrows and callouts happen in the editor over the
+   page. A step you do not want in the guide: **Skip this step**; the
+   export leaves it out. Comments and ratings work as on any run and never
+   reach the reader.
+
+4. **Finish the run.** A finished guide run shows **⬇ Download guide** at
+   the bottom of the run screen — one HTML page, every screenshot inlined,
+   mailable as it is. That needs no agent. For the Markdown folder, or to
+   have the wording checked:
+
+   ```
+   /enloop:export-guide              # README.md + images/
+   /enloop:export-guide html         # index.html
+   /enloop:export-guide both
+   ```
+
+   The **export-guide** skill writes `<data folder>/guides/<slug>/` and
+   fixes tester-voice sentences in the exported file only
+   ([exporting](#exporting)).
+
+5. **Ship `guides/`.** It is the one run product that is not git-ignored:
+   the deliverable. When the feature changes, run the guide again and
+   re-export — the words may still hold, the pictures do not.
+
+What a guide shares with a case is the grammar, the panel and the run;
+what it drops — selectors, notes, test data, verdicts, comments, quick
+marks — it drops because the reader is not a tester. The rest of this
+page is the machinery under those five steps.
+
 ## Screenshots on any run
 
 Every step of every run, and every free run, has two buttons: **📷
