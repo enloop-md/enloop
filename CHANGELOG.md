@@ -4,9 +4,9 @@ Versions are the extension's; the plugin and the case grammar carry their
 own numbers and are listed where they moved. Store uploads are the
 `enloop-extension-v<version>.zip` attached to each GitHub release.
 
-## Unreleased
+## 0.16.0 — 2026-09-13
 
-Plugin 0.20.0 · grammar 0.0.13
+Extension 0.16.0 · plugin 0.20.0 · grammar 0.0.13 · daemon 0.1.0
 
 ### Writing cases
 
