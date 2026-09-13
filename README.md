@@ -130,7 +130,7 @@ skills as `$setup`, `$quick <ticket>`. Details and Codex caveats:
 | Understand what the skills do | [docs/skills.md](docs/skills.md) |
 | Answer questions with no session open (enloopd) | [docs/daemon.md](docs/daemon.md) |
 | Write or read a case by hand | [docs/case-format.md](docs/case-format.md) |
-| Take screenshots on a run, write and export a user guide | [docs/guides.md](docs/guides.md) |
+| Guide mode: write, run and export a user guide; screenshots on any run | [docs/guides.md](docs/guides.md) |
 | Share a case with someone | [the viewer](https://enloop-md.github.io/enloop/) |
 
 ---

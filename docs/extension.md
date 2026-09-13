@@ -249,6 +249,19 @@ above the steps, and it counts as feedback signal on its own, so a run that
 passed while worrying the tester still produces a `feedback.md` for
 the **check** skill to read.
 
+### Guide mode
+
+A case whose header says `@kind guide` is a **user guide**: the same
+grammar and the same run, written for the person who will use the feature
+rather than the person testing it. The panel changes its words, not its
+mechanics — the Library and case screen show a *guide* badge; there is a
+single **Start run** (a guide has no quick tier); the Expected block reads
+**You should see**; the verdict buttons read **Done / Could not**; the
+screenshot tools are always on, since the run's pictures are the guide;
+and a finished run always offers **⬇ Download guide**, screenshots or
+not. Everything under [screenshots](#screenshots) applies. The walkthrough
+from writing to shipping is in [guides](guides.md#guide-mode-start-to-finish).
+
 ### Screenshots
 
 **Shown on guides, hidden on tests unless you ask.** Pictures are what a
