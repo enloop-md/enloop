@@ -44,8 +44,9 @@ import { downloadTextFile, fileSlug } from "../../lib/download.js";
 import { canDownloadGuide, downloadRunGuide } from "../../lib/guide-download.js";
 import { takePhoto, takePlainScreenshot, type TakenPhoto } from "../../lib/photo-runner.js";
 import { GESTURE_HINT } from "../../lib/page-capture.js";
+import { HOVER_HINT, useHoverTrigger } from "../../lib/hover-trigger.js";
 import { useGestureScreenshot } from "../../lib/use-gesture-screenshot.js";
-import { editScreenshot, EditorTooLargeError, screenshotApi, type ScreenshotOwner } from "../../lib/screenshot-store.js";
+import { editScreenshot, screenshotApi, type ScreenshotOwner } from "../../lib/screenshot-store.js";
 import { useCaptureRecorder } from "../useCapture.js";
 import { commandPending, useAgentChannel, type AskDraft } from "../useAgentChannel.js";
 import { CommandList, StepQuestions } from "./RunAgentChannel.js";
@@ -292,8 +293,7 @@ export function RunScreen({
               );
               if (edited) applyRun(edited as Run);
             } catch (e) {
-              if (e instanceof EditorTooLargeError) fail("too large to edit (the photo is kept)");
-              else setError(e);
+              setError(e);
             }
           }
           break;
@@ -327,10 +327,46 @@ export function RunScreen({
 
   // The shortcut and the context-menu item: the worker captures on the
   // gesture and hands the bytes here.
+  /**
+   * A gesture on the page (the shortcut, the context-menu item) is also
+   * what unlocks the tab for the runner. So when the current step has a
+   * runner photo that Chrome refused for want of that gesture, the gesture
+   * refills those slots with the spec's own crop and marks — the picture
+   * the case asked for — rather than attaching the plain capture beside an
+   * empty Photo n. With nothing refused, the plain capture is attached.
+   */
+  async function onGesturePhoto(photo: TakenPhoto) {
+    const current = runRef.current;
+    // Any step's, not only the current one: an `after` photo that was
+    // refused did not hold the verdict back, so its step is already behind
+    // the tester — and the page still shows the state it wanted.
+    const refused = Object.keys(specNotices).filter((key) =>
+      /activeTab|all_urls/.test(specNotices[key] ?? ""),
+    );
+    if (!current || refused.length === 0) {
+      await attachPlainPhoto(photo);
+      return;
+    }
+    for (const key of refused) firedSlots.current.delete(key);
+    setSpecNotices((n) => {
+      const rest = { ...n };
+      for (const key of refused) delete rest[key];
+      return rest;
+    });
+    // Whichever moment the specs name, the tester has just supplied the
+    // gesture both were waiting on.
+    for (const stepId of new Set(refused.map((key) => key.split(":")[0]))) {
+      await takeSlotPhotos(stepId, "before");
+      await takeSlotPhotos(stepId, "after");
+    }
+  }
+
   useGestureScreenshot(
-    readOnly ? null : (photo) => attachPlainPhoto(photo).catch(setError),
+    readOnly ? null : (photo) => onGesturePhoto(photo).catch(setError),
     (message) => setError(new Error(`Cannot capture: ${message}`)),
   );
+
+  const hoverHeader = useHoverTrigger(() => void captureFromHeader(), headerBusy || readOnly);
 
   /** The header camera: the page as it is. */
   async function captureFromHeader() {
@@ -563,9 +599,10 @@ export function RunScreen({
             <button
               type="button"
               onClick={() => void captureFromHeader()}
+              {...hoverHeader}
               disabled={headerBusy}
               className="shrink-0 rounded border border-emerald-200 bg-white px-1.5 py-0.5 text-sm leading-none hover:bg-emerald-100 disabled:opacity-50"
-              title={currentStepId ? "Screenshot for the current step" : "Screenshot for the run"}
+              title={`${currentStepId ? "Screenshot for the current step" : "Screenshot for the run"}, ${HOVER_HINT}`}
               aria-label="Take a screenshot"
             >
               📷

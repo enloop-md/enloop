@@ -5,7 +5,9 @@ the tester *saw*: screenshots, taken by hand at any moment or by the runner
 from a spec in the step, edited in a small editor of Enloop's own, and
 written beside `run.json`. And a case run step by step, with a picture at
 each step, is a **user guide** — the same grammar, panel and run, written
-for an end user and exported as a folder anyone can read.
+for an end user and exported as a folder anyone can read. A guide carries
+less than a case on purpose, and it is written last: on the final build
+of the feature, right before the push that ships it.
 
 See also — [the case format](case-format.md) for the grammar,
 [the extension](extension.md#screenshots) for the panel, and
@@ -32,6 +34,17 @@ When a capture needs one, the buttons say so in an amber note. (Clicking
 the toolbar icon would count too, but it closes the panel — use the
 shortcut or the menu.) The shortcut can
 be changed at `chrome://extensions/shortcuts`.
+
+A click on the panel takes the page's focus, and a dropdown or menu you
+opened there closes before the picture is taken. To photograph it open,
+**hover** any capture button — the two under the step, the header 📷, a
+Photo row's **Take** — with **Ctrl+Shift** held: it fires without a
+click, and the page keeps its focus. (A native `<select>` list is drawn
+by the browser outside the page and is not in the capture either way;
+custom dropdowns are.) The Alt+Shift+S shortcut keeps focus too. **⏱ 3 s**
+beside the buttons, and beside a Photo row's Take, counts down three
+seconds before capturing — time to click into the page and open what the
+picture needs; press it again to cancel.
 
 Each screenshot shows as a thumbnail under its step, with a caption field,
 **✎ Edit**, **↺ Original** (once it has been edited — puts the capture
@@ -119,16 +132,28 @@ page* and the run continues.
 ## The editor
 
 **✎ Edit**, **Screenshot & edit** and the sheet's **Edit** open the picture
-in its own tab. Tools across the top: **Crop · Blur · Line · Arrow · Rect ·
-Callout**, then seven colours (the last one used is remembered), **Undo**,
-**↺ Original**, and **Cancel · Save**. Keys `1`–`6` pick a tool, `Esc`
-cancels, `Ctrl+Z` (`⌘Z`) undoes, `Ctrl+Enter` or `Ctrl+S` (`⌘`) saves.
+over the page you are testing, filling its window, with zoom buttons in
+the title row. On a page Enloop cannot script it opens over the side
+panel instead, where dragging the panel's edge widens it. (Never a
+separate tab: Chrome drops the connected folder's grant when an extension
+tab closes, and the save right after would fail.) Tools across the top: **Select · Crop · Blur · Line ·
+Arrow · Rect · Callout**, then seven colours (the last one used is
+remembered), **Undo · Redo**, **Delete** when something is selected,
+**↺ Original**, and **Cancel · Save**. Keys `1`–`7` pick a tool (`V` is
+Select too), `Esc` drops the selection and then cancels, `Ctrl+Z` (`⌘Z`)
+undoes, `Ctrl+Shift+Z` or `Ctrl+Y` redoes, `Delete` removes the selected
+shape, `Ctrl+Enter` or `Ctrl+S` (`⌘`) saves.
 
-Drawing is append-and-undo: there are no selection handles, and a mark is
-removed by undoing back past it. Crop is the exception — drawing a new
-crop replaces the old one, and the outside is dimmed while you draw. Blur
-pixelates live. Callouts number themselves in the order drawn, continuing
-after any the runner drew. Stroke widths, arrow heads and disc sizes scale
+Every shape stays editable after it is drawn — the runner's included.
+With **Select**, click a shape to pick it (the one on top wins), drag it
+to move it, drag a corner or edge handle to resize a box or the crop, or
+an end handle to re-aim a line or arrow; a callout moves only. A swatch
+recolours the selected shape; **Delete** removes it, and callouts
+renumber to stay 1, 2, 3. A shape you have just drawn is selected, ready
+for a nudge. Drawing a new crop replaces the old one, and the outside is
+dimmed while you draw. Blur previews live. Callouts number themselves in
+the order drawn, continuing after any the runner drew. Stroke widths,
+arrow heads and disc sizes scale
 with the picture, so a 4K capture and a phone-width one read the same
 once shrunk. Save writes `NN.png` and returns to the tab you came from;
 the source file is never touched, so **↺ Original** — in the editor or on
@@ -141,6 +166,32 @@ A free run has the same buttons under its notes. Each capture inserts
 focused), so the notes say where each picture goes; delete the placeholder
 and the picture is appended at the end of the export instead. `✎ Edit`,
 captions and `✕` work as on a case run.
+
+## A guide is for the end user, and it comes last
+
+Two things set a guide apart from every other case in the folder, and
+both follow from who reads it.
+
+**It says less.** A tester needs the selector, the fixture, the note
+about why a step is there, the verdict and the comment thread. The person
+reading a guide needs none of that — they are trying to get something
+done, and every internal name in the text is a word they have to skip.
+So the export keeps the title, the goal, what to have ready, each step's
+action in the words on screen, the pictures, and *You should see*.
+Selectors, `### Note`, photo specs, test data, verdicts, comments and
+ratings never reach it. Write the guide knowing that: if a sentence only
+makes sense to someone who has seen the code, it does not belong.
+
+**It is written on the final version of the feature.** A guide's
+screenshots are the UI at the moment of the run. A label renamed after
+the run, a button moved, a dialog redesigned — and every picture that
+shows it is wrong, and nobody runs a guide twice to find out. So the
+guide is the last step of a feature, not one of the first: after the
+**quick** or **full** case has passed on the build that will ship, after
+the last UI change is in, right before the final push. Write cases early
+and often; write the guide once, at the end. If the feature changes after
+the guide was exported, the answer is a new run and a new export, not an
+edit to `README.md` — the words may still be right, the pictures are not.
 
 ## `@kind guide`
 

@@ -99,6 +99,34 @@ No skill hardcodes a path: the app repo is wherever you invoke it, and
 everything about Enloop itself — the grammar, the parser that validates what
 the skills write — is inside the installed plugin.
 
+### Which deployments, before any case
+
+The third thing the skills need is not a setting but a file: the project's
+**environments** — `environments.json` at the data folder root, the
+deployments a case runs against, an address per domain and a value per
+variable in each. The authoring skills read it before they read a line of
+source, and when it says nothing for this project they stop and ask one
+question: set the environments up now, or continue with local only. They
+never go on with neither. That is the same dialogue **setup** runs, and
+the same one `/enloop:setup environments` runs on its own; see below.
+
+Two things follow from having the file in view. A variable a case leaves
+to the environment — no `Default:`, no generator, its name in the project's
+contract — must have a value in at least one environment *now*: the
+validator refuses the case otherwise, because a run there would have to
+ask. The skills take the value from a seed or fixture, or, where the
+environment has a **reach** into its data, record a **lookup** — a
+read-only `select` kept on the environment — and run it with
+`enloop-case.mjs lookup … --record` so the answer lands in the file. A
+production environment answers a lookup only when asked in so many words
+(`--production`), and what it answers is never recorded: a value found on
+prod stays with the tester.
+
+Temporary deployments — a preview that exists for one branch — go to
+`environments.local.json` beside the shared file, git-ignored and this
+machine only, with an expiry. Every skill reads both files as one and
+drops what has expired.
+
 ## Setting up a repo
 
 Run this once per app repo, before the first case:
@@ -108,13 +136,36 @@ Run this once per app repo, before the first case:
 $setup                 # Codex
 ```
 
-It settles two things that every later case depends on.
+It settles three things that every later case depends on.
 
 **The project name.** One connected folder normally holds cases from every
 repo you write from, so a case needs to say which app it belongs to.
 The **setup** skill agrees a name with you and records it, after which
 the authoring skills title cases `<Project>: ...` and set `@project` without
 asking again.
+
+**The deployments**, recorded as environments in the data folder's
+`environments.json`. Local comes from the repo — the dev server port, a
+compose file, `.env.example` — without a question; when nothing is found
+it is recorded as `http://localhost:3000` and the report says it was a
+guess. Then one closed question, repeated until you say done: name the
+next environment and paste how you reach it. A `tsh` line is parsed into
+a Teleport **reach** (proxy, database service, user, database name); a
+command becomes a probe that must exit 0 when the deployment answers; a
+sentence is kept for a human; an address is the environment's `DOMAIN`,
+and a connection URL loses its password before anything is written. The
+name does the rest — `prod` is marked production, `pr-42` or "preview" is
+temporary. When the paste carried no address — a `tsh` line never does —
+the skill asks one more question for it, and for a temporary one, until
+when; today if you give no date. Those are the only two questions an
+environment gets. A `tsh` or command reach is probed as soon as it is
+recorded, and recorded whether the probe passed or not: a VPN that is
+down today is not a reason to lose what you typed. The one thing left to
+you is `tsh login` — the skill shows the exact line and waits for you to
+run it, since a certificate is the one thing it cannot obtain. Staging
+becomes the default when there is one, else local, never prod. To add or
+repair environments later, run `/enloop:setup environments`; it does only
+this step.
 
 **The selector convention**, written into the app repo's agent instructions —
 `AGENTS.md`, `CLAUDE.md`, or both, whichever that repo already has. Highlight
@@ -193,8 +244,13 @@ Then open the extension, find the case in the Library, and run it.
 
 A guide is a case whose reader is the end user — the same grammar, panel and
 run, but the prose says how to *use* the feature, and each step that
-changes the screen says what to photograph. The **guide** skill writes one
-from the app's source, from inside its repo:
+changes the screen says what to photograph. It carries less than a case:
+selectors, notes, test data, verdicts and comments never reach the reader.
+And it is written last — on the final version of the feature, right before
+the push that ships it — because its screenshots are the UI at the moment
+of the run, and nobody runs a guide twice to find out a label moved. Cases
+come early and often; the guide comes once, at the end. The **guide**
+skill writes one from the app's source, from inside its repo:
 
 ```
 /enloop:guide place an order    # Claude Code

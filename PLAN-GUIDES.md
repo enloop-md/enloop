@@ -885,10 +885,10 @@ this one.
   `metrics`, and a `Label: <selector> — text` spec key. Deferred because
   the legend under the figure already carries the text and reads better
   in Markdown.
-- **Select, move and resize drawn shapes.** The editor is append-only
-  with undo (G7). A hit-test and drag pass on the base canvas would add
-  selection handles; that is the point at which Fabric or Konva starts
-  to pay for itself — reconsider G8 then.
+- ~~**Select, move and resize drawn shapes.**~~ Built the same day, in
+  the hand-written editor (`lib/screenshot-edit.ts`): hit-testing,
+  handles, move, resize, recolour, delete, undo/redo over the history.
+  G8 stands.
 - **Auto-blur by pattern.** `Blur: /\d{4} \d{4} \d{4} \d{4}/` finding text
   nodes by regex rather than by selector; needs a text-walker in the
   injected script and rect-per-range via `Range.getClientRects()`.

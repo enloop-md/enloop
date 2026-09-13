@@ -13,12 +13,16 @@ import { SuiteDetailScreen } from "./screens/SuiteDetailScreen.js";
 import { SuiteEditorScreen } from "./screens/SuiteEditorScreen.js";
 import { SettingsScreen } from "./screens/SettingsScreen.js";
 import { EnvironmentsScreen } from "./screens/EnvironmentsScreen.js";
+import { EditorOverlay } from "./EditorOverlay.js";
 
 export default function App() {
   return (
     <ErrorBoundary>
       <DataStoreProvider>
-        <Shell />
+        <div className="relative h-full">
+          <Shell />
+          <EditorOverlay />
+        </div>
       </DataStoreProvider>
     </ErrorBoundary>
   );

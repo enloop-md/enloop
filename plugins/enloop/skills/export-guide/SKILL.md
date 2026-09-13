@@ -110,4 +110,7 @@ the run. Say what you changed, sentence by sentence.
 Absolute paths: the guide folder, and each file in it. Repeat the `WARN`
 lines. If the export is Markdown, say that `images/` must travel with
 `README.md`; if HTML, that the one file is self-contained and opens
-offline.
+offline. Then one sentence the reader will need later: the pictures are
+the UI at the time of this run, so a change to the feature after today
+means a new run and a new export with `--force`, never an edit to the
+images.

@@ -5902,6 +5902,12 @@ function lintCase(raw, options = {}) {
 	const createdAt = (/* @__PURE__ */ new Date()).toISOString();
 	const environmentNames = new Set(options.environmentNames ?? []);
 	const environmentsKnown = options.environmentNames !== void 0;
+	const providers = options.environmentProviders;
+	const providersKnown = providers !== void 0;
+	const projectEnvironments = options.environmentsOfProject ?? [...new Set(Object.values(providers ?? {}).flat())];
+	const providedBy = (name) => providers?.[name] ?? [];
+	const missingIn = (name) => projectEnvironments.filter((e) => !providedBy(name).includes(e));
+	const unprovided = [];
 	const declared = parseCaseDocument(raw, {
 		version: "1",
 		createdAt
@@ -5971,8 +5977,25 @@ function lintCase(raw, options = {}) {
 		message: `\`${variable.name}\` is declared under both \`# Domains\` and \`# Variables\`. An address is a domain; keep the one declaration.`
 	});
 	for (const domain of declared.domains) {
-		if (domain.implicit) continue;
 		const def = domain.defaultValue?.trim() ?? "";
+		if (!def && providersKnown && environmentNames.has(domain.name)) {
+			if (providedBy(domain.name).length === 0) {
+				unprovided.push(domain.name);
+				errors.push({
+					rule: "2b",
+					at: domain.name,
+					message: `%${domain.name}% is left to the environment, but no environment of this project has an address for it — the run would have to ask. Record one: enloop-case.mjs environments <folder> "<project>" --env <name> --set ${domain.name}=https://host, or run the environment master (/enloop:setup environments).`
+				});
+			} else {
+				const missing = missingIn(domain.name);
+				if (missing.length > 0) warnings.push({
+					rule: "2b",
+					at: domain.name,
+					message: `${domain.name} has no address in ${missing.join(", ")} — a run there will ask.`
+				});
+			}
+		}
+		if (domain.implicit) continue;
 		if (!def) warnings.push({
 			rule: "2b",
 			at: domain.name,
@@ -6012,13 +6035,30 @@ function lintCase(raw, options = {}) {
 		message: `@version is ${doc.formatVersion}; this parser implements ${CURRENT_FORMAT_VERSION}. Re-read the grammar before trusting anything below.`
 	});
 	for (const variable of declared.variables) {
-		if (!variable.defaultValue?.trim() && !variable.generator && !environmentNames.has(variable.name)) {
+		const leftToEnvironment = !variable.defaultValue?.trim() && !variable.generator;
+		if (leftToEnvironment && !environmentNames.has(variable.name)) {
 			const inAddress = new RegExp(`[/?=&]%${variable.name}%`).test(everyField);
 			errors.push({
 				rule: "6",
 				at: variable.name,
 				message: inAddress ? `%${variable.name}% sits inside an address and has no value — no \`Default:\`, no \`Generator:\`, no environment. If the run itself produces it (a record created in an earlier step), the address cannot be written: drop the variable, say where the tester clicks, and give the address shape in backticks as help — \`/user.php?user=<id>\`. If it is fixed data, give it a real default read from the repo.` : "No `Default:`, no `Generator:`, and no environment provides it — the run would have to ask. Give it a default (a fixture from the repo, a value from the rules file), a generator, or record it per environment: `enloop-case.mjs environments <data folder> \"<project>\" --variable NAME --env <name> --set NAME=value`." + (environmentsKnown ? "" : " (Pass --data-dir so environments.json is consulted.)")
 			});
+		} else if (leftToEnvironment && providersKnown) {
+			if (providedBy(variable.name).length === 0) {
+				unprovided.push(variable.name);
+				errors.push({
+					rule: "6",
+					at: variable.name,
+					message: `%${variable.name}% is left to the environment, but no environment of this project has a value for it — the run would have to ask. Record one: enloop-case.mjs environments <folder> "<project>" --env <name> --set ${variable.name}=value, or run the environment master (/enloop:setup environments).`
+				});
+			} else {
+				const missing = missingIn(variable.name);
+				if (missing.length > 0) warnings.push({
+					rule: "6",
+					at: variable.name,
+					message: `${variable.name} is empty in ${missing.join(", ")} — a run there will ask.`
+				});
+			}
 		}
 		if (variable.name === "BASE_URL" || variable.generator === "page-origin" && everyField.includes(`%${variable.name}%/`)) warnings.push({
 			rule: "2b",
@@ -6305,7 +6345,8 @@ function lintCase(raw, options = {}) {
 			uiSteps: uiSteps.length,
 			unresolved,
 			asks,
-			fromEnvironment
+			fromEnvironment,
+			unprovided
 		}
 	};
 }
@@ -6904,6 +6945,48 @@ function renderFreeRunGuideHtml(free, notes, opts) {
 * server-side when it lands (branch `backend`), so `enloop export`
 * round-trips it.
 */
+/**
+* How an agent gets to this deployment's *data* — the part of an
+* environment the panel never touches. A staging database behind
+* Teleport, a VPN that has to be up before `psql` answers, or just a
+* sentence for a human. The validator (Node, in the app repo) is the only
+* thing that opens a tunnel or runs a probe; the panel shows one line.
+*
+* Nothing here is a secret. `tsh` holds its own certificates, a `command`
+* probe is the user's own script, and a pasted URL loses its password
+* before it is recorded. Hostnames, service names, user names, ports:
+* yes. Passwords and tokens: never.
+*/
+var reachSchema = objectType({
+	transport: enumType([
+		"tsh",
+		"command",
+		"manual"
+	]),
+	/** tsh: the Teleport proxy host, `teleport.example.com[:443]`. */
+	proxy: stringType().optional(),
+	/** tsh: the database service name from `tsh db ls`. */
+	dbService: stringType().optional(),
+	/** tsh: `--db-user`. */
+	dbUser: stringType().optional(),
+	/** tsh: `--db-name`. */
+	dbName: stringType().optional(),
+	/** tsh: which client the probe and lookups use. Default `postgres`. */
+	dbProtocol: enumType(["postgres", "mysql"]).optional(),
+	/** command: exits 0 when the deployment's data is reachable. Run with
+	* `sh -c` from the data folder. */
+	probe: stringType().optional(),
+	/** command: prints `host:port` of a database reachable from this
+	* machine while the probe holds. Without it, lookups on a `command`
+	* reach are refused. */
+	dbAddress: stringType().optional(),
+	/** manual, and any transport: one sentence for a human. */
+	note: stringType().optional(),
+	/** ISO timestamp of the last successful probe. */
+	verifiedAt: stringType().optional(),
+	/** Why the last probe failed; absent when it passed. */
+	verifyError: stringType().optional()
+});
 var environmentSchema = objectType({
 	/** Stable key, generated once — survives renames. */
 	id: stringType(),
@@ -6917,13 +7000,31 @@ var environmentSchema = objectType({
 	* deployment the project normally tests against. At most one per
 	* project is meaningful; the first flagged one wins. */
 	default: booleanType().optional(),
+	/** A deployment whose data is real people's. Discovery against it is
+	* opt-in per command, and a value found there is never recorded. */
+	production: booleanType().optional(),
+	/** Lives in `environments.local.json` — this machine only, never
+	* committed. Set by the reader from which file the entry came, honoured
+	* by the writer; a value inside the file itself is ignored on read. */
+	local: booleanType().optional(),
+	/** ISO timestamp after which a local environment is gone: dropped on
+	* read, pruned on the next write. A per-PR preview lasts an afternoon;
+	* the file should not remember it for a month. Only meaningful with
+	* `local`. */
+	expires: stringType().optional(),
 	/** Domain name → origin (`https://staging.example.test`). Only names in
 	* the file's `domains` are shown or edited, but unknown keys survive
 	* read→write untouched. Defaulted so files written before domains were
 	* split out of `values` still parse. */
 	domains: recordType(stringType()).default({}),
 	/** Variable name → value. Same rules as `domains`. */
-	values: recordType(stringType())
+	values: recordType(stringType()),
+	/** How to get to this deployment's data. See `reachSchema`. */
+	reach: reachSchema.optional(),
+	/** Variable name → a read-only SQL query that finds its value on this
+	* deployment. Run by `enloop-case.mjs lookup` through the reach; the
+	* result lands in `values` (never on a production environment). */
+	lookups: recordType(stringType()).optional()
 });
 var environmentsFileSchema = objectType({
 	/** The project's deployments contract: which domain names every
@@ -6963,5 +7064,144 @@ function environmentsForProject(file, project) {
 function newEnvironmentId() {
 	return `env-${crypto.randomUUID().slice(0, 8)}`;
 }
+/** `YYYY-MM-DD` of `now` in local time. */
+function localDay(now) {
+	const pad = (n) => String(n).padStart(2, "0");
+	return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+/**
+* Local-time end of `day` (a `YYYY-MM-DD`, default today) as ISO with the
+* machine's offset — `2026-09-11T23:59:59+03:00`. "Temporary" means
+* "until I go home", and a timestamp in UTC would end a Moscow afternoon
+* at three in the morning or three in the afternoon depending on which
+* side of midnight the machine sits.
+*/
+function endOfDayIso(day, now = /* @__PURE__ */ new Date()) {
+	const target = day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : localDay(now);
+	const [y, m, d] = target.split("-").map(Number);
+	const offsetMinutes = -new Date(y, m - 1, d, 23, 59, 59).getTimezoneOffset();
+	const sign = offsetMinutes >= 0 ? "+" : "-";
+	const abs = Math.abs(offsetMinutes);
+	const pad = (n) => String(n).padStart(2, "0");
+	return `${target}T23:59:59${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+}
+/** Whether `env` is past its `expires` at `now`. Never true without one,
+* and never true for an `expires` that does not parse — a garbled date is
+* not a reason to lose an environment someone typed. */
+function isExpired(env, now = /* @__PURE__ */ new Date()) {
+	if (!env.expires) return false;
+	const at = Date.parse(env.expires);
+	return Number.isFinite(at) && at < now.getTime();
+}
+/**
+* Both files → one. Entries from the local file carry `local: true`;
+* expired ones are dropped; the local file's own `domains` / `variables`
+* are ignored — the contract lives in the shared file only, so a
+* temporary environment cannot quietly widen it on one machine.
+*/
+function mergeEnvironmentFiles(shared, local, now = /* @__PURE__ */ new Date()) {
+	const sharedIds = new Set(shared.environments.map((e) => e.id));
+	const locals = (local?.environments ?? []).filter((e) => !sharedIds.has(e.id)).map((e) => ({
+		...e,
+		local: true
+	})).filter((e) => !isExpired(e, now));
+	return {
+		domains: shared.domains,
+		variables: shared.variables,
+		environments: [...shared.environments.map((e) => stripUndefined({
+			...e,
+			local: void 0
+		})), ...locals]
+	};
+}
+/**
+* One → both. Entries flagged `local` go to the second file, minus the
+* flag and with empty contract arrays; expired ones are pruned on the
+* way. `local` is what the reader stamped, so a round trip through the
+* panel or the validator keeps every entry in the file it came from.
+*/
+function splitEnvironmentFiles(merged, now = /* @__PURE__ */ new Date()) {
+	const shared = [];
+	const local = [];
+	for (const env of merged.environments) if (env.local) {
+		if (!isExpired(env, now)) local.push(stripUndefined({
+			...env,
+			local: void 0
+		}));
+	} else shared.push(stripUndefined({
+		...env,
+		local: void 0,
+		expires: void 0
+	}));
+	return {
+		shared: {
+			domains: merged.domains,
+			variables: merged.variables,
+			environments: shared
+		},
+		local: {
+			domains: [],
+			variables: [],
+			environments: local
+		}
+	};
+}
+function stripUndefined(env) {
+	return Object.fromEntries(Object.entries(env).filter(([, v]) => v !== void 0));
+}
+/**
+* The environment discovery runs against when none was named: the
+* project's default, else its first non-production one, else none.
+* Production is never reached for implicitly — a lookup that lands on
+* real customers because nobody flagged staging is the failure this
+* exists to prevent.
+*/
+function discoveryEnvironment(file, project) {
+	const mine = environmentsForProject(file, project);
+	return mine.find((e) => e.default) ?? mine.find((e) => !e.production) ?? null;
+}
+/**
+* For every name in the contract, which environments of `project` hold a
+* non-empty value for it. A name with an empty list is one the linter
+* refuses: "the environment provides it" is only true when one does.
+*/
+function providersByName(file, project) {
+	const mine = environmentsForProject(file, project);
+	const out = {};
+	for (const name of file.domains) out[name] = mine.filter((e) => (e.domains[name] ?? "").trim()).map((e) => e.name);
+	for (const name of file.variables) out[name] = mine.filter((e) => (e.values[name] ?? "").trim()).map((e) => e.name);
+	return out;
+}
+/** How long ago `iso` was, for a person: `just now`, `12 min ago`,
+* `3 h ago`, `2 d ago`, or the date when older than a week. */
+function ago(iso, now) {
+	const at = Date.parse(iso);
+	if (!Number.isFinite(at)) return iso;
+	const s = Math.max(0, Math.round((now.getTime() - at) / 1e3));
+	if (s < 60) return "just now";
+	if (s < 3600) return `${Math.round(s / 60)} min ago`;
+	if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+	if (s < 604800) return `${Math.round(s / 86400)} d ago`;
+	return iso.slice(0, 10);
+}
+/**
+* One line for the panel. The panel never opens a tunnel, so what it can
+* honestly say is what the reach is and when it last worked.
+*
+*   via tsh staging-postgres as readonly@shop · verified 2 h ago
+*   via command · unreachable: command exited 1
+*   manual: VPN "Office", then psql -h db.internal
+*/
+function describeReach(reach, now = /* @__PURE__ */ new Date()) {
+	let head;
+	if (reach.transport === "manual") return `manual: ${reach.note?.trim() || "(no note)"}`;
+	else if (reach.transport === "tsh") {
+		const who = [reach.dbUser, reach.dbName].filter(Boolean).join("@");
+		head = `via tsh ${reach.dbService ?? "(no service)"}${who ? ` as ${who}` : ""}`;
+	} else head = "via command";
+	if (reach.verifyError) return `${head} · unreachable: ${reach.verifyError}`;
+	if (reach.verifiedAt) return `${head} · verified ${ago(reach.verifiedAt, now)}`;
+	return `${head} · not yet verified`;
+}
 //#endregion
-export { AGENT_PROTOCOL_VERSION, CURRENT_FORMAT_VERSION, compareVersionIds, describeRating, emptyEnvironments, environmentsFileSchema, environmentsForProject, fileSlug, freeRunFileSchema, guideSteps, isExemplaryRating, isPoorRating, lintCase, missingEnvironmentValues, newEnvironmentId, newTestCaseId, nextMajorId, nextMinorId, parseCaseDocument, photoPlaceholders, ratingStars, renderCaseMarkdown, renderFreeRunGuideHtml, renderFreeRunGuideMarkdown, renderGuideHtml, renderGuideMarkdown, runFileSchema, screenshotStem, stepNumberLabels, stripViewerComment, versionIdFromFileName, viewerLink, withViewerComment };
+export { AGENT_PROTOCOL_VERSION, CURRENT_FORMAT_VERSION, compareVersionIds, describeRating, describeReach, discoveryEnvironment, emptyEnvironments, endOfDayIso, environmentsFileSchema, environmentsForProject, fileSlug, freeRunFileSchema, guideSteps, isExemplaryRating, isExpired, isPoorRating, lintCase, mergeEnvironmentFiles, missingEnvironmentValues, newEnvironmentId, newTestCaseId, nextMajorId, nextMinorId, parseCaseDocument, photoPlaceholders, providersByName, ratingStars, renderCaseMarkdown, renderFreeRunGuideHtml, renderFreeRunGuideMarkdown, renderGuideHtml, renderGuideMarkdown, runFileSchema, screenshotStem, splitEnvironmentFiles, stepNumberLabels, stripViewerComment, versionIdFromFileName, viewerLink, withViewerComment };

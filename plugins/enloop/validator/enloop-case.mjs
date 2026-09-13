@@ -13,7 +13,14 @@
  *                        [--project <name>] [--case <id> [--patch]] [--suite <suiteId>]
  *   node enloop-case.mjs environments <data folder> "<project>"   the deployments cases run
  *                        [--domain NAME] [--variable NAME]         against: read, or record
- *                        [--env <name> [--set NAME=value]...] [--default <name>]
+ *                        [--env <name> [--set NAME=value]...] [--default]
+ *                        [--temporary | --until YYYY-MM-DD] [--production | --no-production]
+ *                        [--reach tsh|command|manual|none …] [--tsh "<pasted>"] [--lookup NAME="select …"]
+ *   node enloop-case.mjs reach <data folder> "<project>" [--env <name> | --all]   can this
+ *                                                      machine get to the environment's data
+ *   node enloop-case.mjs lookup <data folder> "<project>" [--env <name>]   find a value
+ *                        (--variable NAME | --sql "select …" | --all)      on the deployment
+ *                        [--record] [--production]
  *   node enloop-case.mjs compat <old.md> <new.md>      can new replace old under a live run
  *   node enloop-case.mjs agent-status <data folder>    is any server watching the channel
  *   node enloop-case.mjs brief [--example]             the floor: a clean minimal case + the rules
@@ -58,6 +65,12 @@ import {
   environmentsForProject,
   missingEnvironmentValues,
   newEnvironmentId,
+  mergeEnvironmentFiles,
+  splitEnvironmentFiles,
+  endOfDayIso,
+  discoveryEnvironment,
+  providersByName,
+  describeReach,
   parseCaseDocument,
   runFileSchema,
   freeRunFileSchema,
@@ -72,6 +85,7 @@ import {
   isPoorRating,
   ratingStars,
 } from "./lib.mjs";
+import { probeReach, withTunnel, parseTshString, whyNotReadOnly, querySql } from "./reach.mjs";
 
 const [command, ...rest] = process.argv.slice(2);
 
@@ -85,17 +99,76 @@ function flag(name) {
   return i === -1 ? undefined : rest[i + 1];
 }
 
+/** The positionals of `rest` — the data folder and the project name —
+ * with each flag in `valued` skipping its value. A `--flag` that is in
+ * neither set is refused by name before anything is read: a typo such as
+ * `--proxxy` would otherwise drop its value into the project name and
+ * quietly create a project called "Shop teleport.new". */
+function positionalsOf(valued, booleans) {
+  const out = [];
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i];
+    if (a.startsWith("--")) {
+      if (valued.has(a)) i++;
+      else if (!booleans.has(a)) die(`unknown flag ${a}`);
+      continue;
+    }
+    out.push(a);
+  }
+  return out;
+}
+
+/** E7, wherever it matters: a deployment called prod is production
+ * whether or not anyone flagged it — a hand-edited file or a panel rename
+ * never went through the name match that `environments --env` applies. */
+function isProduction(e) {
+  return e.production ?? /\bprod(uction)?\b/i.test(e.name);
+}
+
 /** `environments.json` at the data folder root, or an empty file when it
  * is absent or unreadable — the same degradation the panel applies. The
  * second value says which it was, because "no environments" and "could not
  * look" mean different things to the linter. */
 function readEnvironments(dataDir) {
-  const file = path.join(path.resolve(dataDir), "environments.json");
+  const root = path.resolve(dataDir);
+  const file = path.join(root, "environments.json");
+  // Temporary environments — this machine only, git-ignored, each with
+  // an expiry. Merged in on read so every consumer sees one list; split
+  // back out on write so nothing temporary reaches the committed file.
+  const localFile = path.join(root, "environments.local.json");
+  const parse = (p) => {
+    try {
+      const parsed = environmentsFileSchema.safeParse(JSON.parse(readFileSync(p, "utf8")));
+      return parsed.success ? parsed.data : null;
+    } catch {
+      return null;
+    }
+  };
+  const shared = parse(file);
+  const local = parse(localFile);
+  return {
+    file,
+    localFile,
+    data: mergeEnvironmentFiles(shared ?? emptyEnvironments(), local),
+    known: shared ? true : isDir(dataDir),
+  };
+}
+
+/** The counterpart of `readEnvironments`: one merged list back into its
+ * two files. The local file is created only once something temporary
+ * exists, and pruned of expired entries on every write. */
+function writeEnvironments(env, data) {
+  const { shared, local } = splitEnvironmentFiles(data);
+  writeFileSync(env.file, `${JSON.stringify(shared, null, 2)}\n`, "utf8");
+  let existsLocal = false;
   try {
-    const parsed = environmentsFileSchema.safeParse(JSON.parse(readFileSync(file, "utf8")));
-    return { file, data: parsed.success ? parsed.data : emptyEnvironments(), known: parsed.success };
+    statSync(env.localFile);
+    existsLocal = true;
   } catch {
-    return { file, data: emptyEnvironments(), known: isDir(dataDir) };
+    // Not there yet.
+  }
+  if (local.environments.length > 0 || existsLocal) {
+    writeFileSync(env.localFile, `${JSON.stringify(local, null, 2)}\n`, "utf8");
   }
 }
 
@@ -122,6 +195,93 @@ function projectNameOf(dataDir) {
  * contract, since every environment has the same shape by construction. */
 function environmentNamesOf(env) {
   return env.known ? [...env.data.domains, ...env.data.variables] : undefined;
+}
+
+/**
+ * What the linter is told about the folder's environments: the contract's
+ * names, and which environments of the case's project hold a value for
+ * each. The second is why the project has to be known before the lint —
+ * a value recorded on another project's staging is no help here — so the
+ * document is parsed once for its `@project` when `--project` was not
+ * given. Throws what `parseCaseDocument` throws; the caller already
+ * reports that as "cannot parse".
+ */
+function environmentOptionsOf(raw, env, expectProject) {
+  const environmentNames = environmentNamesOf(env);
+  if (!environmentNames) return {};
+  const project =
+    expectProject ?? parseCaseDocument(raw, { version: "1", createdAt: new Date().toISOString() }).project;
+  return {
+    environmentNames,
+    environmentProviders: providersByName(env.data, project ?? ""),
+    environmentsOfProject: environmentsForProject(env.data, project ?? "").map((e) => e.name),
+  };
+}
+
+/** Now, as ISO with the machine's offset — the same shape `endOfDayIso`
+ * writes, so a `verifiedAt` beside an `expires` reads as one clock. */
+function nowIso(now = new Date()) {
+  const pad = (n) => String(n).padStart(2, "0");
+  const offset = -now.getTimezoneOffset();
+  const sign = offset >= 0 ? "+" : "-";
+  const abs = Math.abs(offset);
+  return (
+    `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}` +
+    `T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}` +
+    `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`
+  );
+}
+
+/** The one line `environments` prints under an environment that has a
+ * reach, and the one the panel's `describeReach` would say less of. */
+function reachLine(reach) {
+  if (reach.transport === "manual") return `manual: ${reach.note?.trim() || "(no note)"}`;
+  let head;
+  if (reach.transport === "tsh") {
+    const who = [reach.dbUser, reach.dbName].filter(Boolean).join("@");
+    head = `tsh ${reach.dbService ?? "(no service)"}${who ? ` as ${who}` : ""}${reach.proxy ? ` via ${reach.proxy}` : ""}`;
+  } else {
+    head = `command \`${reach.probe ?? ""}\``;
+  }
+  if (reach.verifyError) return `${head} — unreachable: ${reach.verifyError}`;
+  if (reach.verifiedAt) return `${head} — verified ${reach.verifiedAt}`;
+  return `${head} — not yet verified`;
+}
+
+/**
+ * Probe one environment's reach and write the verdict into it (E10: the
+ * result is recorded either way — a VPN that is down today is not a
+ * reason to lose what the user typed). Returns the `reach` command's
+ * status word and detail for the line it prints.
+ */
+async function probeInto(env, e, cwd) {
+  const reach = e.reach;
+  if (!reach) return { status: "UNPROBED", detail: "no reach recorded" };
+  if (reach.transport === "manual") return { status: "UNPROBED", detail: `manual: ${reach.note?.trim() || "(no note)"}` };
+  const result = await probeReach(reach, { cwd });
+  if (result.ok) {
+    reach.verifiedAt = nowIso();
+    delete reach.verifyError;
+    const head = reach.transport === "tsh" ? `tsh ${reach.dbService}` : "command";
+    return { status: "REACHABLE", detail: `${head} (${result.detail})`, ok: true };
+  }
+  reach.verifyError = result.detail;
+  return { status: result.needsLogin ? "LOGIN NEEDED" : "UNREACHABLE", detail: result.detail, ok: false };
+}
+
+/** The environment a `reach` or `lookup` acts on: `--env` by name, else
+ * the project's discovery environment (E13 — never production unless it
+ * was named). Exits when the name is unknown. */
+function pickEnvironment(data, project, envName) {
+  const mine = environmentsForProject(data, project);
+  if (envName) {
+    const found = mine.find((e) => e.name.trim().toLowerCase() === envName.trim().toLowerCase());
+    if (!found) die(`no environment "${envName}" for ${project} (have: ${mine.map((e) => e.name).join(", ") || "none"})`);
+    return found;
+  }
+  const chosen = discoveryEnvironment(data, project);
+  if (!chosen) die(`no environment for ${project} — record one: enloop-case.mjs environments <folder> "${project}" --env <name> --set DOMAIN=…`);
+  return chosen;
 }
 
 function isDir(p) {
@@ -182,7 +342,8 @@ function coldLine(cold) {
     `asks ${cold.asks.length} value${cold.asks.length === 1 ? "" : "s"} before start` +
     `${cold.asks.length ? ` (${cold.asks.join(", ")})` : ""} · ` +
     `unresolved: ${cold.unresolved.length ? cold.unresolved.join(", ") : "none"}` +
-    `${cold.fromEnvironment?.length ? ` · from environment: ${cold.fromEnvironment.join(", ")}` : ""}`
+    `${cold.fromEnvironment?.length ? ` · from environment: ${cold.fromEnvironment.join(", ")}` : ""}` +
+    `${cold.unprovided?.length ? ` · unprovided: ${cold.unprovided.join(", ")}` : ""}`
   );
 }
 
@@ -365,10 +526,6 @@ switch (command) {
     }
     const expectProject = flag("project");
     const findingsOnly = rest.includes("--findings-only");
-    // Without the folder the linter cannot see which names the project's
-    // environments provide, and reports every environment-supplied
-    // variable as a question the case would ask.
-    const environmentNames = flag("data-dir") ? environmentNamesOf(readEnvironments(flag("data-dir"))) : undefined;
 
     let raw;
     try {
@@ -383,7 +540,13 @@ switch (command) {
     // does.
     let result;
     try {
-      result = lintCase(raw, { expectProject, environmentNames });
+      // Without the folder the linter cannot see which names the project's
+      // environments provide, and reports every environment-supplied
+      // variable as a question the case would ask.
+      const environment = flag("data-dir")
+        ? environmentOptionsOf(raw, readEnvironments(flag("data-dir")), expectProject)
+        : {};
+      result = lintCase(raw, { expectProject, ...environment });
     } catch (e) {
       console.error(`Cannot parse ${file}: ${e.message}`);
       process.exit(1);
@@ -549,7 +712,7 @@ switch (command) {
     try {
       result = lintCase(raw, {
         expectProject: flag("project"),
-        environmentNames: environmentNamesOf(readEnvironments(dataDirArg)),
+        ...environmentOptionsOf(raw, readEnvironments(dataDirArg), flag("project")),
       });
     } catch (e) {
       console.error(`Cannot parse ${file}: ${e.message}`);
@@ -558,7 +721,20 @@ switch (command) {
     }
     show("ERRORS — nothing was written; fix these and re-run", result.errors);
     show("WARNINGS — you decide; each one is a judgement the contract leaves open", result.warnings);
-    if (!result.ok) process.exit(1);
+    if (!result.ok) {
+      // The names the case leaves to the environment that no environment
+      // of this project holds — the run would ask for them (E9). Named
+      // again here, apart from the rule text, because this is the one
+      // refusal whose fix is outside the case file.
+      const unprovided = result.cold?.unprovided ?? [];
+      if (unprovided.length) {
+        console.error(
+          `\nunprovided  ${unprovided.join(", ")} — no environment of this project has a value; ` +
+            `record one (environments … --env <name> --set NAME=value, or --lookup) before writing.`,
+        );
+      }
+      process.exit(1);
+    }
 
     if (!isDir(dataDirArg)) {
       console.error(
@@ -933,28 +1109,55 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
    *   … --variable QA_EMAIL                                   add to the contract
    *   … --env staging --set APP=https://… --set QA_EMAIL=…    create/fill one
    *   … --env staging --default                               the cold-run one
+   *   … --env pr-42 --temporary | --until 2026-09-12          this machine, gone after
+   *   … --env prod --production | --no-production             real people's data (E7)
+   *   … --env staging --tsh "tsh login --proxy=… && tsh db connect S …"   how to get to
+   *   … --env staging --reach tsh --proxy H --db-service S …               its data, then
+   *   … --env office --reach command --probe "…" [--db-address "…"]        probed once
+   *   … --env office --reach manual --note "VPN Office, then psql …"       (never probed)
+   *   … --env staging --lookup QA_EMAIL="select …"            a query that finds a value
    *
    * Names are uppercased to the placeholder convention; an existing
    * environment is matched by name within the project, case-insensitively.
    * Exit 0 with the file printed after any change.
    */
   case "environments": {
-    const positional = [];
-    const VALUED = new Set(["--domain", "--variable", "--env", "--set"]);
-    for (let i = 0; i < rest.length; i++) {
-      if (rest[i].startsWith("--")) {
-        if (VALUED.has(rest[i])) i++;
-        continue;
-      }
-      positional.push(rest[i]);
-    }
-    const [dataDir, ...projectParts] = positional;
+    const VALUED = new Set([
+      "--domain",
+      "--variable",
+      "--env",
+      "--set",
+      "--until",
+      "--reach",
+      "--proxy",
+      "--db-service",
+      "--db-user",
+      "--db-name",
+      "--db-protocol",
+      "--probe",
+      "--db-address",
+      "--note",
+      "--lookup",
+      "--tsh",
+    ]);
+    const BOOLEAN = new Set(["--default", "--temporary", "--production", "--no-production"]);
+    const [dataDir, ...projectParts] = positionalsOf(VALUED, BOOLEAN);
     const project = projectParts.join(" ").trim();
     if (!dataDir || !project) {
       die(
-        'usage: enloop-case.mjs environments <data folder> "<project>" [--domain NAME]... [--variable NAME]... [--env <name> [--set NAME=value]... [--default]]',
+        'usage: enloop-case.mjs environments <data folder> "<project>" [--domain NAME]... [--variable NAME]...\n' +
+          "         [--env <name> [--set NAME=value]... [--default] [--temporary | --until YYYY-MM-DD]\n" +
+          "          [--production | --no-production] [--lookup NAME=\"select …\"]...\n" +
+          '          [--tsh "<pasted tsh line>"] [--reach tsh --proxy H --db-service S [--db-user U] [--db-name N] [--db-protocol postgres|mysql]]\n' +
+          '          [--reach command --probe "<cmd>" [--db-address "<cmd>"]] [--reach manual --note "<sentence>"] [--reach none]]',
       );
     }
+    // Exit 1, not 2: these are refusals of what was asked, in the same
+    // class as a lint error, and the skills read 1 as "fix and re-run".
+    const refuse = (message) => {
+      console.error(`REFUSED  ${message}`);
+      process.exit(1);
+    };
     if (!isDir(dataDir)) die(`${path.resolve(dataDir)} is not a directory.`);
     const env = readEnvironments(dataDir);
     const data = env.data;
@@ -984,13 +1187,47 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
       }
     }
     const envName = flag("env");
+    // The environment being edited and the reach set on it this run, kept
+    // outside the block because the probe happens after everything else
+    // has been applied and just before the write.
+    let target;
+    let reach;
     if (envName) {
-      let target = environmentsForProject(data, project).find(
+      target = environmentsForProject(data, project).find(
         (e) => e.name.trim().toLowerCase() === envName.trim().toLowerCase(),
       );
       if (!target) {
         target = { id: newEnvironmentId(), name: envName.trim(), project, domains: {}, values: {} };
         data.environments.push(target);
+        changed = true;
+      }
+      // E5: temporary is "until I go home" unless a day was named. The
+      // entry moves to the local file by the flag the writer splits on.
+      const until = flag("until");
+      if (until !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(until)) die(`--until expects YYYY-MM-DD, got ${until}`);
+      if (rest.includes("--temporary") || until) {
+        const expires = endOfDayIso(until);
+        // The writer prunes expired entries, so recording one would print
+        // a name that lands in neither file.
+        if (Date.parse(expires) < Date.now()) {
+          refuse(`--until ${until} is already past — a temporary environment that has expired is not recorded.`);
+        }
+        target.local = true;
+        target.expires = expires;
+        delete target.default;
+        changed = true;
+      }
+      // E7: the flag is explicit, but a deployment called prod is one
+      // whether or not anyone said so — matched once, when the entry has
+      // never been told either way, so --no-production sticks.
+      if (rest.includes("--production")) {
+        target.production = true;
+        changed = true;
+      } else if (rest.includes("--no-production")) {
+        target.production = false;
+        changed = true;
+      } else if (target.production === undefined && isProduction(target)) {
+        target.production = true;
         changed = true;
       }
       for (const pair of repeated("set")) {
@@ -1011,15 +1248,97 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
         changed = true;
       }
       if (rest.includes("--default")) {
+        if (target.local) refuse(`${target.name} is temporary — a temporary environment is never the default.`);
         for (const e of data.environments) {
           if (e === target) e.default = true;
           else if (environmentsForProject({ ...data, environments: [e] }, project).length) delete e.default;
         }
         changed = true;
       }
+      // E11: a lookup is refused before it is written, so the file never
+      // holds a query the lookup command would then refuse to run.
+      for (const pair of repeated("lookup")) {
+        const eq = pair.indexOf("=");
+        if (eq === -1) die(`--lookup expects NAME="select …", got ${pair}`);
+        const name = normalize(pair.slice(0, eq));
+        const sql = pair.slice(eq + 1).trim();
+        if (!name) continue;
+        const why = whyNotReadOnly(sql);
+        if (why) refuse(`--lookup ${name}: ${why}. Nothing was written.`);
+        if (!data.domains.includes(name) && !data.variables.includes(name)) data.variables.push(name);
+        target.lookups ??= {};
+        target.lookups[name] = sql;
+        changed = true;
+      }
+      // Reach: a pasted tsh line, explicit flags, or both (flags refine
+      // the paste). The fields alone amend the reach already recorded —
+      // the way to add the proxy a paste lacked. Anything new is probed
+      // once and the verdict recorded either way (E10).
+      const transport = flag("reach");
+      const pasted = flag("tsh");
+      const FIELDS = [
+        ["proxy", "proxy"],
+        ["db-service", "dbService"],
+        ["db-user", "dbUser"],
+        ["db-name", "dbName"],
+        ["db-protocol", "dbProtocol"],
+        ["probe", "probe"],
+        ["db-address", "dbAddress"],
+        ["note", "note"],
+      ];
+      const given = FIELDS.filter(([name]) => flag(name) !== undefined);
+      if (transport === "none") {
+        if (pasted) refuse("--reach none and --tsh together say two things. Nothing was written.");
+        if (given.length) refuse(`--reach none and --${given[0][0]} together say two things. Nothing was written.`);
+        if (target.reach) {
+          delete target.reach;
+          changed = true;
+        }
+      } else if (pasted !== undefined || transport !== undefined || given.length) {
+        if (pasted !== undefined) {
+          try {
+            reach = parseTshString(pasted);
+          } catch (e) {
+            refuse(`--tsh: ${e.message}. Nothing was written.`);
+          }
+          if (transport !== undefined && transport !== "tsh") {
+            refuse(`--tsh gives a tsh reach; --reach ${transport} says otherwise. Nothing was written.`);
+          }
+        } else if (transport === undefined) {
+          if (!target.reach) {
+            refuse(`--${given[0][0]} needs --reach tsh (or --tsh "…"): ${target.name} has no reach to amend. Nothing was written.`);
+          }
+          // The old verdict is about the old fields; the probe below
+          // records a fresh one.
+          const { verifiedAt, verifyError, ...kept } = target.reach;
+          reach = kept;
+        } else if (!["tsh", "command", "manual"].includes(transport)) {
+          die(`--reach expects tsh, command, manual or none, got ${transport}`);
+        } else {
+          reach = { transport };
+        }
+        for (const [name, key] of given) reach[key] = flag(name);
+        if (reach.dbProtocol !== undefined && !["postgres", "mysql"].includes(reach.dbProtocol)) {
+          die(`--db-protocol expects postgres or mysql, got ${reach.dbProtocol}`);
+        }
+        // tsh remembers the proxy of its last login, so a service alone is
+        // a reach; a proxy alone is a login with the service still to be
+        // named — the probe says so. Neither is nothing.
+        if (reach.transport === "tsh" && !reach.proxy && !reach.dbService) {
+          refuse("a tsh reach needs --db-service (and usually --proxy). Nothing was written.");
+        }
+        if (reach.transport === "command" && !reach.probe) refuse("a command reach needs --probe. Nothing was written.");
+        if (reach.transport === "manual" && !reach.note) refuse("a manual reach needs --note. Nothing was written.");
+        target.reach = reach;
+        changed = true;
+      }
     }
     if (changed) {
-      writeFileSync(env.file, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+      if (reach && target && reach.transport !== "manual") {
+        const verdict = await probeInto(env, target, path.resolve(dataDir));
+        console.log(`probe    ${verdict.status.padEnd(13)} ${target.name}  ${verdict.detail}`);
+      }
+      writeEnvironments(env, data);
       console.log(`WROTE    ${env.file}`);
     } else {
       console.log(`PATH     ${env.file}${env.known ? "" : " (absent — nothing recorded yet)"}`);
@@ -1032,11 +1351,15 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
     }
     for (const e of mine) {
       const missing = missingEnvironmentValues(data, e);
-      console.log(
-        `env      ${e.name}${e.default ? " (default)" : ""}${e.project ? "" : " (all projects)"}${missing.length ? ` — ${missing.length} empty: ${missing.join(", ")}` : ""}`,
-      );
+      const marks =
+        `${e.default ? " (default)" : ""}${isProduction(e) ? " (production)" : ""}` +
+        `${e.local ? ` (temporary, until ${e.expires ? e.expires.slice(0, 10) : "?"})` : ""}` +
+        `${e.project ? "" : " (all projects)"}`;
+      console.log(`env      ${e.name}${marks}${missing.length ? ` — ${missing.length} empty: ${missing.join(", ")}` : ""}`);
       for (const d of data.domains) console.log(`           ${d}=${e.domains[d] ?? ""}`);
       for (const v of data.variables) console.log(`           ${v}=${e.values[v] ?? ""}`);
+      if (e.reach) console.log(`           reach    ${reachLine(e.reach)}`);
+      for (const [name, sql] of Object.entries(e.lookups ?? {})) console.log(`           lookup   ${name} = ${sql}`);
     }
     // The case-side consequence, spelled out so a skill need not derive it:
     // which environment's addresses become each domain's `Default:`.
@@ -1047,6 +1370,154 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
       );
     }
     break;
+  }
+
+  /**
+   * Can this machine get to an environment's data right now? One line per
+   * environment, the verdict written back into its reach (E10). Exit 0
+   * when everything probed is reachable. `LOGIN NEEDED` is the one
+   * verdict an agent cannot act on: the line says what the user runs.
+   *
+   *   reach <folder> "<project>"                one environment (E13: the default,
+   *   reach <folder> "<project>" --env staging   else the first non-production)
+   *   reach <folder> "<project>" --all           every environment of the project
+   */
+  case "reach": {
+    const [dataDir, ...projectParts] = positionalsOf(new Set(["--env"]), new Set(["--all"]));
+    const project = projectParts.join(" ").trim();
+    if (!dataDir || !project) die('usage: enloop-case.mjs reach <data folder> "<project>" [--env <name> | --all]');
+    if (!isDir(dataDir)) die(`${path.resolve(dataDir)} is not a directory.`);
+    const env = readEnvironments(dataDir);
+    const targets = rest.includes("--all")
+      ? environmentsForProject(env.data, project)
+      : [pickEnvironment(env.data, project, flag("env"))];
+    if (targets.length === 0) die(`no environment for ${project}`);
+    const width = Math.max(...targets.map((e) => e.name.length)) + 2;
+    let allOk = true;
+    let changed = false;
+    for (const e of targets) {
+      const verdict = await probeInto(env, e, path.resolve(dataDir));
+      if (verdict.ok !== undefined) {
+        changed = true;
+        if (!verdict.ok) allOk = false;
+      }
+      console.log(`${verdict.status.padEnd(14)}${e.name.padEnd(width)}${verdict.detail}`);
+    }
+    if (changed) writeEnvironments(env, env.data);
+    process.exit(allOk ? 0 : 1);
+  }
+
+  /**
+   * Find a value on a deployment instead of asking anyone for it: the
+   * environment's recorded query for a variable, or an ad-hoc `--sql`,
+   * run through its reach. Read-only by construction (E11) and refused
+   * before anything is opened when it is not. Production is opt-in per
+   * call and never recorded (E7): a value found there stays with whoever
+   * ran the command.
+   *
+   *   lookup <folder> "<project>" --env staging --variable QA_EMAIL [--record]
+   *   lookup <folder> "<project>" --env staging --sql "select … limit 1"
+   *   lookup <folder> "<project>" --env staging --all --record       every lookup it has
+   *   lookup <folder> "<project>" --env prod --variable QA_EMAIL --production
+   */
+  case "lookup": {
+    const [dataDir, ...projectParts] = positionalsOf(
+      new Set(["--env", "--variable", "--sql"]),
+      new Set(["--all", "--record", "--production"]),
+    );
+    const project = projectParts.join(" ").trim();
+    const variable = flag("variable");
+    const adHoc = flag("sql");
+    const all = rest.includes("--all");
+    const record = rest.includes("--record");
+    if (!dataDir || !project || [variable, adHoc, all ? "all" : undefined].filter((x) => x !== undefined).length !== 1) {
+      die(
+        'usage: enloop-case.mjs lookup <data folder> "<project>" [--env <name>] (--variable NAME | --sql "select …" | --all) [--record] [--production]',
+      );
+    }
+    if (!isDir(dataDir)) die(`${path.resolve(dataDir)} is not a directory.`);
+    const refuse = (message) => {
+      console.error(`REFUSED  ${message}`);
+      process.exit(1);
+    };
+    if (record && adHoc !== undefined) refuse("--record needs --variable: an ad-hoc query has no name to record under.");
+    const env = readEnvironments(dataDir);
+    const data = env.data;
+    const target = pickEnvironment(data, project, flag("env"));
+    if (isProduction(target) && !rest.includes("--production")) {
+      refuse(`${target.name} is production — pass --production to query it. A value found there is never recorded.`);
+    }
+    if (isProduction(target) && record) {
+      refuse(`--record is refused on ${target.name}: it is production, and a value found there is not recorded — it stays with the tester.`);
+    }
+    const normalize = (raw) => raw.trim().replace(/^%|%$/g, "").toUpperCase();
+    // Which queries run: one named, one ad-hoc, or every lookup recorded.
+    // A named lookup missing on this environment is borrowed from another
+    // of the project's — the schema is the same on every deployment; only
+    // the answer differs.
+    const jobs = [];
+    if (adHoc !== undefined) jobs.push({ name: null, sql: adHoc });
+    else if (all) {
+      for (const [name, sql] of Object.entries(target.lookups ?? {})) jobs.push({ name, sql });
+      if (jobs.length === 0) refuse(`${target.name} has no lookups recorded — add one: environments … --env ${target.name} --lookup NAME="select …"`);
+    } else {
+      const name = normalize(variable);
+      let sql = target.lookups?.[name];
+      if (!sql) {
+        const donor = environmentsForProject(data, project).find((e) => e.lookups?.[name]);
+        if (!donor) {
+          refuse(
+            `no lookup recorded for ${name} on ${target.name} — record one: environments <folder> "${project}" --env ${target.name} --lookup ${name}="select …"`,
+          );
+        }
+        sql = donor.lookups[name];
+        console.log(`note     using the ${name} query recorded on ${donor.name}`);
+      }
+      jobs.push({ name, sql });
+    }
+    for (const job of jobs) {
+      const why = whyNotReadOnly(job.sql);
+      if (why) refuse(`${job.name ?? "--sql"}: ${why}. Nothing was run.`);
+    }
+    if (!target.reach) {
+      refuse(`${target.name} has no reach — record how to get to its data (environments … --reach) or the value itself (--set).`);
+    }
+    let failed = false;
+    let wrote = false;
+    try {
+      await withTunnel(target.reach, { cwd: path.resolve(dataDir) }, async ({ host, port }) => {
+        for (const job of jobs) {
+          const label = job.name ? `${job.name}=` : "";
+          let result;
+          try {
+            result = await querySql(target.reach, { host, port }, job.sql, { cwd: path.resolve(dataDir) });
+          } catch (e) {
+            console.log(`FAILED  ${job.name ?? "--sql"}  ${e.message}`);
+            failed = true;
+            continue;
+          }
+          if (result.value === null || !result.value.trim()) {
+            console.log(`EMPTY  ${job.name ?? "--sql"}`);
+            failed = true;
+            continue;
+          }
+          console.log(`VALUE  ${label}${result.value}`);
+          if (record && job.name) {
+            if (!data.domains.includes(job.name) && !data.variables.includes(job.name)) data.variables.push(job.name);
+            if (data.domains.includes(job.name)) target.domains[job.name] = result.value;
+            else target.values[job.name] = result.value;
+            wrote = true;
+          }
+        }
+      });
+    } catch (e) {
+      refuse(`${e.needsLogin ? "LOGIN NEEDED  " : ""}${e.message}`);
+    }
+    if (wrote) {
+      writeEnvironments(env, data);
+      console.log(`WROTE    ${target.local ? env.localFile : env.file}`);
+    }
+    process.exit(failed ? 1 : 0);
   }
 
   case "rules": {
@@ -1513,7 +1984,12 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
         "  enloop-case.mjs brief [--example]\n" +
         "  enloop-case.mjs data-folder [--want <path>]\n" +
         "  enloop-case.mjs verify <data folder> <caseId>\n" +
-        '  enloop-case.mjs environments <data folder> "<project>" [--domain NAME] [--variable NAME] [--env <name> [--set NAME=value] [--default]]\n' +
+        '  enloop-case.mjs environments <data folder> "<project>" [--domain NAME] [--variable NAME] [--env <name> [--set NAME=value] [--default]\n' +
+        '                  [--temporary | --until YYYY-MM-DD] [--production | --no-production] [--lookup NAME="select …"]\n' +
+        '                  [--tsh "<pasted tsh line>"] [--reach tsh --proxy H --db-service S [--db-user U] [--db-name N] [--db-protocol postgres|mysql]]\n' +
+        '                  [--reach command --probe "<cmd>" [--db-address "<cmd>"]] [--reach manual --note "<sentence>"] [--reach none]]\n' +
+        '  enloop-case.mjs reach <data folder> "<project>" [--env <name> | --all]\n' +
+        '  enloop-case.mjs lookup <data folder> "<project>" [--env <name>] (--variable NAME | --sql "select …" | --all) [--record] [--production]\n' +
         '  enloop-case.mjs rules <data folder> "<project>"\n' +
         '  enloop-case.mjs ratings <data folder> "<project>" [--limit N] [--min-runs N]\n' +
         '  enloop-case.mjs list-guides <data folder> [--project "<name>"]\n' +

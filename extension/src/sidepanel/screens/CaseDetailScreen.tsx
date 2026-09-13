@@ -939,8 +939,15 @@ function ShareMenu({
  * Which deployment this run is against. Selecting one decides every
  * declared domain's address and any variable the environment carries; it
  * locks nothing — every value stays editable, and "No environment" is
- * always on the list, because some deployments (a per-PR preview whose
- * domain a service just generated) exist only as the tab someone has open.
+ * always on the list, because a deployment nobody has recorded yet exists
+ * only as the tab someone has open.
+ *
+ * A temporary environment is offered with the day it expires and a
+ * production one is marked as such, so the tester knows which kind of
+ * deployment a run is about to touch before the first step. Once a
+ * temporary one has expired the store no longer returns it, so a
+ * remembered pick of it falls back to the default exactly as a deleted
+ * environment does.
  */
 function EnvironmentPicker({
   file,
@@ -982,6 +989,8 @@ function EnvironmentPicker({
         {offered.map((env) => (
           <option key={env.id} value={env.id}>
             {env.name}
+            {env.local && env.expires ? ` · until ${shortDay(env.expires)}` : ""}
+            {env.production ? " · production" : ""}
             {env.default ? " (default)" : ""}
             {missingEnvironmentValues(file, env).length > 0
               ? ` (${missingEnvironmentValues(file, env).length} empty)`
@@ -1004,6 +1013,16 @@ function EnvironmentPicker({
       )}
     </div>
   );
+}
+
+/** `Sep 11` for an expiry ISO — the day is what a tester needs to know; the
+ * seconds are the file's business. Falls back to the raw text when it does
+ * not parse, so a garbled date is still visible rather than hidden. */
+function shortDay(iso: string): string {
+  const at = Date.parse(iso);
+  return Number.isFinite(at)
+    ? new Date(at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+    : iso;
 }
 
 /** A domain field's border by where its address stands against `@locations`. */

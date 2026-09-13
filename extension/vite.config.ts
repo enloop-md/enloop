@@ -19,15 +19,10 @@ export default defineConfig({
   },
   plugins: [react(), tailwindcss(), crx({ manifest })],
   // The manifest names only the side panel; the screenshot editor is an
-  // extension page reached by `chrome.runtime.getURL("editor.html")`, so it
-  // has to be told to the bundler by hand.
-  build: {
-    rollupOptions: {
-      // Only the editor: crxjs already adds the side panel from the
-      // manifest, and naming it here too bundled it twice.
-      input: { editor: "editor.html" },
-    },
-  },
+  // extension page framed into the tab under test, so it has to be told
+  // to the bundler by hand. Only the editor — crxjs already adds the side
+  // panel from the manifest, and naming it here too bundled it twice.
+  build: { rollupOptions: { input: { editor: "editor.html" } } },
   server: {
     port: 5173,
     strictPort: true,

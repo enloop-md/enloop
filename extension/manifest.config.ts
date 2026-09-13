@@ -60,4 +60,10 @@ export default defineManifest({
     },
   },
   optional_host_permissions: ["<all_urls>"],
+  // The screenshot editor is framed into the page under test — the page
+  // is the big surface, the panel is not — and a page may only frame an
+  // extension file that is declared here. Being listed makes it loadable,
+  // not readable: it carries no data of its own, the job travels through
+  // session storage.
+  web_accessible_resources: [{ resources: ["editor.html"], matches: ["<all_urls>"] }],
 });

@@ -237,7 +237,7 @@ after`); `Mode: confirm` shows it first with **Keep · Retake · Edit ·
 Discard**, `Mode: auto` keeps it with a two-second toast, and `Take:
 manual` leaves a **📷 Photo n** button for you to press. Each screenshot is
 a thumbnail under its step with a caption, **✎ Edit**, **↺ Original**,
-**Move** and **✕**; the editor opens in its own tab with crop, blur, line,
+**Move** and **✕**; the editor opens over the page with select, crop, blur, line,
 arrow, rectangle and numbered callouts in seven colours. Pictures land in
 `screenshots/` beside `run.json` and are listed under their steps in
 `report.md`. Free runs have the same buttons, and each capture drops a
@@ -455,6 +455,45 @@ one card per project can be marked **default**. Everything writes through to
 fill in when they derive the deployments from the repo — so the screen is
 often already populated the first time you open it.
 
+It is populated first because the skills insist on it. `/enloop:full` and
+`/enloop:quick` read the project's environments before they read a line of
+source, and when there are none they stop and ask once — set them up now,
+or continue with local only — and never go on without an answer. Setting
+them up is a short dialogue, the same one `/enloop:setup environments`
+runs on its own: local is taken from the repo without a question, then
+each further deployment from what you paste — a `tsh` line, a command, an
+address, a sentence. That paste is the one question; a second — the
+address, and until when for a temporary one — comes only when the paste
+did not give it, and there is never a third: the name settles the rest,
+`prod` is marked **production**, `pr-42` is temporary. The order is
+deliberate: an address written before the deployments are known is an
+invented one, so the question comes before the case rather than after.
+
+A deployment that exists for one branch and one afternoon — a Shipyard or
+ArgoCD preview — has a section of its own under the shared cards,
+**Temporary**. Those cards live in `environments.local.json` beside
+`environments.json`, git-ignored (the panel adds the line), so a preview
+address never reaches a teammate's checkout, and each carries an expiry:
+the end of today unless you set a date on the card. An expired one is gone
+from this screen and from the picker the next time you look, and from the
+file the next time anything is saved. **Add temporary** creates one for
+today; a temporary environment is never the default.
+
+A card may also show a **reach** — one line saying how an agent gets to
+that deployment's *data*: `via tsh staging-postgres · verified 2 h ago`,
+`via command · unreachable: command exited 1: Connection refused`, or
+`manual: VPN
+"Office", then psql -h db.internal`. The panel only shows it. It never
+opens a tunnel or runs a command; that happens in the app repo, where
+`/enloop:setup environments` records the reach from what you paste and
+probes it once. When the probe finds no Teleport session, the line says so
+and the `tsh login` it names is yours to run — certificates are the one
+thing no skill can obtain for you. Nothing on a reach is a secret: host
+names, service names, user names, ports; a pasted connection URL is
+recorded without its password. A card marked **production** is treated as
+such by the skills: nothing looks anything up there unless asked in so
+many words, and a value found there is never written into the folder.
+
 A case screen opens with the case's **goal**, then **You will** and **You
 will need** — the four things a tester reads before Start — and the run
 screen keeps the goal pinned under its title for the whole run. **Start
@@ -478,15 +517,22 @@ On a case screen, the **Environment** picker sits above **Start run**. Picking
 one sets every domain and every environment-provided variable at once; the
 values below stay editable, and each shows where it came from — the
 environment's name, *open tab*, *default*, or a generator. The picker starts
-on the environment you used last in that folder, else the project's default.
-**No environment** is always on the list: then `%DOMAIN%` follows the tab
-you have open (and any other domain whose `Match:` fits it), which is the
-answer for a per-PR preview whose address exists nowhere but in your address
-bar — the `DOMAIN` field under **Start run** shows in green or red whether
-that tab is one the case names. The run header names the environment for the whole run, and the report
-lists the address each domain resolved to. The screen never stops the run to
-ask for a value: a case that would need to is refused by the skills'
-validator before it reaches the folder.
+on the environment you used last in that folder, else the project's default
+— and when the one you used last has since expired, the default, as if it
+had been deleted. A temporary environment is listed as `pr-42 · until Sep
+11`, a production one as `prod · production`. **No environment** is always
+on the list: then `%DOMAIN%` follows the tab you have open (and any other
+domain whose `Match:` fits it), which is the answer for an address that
+exists nowhere but in your address bar — the `DOMAIN` field under **Start
+run** shows in green or red whether that tab is one the case names. A
+preview you will come back to during the day is better as a temporary
+environment, so every case fills its address in rather than following
+whichever tab is in front. The run header names the environment for the
+whole run, and the report lists the address each domain resolved to. The
+screen never stops the run to ask for a value: a case that would need to
+is refused by the skills' validator before it reaches the folder — and so
+is one whose variable is left to the environment while no environment of
+the project has a value for it.
 
 ## The viewer
 

@@ -475,7 +475,7 @@ export async function pruneOrphanHandles(): Promise<void> {
  * In a folder that is not a repo it is inert.
  */
 async function ensureGitignore(root: FileSystemDirectoryHandle): Promise<void> {
-  const NEEDED = ["runs/", "free-runs/", "agent/", "test-cases/**/context.json"];
+  const NEEDED = ["runs/", "free-runs/", "agent/", "test-cases/**/context.json", "environments.local.json"];
   const HEADER = "# Enloop — cases are meant to be committed; run history is local.";
   try {
     let existing = "";

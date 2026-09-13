@@ -47,7 +47,7 @@ export function describeError(e: unknown): string {
   if (e instanceof DOMException) {
     switch (e.name) {
       case "NotAllowedError":
-        return "Chrome's permission for the connected folder has lapsed. Reconnect the folder and try again.";
+        return `Chrome's permission for the connected folder has lapsed. Reconnect the folder and try again. (${e.message})`;
       case "NotFoundError":
         return "A file or folder Enloop expected is missing — the connected folder may have been moved, renamed, or deleted.";
       case "SecurityError":

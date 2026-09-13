@@ -45,4 +45,11 @@ export {
   environmentsForProject,
   missingEnvironmentValues,
   newEnvironmentId,
+  mergeEnvironmentFiles,
+  splitEnvironmentFiles,
+  endOfDayIso,
+  isExpired,
+  discoveryEnvironment,
+  providersByName,
+  describeReach,
 } from "./environments.js";
