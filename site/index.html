@@ -1,0 +1,825 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Enloop — fix the bottleneck in human-in-the-loop</title>
+    <meta
+      name="description"
+      content="The human is the slowest step in any AI feedback cycle. Enloop makes that step ruthlessly effective: your agent writes the test case, a Chrome side panel walks you through it, and what you say goes straight back to the agent."
+    />
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+    <meta property="og:title" content="Enloop — fix the bottleneck in human-in-the-loop" />
+    <meta
+      property="og:description"
+      content="Your agent writes the test case, a Chrome side panel walks you through it, and what you say goes straight back to the agent."
+    />
+    <!-- Absolute, because Open Graph consumers do not resolve relative URLs. -->
+    <meta property="og:image" content="https://enloop-md.github.io/enloop/about/assets/og.png" />
+    <meta property="og:url" content="https://enloop-md.github.io/enloop/about/" />
+    <link rel="canonical" href="https://enloop-md.github.io/enloop/about/" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preload" href="assets/fonts/jost-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- The wordmark and the icon, defined once and drawn with <use>. Both take
+         currentColor, so they follow the theme without a second file. -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="wordmark" viewBox="0 0 1105 314"><path fill-rule="evenodd" clip-rule="evenodd" d="M995.651 0.62676C973.714 3.21093 956.685 10.1542 940.748 23.0128C931.252 30.6744 923.638 40.1279 917.23 52.2144C909.418 66.9498 905.572 82.0765 904.371 102.795C904.043 108.46 903.784 156.302 903.779 212.155C903.771 301.611 903.865 311.539 904.726 312.403C906.229 313.91 908.496 313.857 909.703 312.288C910.301 311.51 910.464 297.43 910.464 246.636V181.975L917.327 188.618C926.237 197.243 933.59 202.432 944.843 208.036C960.594 215.88 973.689 219.231 990.783 219.795C1010.65 220.449 1026.81 217.198 1043.92 209.099C1088.34 188.082 1112.9 136.957 1102.71 86.737C1097.87 62.9271 1085.1 40.2793 1068.39 25.8771C1053.45 12.9922 1037.01 5.11641 1018.11 1.77541C1013.24 0.915444 999.268 0.200744 995.651 0.62676ZM328.413 6.61724C327.263 7.46072 327.227 8.81446 327.037 57.7331C326.71 142.066 328.404 161.267 337.877 180.613C348.041 201.373 369.178 215.999 392.963 218.732C399.153 219.444 444.312 219.591 445.338 218.903C446.807 217.919 447.351 215.982 446.59 214.449L445.851 212.961L419.4 212.602C397.723 212.309 392.024 212.053 387.831 211.187C374.2 208.373 361.404 200.889 352.405 190.47C345.511 182.486 342.554 176.709 339.132 164.531C334.347 147.501 333.641 134.598 333.63 63.9293C333.622 13.6056 333.52 7.56815 332.665 6.71001C331.478 5.51924 329.955 5.48628 328.413 6.61724ZM1021.87 9.32165C1030.1 11.2363 1036.15 13.4317 1044.03 17.3641C1072.02 31.3341 1090.9 57.4517 1097.03 90.6774C1098.52 98.7802 1098.8 113.943 1097.61 122.922C1094.4 147.315 1084.83 167.13 1068.09 184.048C1050.2 202.119 1026.63 212.066 999.302 213.077C979.483 213.809 962.557 210.085 945.777 201.3C933.492 194.868 924.453 187.669 914.625 176.49L910.464 171.755V137.991C910.464 102.422 910.804 95.6864 913.22 83.5334C915.259 73.276 917.743 65.9519 922.317 56.7144C927.089 47.0754 932.126 40.2408 940.146 32.5188C952.222 20.8924 967.338 13.0356 984.489 9.46935C993.175 7.66336 993.098 7.66945 1005.39 7.89711C1013.89 8.05396 1017.92 8.40309 1021.87 9.32165Z"/><path fill-rule="evenodd" clip-rule="evenodd" d="M13.6161 9.44898C7.47704 11.0941 2.15335 16.3703 0.512701 22.4345C0.0924624 23.9882 -0.0786715 57.0068 0.0336565 114.865C0.204131 202.793 0.237827 204.939 1.50449 207.481C3.39622 211.279 7.39576 214.827 11.5156 216.361C15.0294 217.67 16.3992 217.705 63.5333 217.705C100.303 217.705 112.132 217.515 112.734 216.916C113.868 215.787 113.713 212.757 112.469 211.729C111.61 211.019 102.344 210.849 63.4077 210.827L15.4054 210.798L12.6639 209.339C11.1561 208.536 9.2234 206.76 8.36905 205.392L6.81562 202.905V113.445C6.81562 12.7432 6.34582 21.5616 11.9061 17.8977L14.6475 16.0914L62.8976 15.9105C106.403 15.7467 111.265 15.6237 112.337 14.6574C113.694 13.4352 113.913 10.4896 112.734 9.31611C111.559 8.14655 18.0081 8.27219 13.6161 9.44898ZM154.022 9.25625C151.489 9.98508 148.951 13.1208 147.955 16.7492C147.448 18.5976 147.231 48.7719 147.229 118.134C147.226 205.204 147.343 216.984 148.219 217.707C149.472 218.743 152.367 218.77 153.387 217.755C153.973 217.171 154.202 192.956 154.321 118.839C154.407 64.8602 154.64 20.0105 154.839 19.1731C155.099 18.0819 155.593 17.7089 156.584 17.8576C157.579 18.0069 159.8 21.0972 164.533 28.9184C177.559 50.4466 207.52 101.253 243.666 163.108C274.79 216.37 274.786 216.362 276.177 217.103C276.88 217.478 278.407 217.692 279.572 217.58C281.235 217.42 281.936 216.884 282.844 215.074C283.929 212.913 283.999 206.619 284 111.965C284.001 11.1961 284.001 11.1573 282.646 9.80879C281.249 8.41822 278.916 8.55899 277.899 10.0956C277.386 10.8718 277.282 35.8844 277.366 138.77C277.394 173.682 277.189 203.046 276.91 204.021C276.449 205.633 275.697 204.579 268.697 192.51C246.989 155.084 231.991 129.324 225.534 118.378C221.586 111.685 214.439 99.549 209.65 91.4088C188.168 54.8881 164.111 14.585 162.591 12.5682C161.27 10.8165 157.287 8.28205 156.332 8.58595C156.23 8.61884 155.19 8.92012 154.022 9.25625ZM18.0953 110.86C16.863 112.087 16.7381 114.509 17.8502 115.616C18.9939 116.754 90.4464 116.754 91.5902 115.616C92.7022 114.509 92.5773 112.087 91.345 110.86C90.4266 109.947 86.1905 109.827 54.7202 109.827C23.2499 109.827 19.0138 109.947 18.0953 110.86Z"/><path d="M436.5 111.348C436.5 71.3089 456.133 42.9696 480.358 24.9641C504.446 7.06147 533.309 -0.816603 552.489 0.0666166C571.154 0.926143 592.551 4.97587 612.766 17.9211C633.015 30.8889 651.767 52.5855 665.458 88.1994C669.888 99.7241 673.027 110.026 675.993 119.382C678.973 128.779 681.771 137.191 685.557 145.223C696.497 168.43 708.574 185.515 724.368 196.841C740.105 208.126 759.894 213.949 786.753 213.949C822.477 213.949 847.58 196.544 863.449 174.56C879.422 152.432 885.861 125.891 884.263 108.296C882.62 90.2144 876.035 65.2 860.948 44.802C845.97 24.5508 822.565 8.74927 786.753 8.74923C729.428 8.74923 688.937 52.7707 680.782 96.8293C680.43 98.7298 678.604 99.9848 676.703 99.633C674.803 99.281 673.548 97.4555 673.899 95.5549C682.577 48.6705 725.576 1.74923 786.753 1.74923C825.004 1.74927 850.414 18.7873 866.576 40.6389C882.63 62.3436 889.511 88.6946 891.234 107.662C893.002 127.117 885.976 155.312 869.125 178.656C852.17 202.145 825.092 220.949 786.753 220.949C758.836 220.949 737.507 214.876 720.289 202.53C703.128 190.224 690.413 171.942 679.225 148.208C675.219 139.71 672.301 130.897 669.32 121.497C666.327 112.057 663.261 101.993 658.924 90.7112C645.682 56.2655 627.794 35.8578 608.99 23.8156C590.151 11.7511 570.083 7.88484 552.167 7.05978C534.766 6.25849 507.466 13.5386 484.534 30.5822C461.741 47.5232 443.5 73.9196 443.5 111.348C443.5 148.957 458.303 174.472 477.381 191.215C496.568 208.054 520.223 216.131 537.829 218.4C539.792 218.653 541.757 217.263 542.173 214.975L542.703 212.055C543.173 209.467 541.288 206.775 538.4 206.309C532.246 205.315 523.728 203.536 516.128 200.489C503.12 195.275 496.125 189.964 492.507 186.339C489.088 182.914 489.496 178.086 491.562 174.747L506.449 150.686C510.045 144.874 517.628 143.614 523.191 146.364C529.609 149.537 539.958 153.32 552.779 153.32C565.995 153.319 576.583 149.3 582.944 146.074C588.189 143.416 595.302 144.299 599.134 149.502L614.107 169.834C617.251 174.102 617.156 180.239 612.982 184.114C608.471 188.304 600.849 194.479 591.232 198.755C582.729 202.536 574.636 204.729 568.824 205.966C565.898 206.589 564.048 209.359 564.514 211.921L565.128 215.305C565.542 217.583 567.335 218.717 568.939 218.459C582.58 216.264 603.494 207.417 621.588 191.461C639.613 175.566 654.623 152.816 657.019 122.858C657.173 120.931 658.86 119.494 660.787 119.648C662.714 119.802 664.151 121.489 663.997 123.415C661.426 155.57 645.282 179.9 626.218 196.711C607.223 213.461 585.114 222.946 570.052 225.37C564.022 226.341 559.21 221.887 558.241 216.557L557.626 213.172C556.416 206.511 561.125 200.448 567.367 199.119C572.85 197.953 580.449 195.889 588.389 192.359C597.043 188.51 604.021 182.884 608.22 178.985C609.501 177.794 609.743 175.711 608.472 173.985L593.497 153.653C592.029 151.659 588.837 150.936 586.109 152.319C579.089 155.878 567.407 160.319 552.779 160.32C538.587 160.32 527.166 156.137 520.089 152.639C517.182 151.202 513.777 152.146 512.401 154.368L497.514 178.43C497.103 179.093 496.954 179.74 496.973 180.241C496.99 180.704 497.146 181.077 497.462 181.394C500.297 184.234 506.443 189.066 518.732 193.992C525.634 196.759 533.57 198.438 539.516 199.398C545.979 200.441 550.814 206.575 549.591 213.306L549.06 216.227C548.04 221.835 542.932 226.116 536.935 225.343C518.224 222.932 493.188 214.401 472.764 196.477C452.23 178.456 436.5 151.049 436.5 111.348Z"/><path d="M576 108.5C576 95.1374 565.372 84.5 552.5 84.5C539.628 84.5 529 95.1374 529 108.5C529 121.863 539.628 132.5 552.5 132.5V139.5C535.655 139.5 522 125.621 522 108.5C522 91.3792 535.655 77.5 552.5 77.5C569.345 77.5 583 91.3792 583 108.5C583 125.621 569.345 139.5 552.5 139.5V132.5C565.372 132.5 576 121.863 576 108.5Z"/></symbol>
+      <symbol id="go" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2.2 7.8 7.8 2.2M3.6 2.2h4.2v4.2" />
+      </symbol>
+      <symbol id="mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+        <circle cx="12" cy="12" r="10.3" />
+        <circle cx="12" cy="9.4" r="3" />
+        <path d="M6.9 17.3c.7-2.2 2.6-3.4 5.1-3.4s4.4 1.2 5.1 3.4" />
+      </symbol>
+    </svg>
+
+    <header class="nav">
+      <div class="wrap nav-in">
+        <a class="brand" href="#top" aria-label="Enloop">
+          <svg class="wordmark" role="img" aria-label="Enloop"><use href="#wordmark" /></svg>
+        </a>
+        <nav class="nav-links" aria-label="Sections">
+          <a href="#loop">The loop</a>
+          <a href="#features">Features</a>
+          <a href="#skills">Skills</a>
+          <a href="#start">Get started</a>
+          <a href="https://github.com/enloop-md/enloop">GitHub</a>
+        </nav>
+        <a
+          class="btn btn-primary btn-s"
+          href="https://chromewebstore.google.com/detail/enloopmd-managing-human-a/fnpjeaabeckcihomnmeoapclokikanod"
+          >Add to Chrome</a
+        >
+      </div>
+    </header>
+
+    <main id="top">
+      <!-- ───────────────────────── Hero ───────────────────────── -->
+      <section class="hero">
+        <div class="wrap">
+          <p class="eyebrow">Enloop — managing human attention</p>
+          <h1>Fix the bottleneck in human&#8209;in&#8209;the&#8209;loop.</h1>
+          <p class="lede">
+            The human is the slowest step in any AI feedback cycle. Enloop makes that step
+            ruthlessly effective: your agent writes the test case, a Chrome side panel walks you
+            through it, and whatever you say along the way goes straight back to the agent.
+          </p>
+          <div class="cta">
+            <a
+              class="btn btn-primary"
+              href="https://chromewebstore.google.com/detail/enloopmd-managing-human-a/fnpjeaabeckcihomnmeoapclokikanod"
+              >Add to Chrome — free</a
+            >
+            <a class="btn btn-ghost" href="https://github.com/enloop-md/enloop">View on GitHub</a>
+          </div>
+          <p class="fine">Open source, MIT. No server, no account, nothing uploaded.</p>
+        </div>
+
+        <!-- The header image: one turn of the loop, in four frames. Every frame
+             is complete as it stands — the script only replays the typing in
+             whichever one is lit, so the strip reads the same with motion
+             switched off, with scripts off, and as a screenshot. -->
+        <div class="wrap" id="loop">
+          <div class="loop-wrap" data-loop>
+            <ol class="loop">
+              <li class="beat" data-ms="3600">
+                <span class="num">1</span>
+                <h2 class="beat-title">You prompt</h2>
+                <figure class="frame" role="img" aria-label="A terminal: the developer types “build a todo app”, the agent builds it, then /enloop:quick writes the test case “Todo: create a task”, 4 steps.">
+                  <div class="fit" style="--dw: 300">
+                    <div class="art art-beat">
+                      <div class="term">
+                        <div class="term-bar"><i></i><i></i><i></i><span>~/todo — claude</span></div>
+                        <div class="term-body">
+                          <p class="tin"><b>&gt;</b><span data-type>build a todo app</span><span class="caret"></span></p>
+                          <p class="tl" data-reveal><em>●</em> Write(index.html)</p>
+                          <p class="tl sub" data-reveal>⎿ Todo app · 212 lines</p>
+                          <p class="tl" data-reveal><em>●</em> Ready at localhost:8765</p>
+                          <p class="tin gap" data-reveal><b>&gt;</b><span>/enloop:quick</span></p>
+                          <p class="tl" data-reveal><em>●</em> Wrote test case</p>
+                          <p class="tl sub" data-reveal>⎿ Todo: create a task · 4 steps</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </figure>
+                <p class="cap">
+                  Ask for the feature. <code>/enloop:quick</code> then writes its test case from
+                  the source — every route, label and selector read, none invented.
+                </p>
+              </li>
+
+              <li class="beat" data-ms="4600">
+                <span class="num">2</span>
+                <h2 class="beat-title">You try it</h2>
+                <figure class="frame" role="img" aria-label="The todo app with a blue Add button left of the field. Over it, the Enloop side panel on step 2, Create task, with the comment “move button to the right, make it green” typed in and marked for Product.">
+                  <div class="fit" style="--dw: 300">
+                    <div class="art art-beat page">
+                      <div class="todo todo-s">
+                        <p class="todo-h">Todo</p>
+                        <div class="todo-form">
+                          <span class="todo-btn">Add</span>
+                          <span class="todo-in">What needs doing?</span>
+                        </div>
+                      </div>
+                      <div class="pn pn-float">
+                        <div class="pn-step is-current">
+                          <div class="pn-step-h">
+                            <span class="pn-caret open">▸</span><span class="pn-n">#2</span
+                            ><span class="pn-t">Create task</span>
+                          </div>
+                          <div class="pn-body">
+                            <span class="pn-label">Comments</span>
+                            <div class="pn-area">
+                              <span data-type>move button to the right, make it green</span><span class="caret caret-ink"></span>
+                            </div>
+                            <div class="pn-for">
+                              <span class="pn-hint">This comment is for:</span>
+                              <div class="pn-checks">
+                                <span><i class="cb"></i>Developer</span>
+                                <span><i class="cb on" data-reveal="check"></i>Product</span>
+                                <span><i class="cb"></i>Test writer</span>
+                                <span><i class="cb"></i>Docs</span>
+                                <span><i class="cb"></i>Ops</span>
+                              </div>
+                            </div>
+                            <span class="pn-btn pn-add">Add comment</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </figure>
+                <p class="cap">
+                  The side panel walks you through each step. Something looks off? Say so on the
+                  step where you saw it, and tick who it is for.
+                </p>
+              </li>
+
+              <li class="beat" data-ms="4600">
+                <span class="num">3</span>
+                <h2 class="beat-title">The agent reads the run</h2>
+                <figure class="frame" role="img" aria-label="A terminal: /enloop:check reads the run’s feedback file, finds 1 comment — “move button to the right, make it green” on step 2 — and implements it in index.html.">
+                  <div class="fit" style="--dw: 300">
+                    <div class="art art-beat">
+                      <div class="term">
+                        <div class="term-bar"><i></i><i></i><i></i><span>~/todo — claude</span></div>
+                        <div class="term-body">
+                          <p class="tin"><b>&gt;</b><span data-type>/enloop:check</span><span class="caret"></span></p>
+                          <p class="tl" data-reveal><em>●</em> Read(runs/…/feedback.md)</p>
+                          <p class="tl sub" data-reveal>⎿ Found 1 comment from the run</p>
+                          <p class="tq" data-reveal>
+                            <span>#2 Create task · for Product</span>
+                            “move button to the right, make it green”
+                          </p>
+                          <p class="tl" data-reveal><em class="busy">●</em> Implementing…</p>
+                          <p class="tl" data-reveal><em>●</em> Update(index.html)</p>
+                          <p class="tl sub" data-reveal>⎿ 1 file changed · +4 −3</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </figure>
+                <p class="cap">
+                  Back in the repo, <code>/enloop:check</code> finds what you wrote in the run,
+                  addressed and attached to its step, and gets to work.
+                </p>
+              </li>
+
+              <li class="beat" data-ms="3800">
+                <span class="num">4</span>
+                <h2 class="beat-title">It is fixed</h2>
+                <figure class="frame" role="img" aria-label="The todo app again: the Add button is now green and on the right of the field. Step 2, Create task, shows success.">
+                  <div class="fit" style="--dw: 300">
+                    <div class="art art-beat page">
+                      <div class="todo todo-s" data-moved>
+                        <p class="todo-h">Todo</p>
+                        <div class="todo-form">
+                          <span class="todo-in">What needs doing?</span>
+                          <span class="todo-btn is-green">Add</span>
+                        </div>
+                        <ul class="todo-list">
+                          <li><i class="tcb"></i>Buy milk<b>×</b></li>
+                        </ul>
+                        <p class="todo-foot">1 task left</p>
+                      </div>
+                      <div class="pn pn-float pn-pass">
+                        <div class="pn-step">
+                          <div class="pn-step-h">
+                            <span class="pn-caret">▸</span><span class="pn-n">#2</span
+                            ><span class="pn-t">Create task</span><span class="bdg bdg-ok">success</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </figure>
+                <p class="cap">
+                  The button is green, on the right. Run the case again and the step passes —
+                  nobody wrote a ticket.
+                </p>
+              </li>
+            </ol>
+            <p class="loop-again"><span aria-hidden="true">←</span> next change, same loop</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ───────────────────── Ask the agent ───────────────────── -->
+      <section class="section" id="ask">
+        <div class="wrap">
+          <div class="split-head">
+            <div>
+              <p class="eyebrow">Mid-run</p>
+              <h2 class="h2">The screen moved on. The test catches up while you run it.</h2>
+            </div>
+            <p class="lede-s">
+              The page in front of you no longer matches the step? Ask from the step itself. Your
+              question reaches the agent session watching the folder with a screenshot and the
+              page's structure attached. It answers from the app's source — and when the step was
+              the problem, a patched version of the test is waiting. One click loads it into the
+              run you are in, and every result you already recorded stays.
+            </p>
+          </div>
+
+          <figure class="shot" role="img" aria-label="A browser with the todo app on the left and the Enloop side panel on the right. On step 2 the tester asked whether the green button on the right is the same one the step calls blue and on the left. The agent answered that it moved in the last change and that a new version of the test is ready; the panel offers Load v1.1, with 1 step updated and finished steps unchanged.">
+            <div class="fit shot-fit">
+              <div class="art art-shot">
+                <div class="br-bar">
+                  <span class="br-dots"><i></i><i></i><i></i></span>
+                  <span class="br-tab">Todo</span>
+                  <span class="br-url">localhost:8765</span>
+                  <svg class="br-ext" aria-hidden="true"><use href="#mark" /></svg>
+                </div>
+                <div class="br-body">
+                  <div class="shot-page page">
+                    <div class="todo todo-l">
+                      <p class="todo-h">Todo</p>
+                      <div class="todo-form">
+                        <span class="todo-in">What needs doing?</span>
+                        <span class="todo-btn is-green is-flash">Add</span>
+                      </div>
+                      <div class="todo-filters"><span class="on">All</span><span>Active</span><span>Done</span></div>
+                      <ul class="todo-list">
+                        <li><i class="tcb"></i>Call the bank<b>×</b></li>
+                        <li class="done"><i class="tcb on"></i>Renew the domain<b>×</b></li>
+                      </ul>
+                      <p class="todo-foot">1 task left</p>
+                    </div>
+                  </div>
+
+                  <div class="shot-panel pn">
+                    <div class="pn-side"><svg aria-hidden="true"><use href="#mark" /></svg>Enloop<span>✕</span></div>
+                    <div class="pn-head">
+                      <span class="pn-ico">←</span>
+                      <span class="pn-title">Todo: create a task</span>
+                      <span class="bdg bdg-run">in progress</span>
+                      <span class="pn-ico">⚙&#xFE0E;</span>
+                    </div>
+                    <div class="pn-goal">A new task can be created and shows in the list</div>
+                    <div class="pn-status">
+                      <span class="bdg-s bdg-quick">quick</span><span class="bdg-s bdg-env">local</span>
+                      <span>v1 · 1/4 passed</span>
+                      <span class="pn-links"><a>Options</a> · <a>Open all</a> · <a>Close all</a></span>
+                    </div>
+
+                    <div class="pn-step is-past">
+                      <div class="pn-step-h">
+                        <span class="pn-caret">▸</span><span class="pn-n">#1</span
+                        ><span class="pn-t">Open the app</span><span class="bdg bdg-ok">success</span>
+                      </div>
+                    </div>
+
+                    <div class="pn-step is-current">
+                      <div class="pn-step-h">
+                        <span class="pn-caret open">▸</span><span class="pn-n">#2</span
+                        ><span class="pn-t">Create task</span>
+                      </div>
+                      <div class="pn-body">
+                        <div class="pn-row">
+                          <span class="pn-k">Where:</span><code class="ok">localhost:8765/</code
+                          ><span class="pn-go"><svg aria-hidden="true"><use href="#go" /></svg>Go</span>
+                        </div>
+                        <div class="pn-row">
+                          <span class="pn-hl">✨ Highlight</span><code class="dim">#add-form button</code>
+                        </div>
+                        <p class="pn-text">
+                          Type <span class="pn-chip">"Buy milk"</span> into the field, then click
+                          <code class="pn-code">Add</code> — <mark>the blue button, left of the field</mark>.
+                        </p>
+                        <p class="pn-exp"><b>Expected:</b> “Buy milk” appears at the top of the list.</p>
+
+                        <div class="pn-q">
+                          <p><b>You asked:</b> The step says blue and on the left. Here the button is green, on the right. Same one?</p>
+                          <p class="pn-quote">“the blue button, left of the field”</p>
+                          <p class="pn-meta">on localhost:8765 · 📎 screenshot.png · page.html</p>
+                          <p class="pn-a">
+                            Same button. It moved in the last change, <code class="pn-code">index.html:171</code> —
+                            the step text was out of date. A new version of this test is ready.
+                          </p>
+                          <div class="pn-offer">
+                            <p>Load v1.1? 1 step updated, finished steps unchanged.</p>
+                            <div><span class="pn-btn pn-load">Load v1.1</span><span class="pn-btn pn-ghost">Not now</span></div>
+                          </div>
+                        </div>
+
+                        <div class="pn-verdict">
+                          <span class="pn-label">Result</span>
+                          <div><span class="v-pass">Pass</span><span class="v-warn">Warning</span><span class="v-fail">Fail</span></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="pn-step">
+                      <div class="pn-step-h">
+                        <span class="pn-caret">▸</span><span class="pn-n">#3</span><span class="pn-t">Complete the task</span>
+                      </div>
+                    </div>
+                    <div class="pn-step">
+                      <div class="pn-step-h">
+                        <span class="pn-caret">▸</span><span class="pn-n">#4</span><span class="pn-t">Delete the task</span>
+                      </div>
+                    </div>
+                    <div class="pn-progress"><i class="ok"></i><i class="cur"></i><i></i><i></i></div>
+                    <div class="pn-foot"><a>▸ Comment / rate case</a><a>Finish run…</a></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </figure>
+
+          <ul class="trio">
+            <li>
+              <h3>Ask from the step</h3>
+              <p>
+                Select the part that confuses you and type the question. Untick the screenshot or
+                the page snapshot if you would rather not send them — both stay in your folder
+                either way.
+              </p>
+            </li>
+            <li>
+              <h3>Watch it think</h3>
+              <p>
+                The panel shows what the agent is doing in its own words — <em>Reading the form</em>,
+                <em>Found it: the button was restyled</em> — so a long think never looks like a
+                crash. Wrong question? Withdraw it.
+              </p>
+            </li>
+            <li>
+              <h3>Load the patch</h3>
+              <p>
+                A mid-run patch is a minor version: v1 becomes v1.1. The panel checks that every
+                step you finished is unchanged before it offers the swap, and keeps every recorded
+                result.
+              </p>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ───────────────────── One Markdown file ───────────────────── -->
+      <section class="section section-alt" id="features">
+        <div class="wrap">
+          <div class="split-head">
+            <div>
+              <p class="eyebrow">The format</p>
+              <h2 class="h2">A test case is one Markdown file.</h2>
+            </div>
+            <p class="lede-s">
+              Committed next to the code it tests, diffable in a pull request, readable without
+              any tool at all. An agent writes it; the side panel turns each line into something
+              that does the work for you.
+            </p>
+          </div>
+
+          <div class="grammar">
+            <div class="file">
+              <div class="file-bar">test-cases/todo-create-a-task/versions/v1.md</div>
+              <pre class="file-body"><code><span class="c-h">## Create task</span>
+<span class="c-k">Where:</span> %DOMAIN%/
+<span class="c-k">Selector:</span> #add-form button
+Type <span class="c-s">"Buy milk"</span> into the field, then click `Add`.
+
+<span class="c-h">### Expected</span>
+- "Buy milk" appears at the top of the list.
+- The counter reads `1 task left`.
+
+<span class="c-h">## Count the tasks</span>
+<span class="c-f">```js</span>
+const rows = document.querySelectorAll('[data-testid="todo-row"]');
+if (rows.length !== 1) api.fail(`expected 1 row, got ${rows.length}`);
+<span class="c-f">```</span></code></pre>
+            </div>
+
+            <dl class="map">
+              <div>
+                <dt><code>Where:</code><span class="pn-go"><svg aria-hidden="true"><use href="#go" /></svg>Go</span></dt>
+                <dd>
+                  Opens the screen the step starts on. <code>%DOMAIN%</code> is the tab you began
+                  the run from, so one case runs against a branch, staging or localhost.
+                </dd>
+              </div>
+              <div>
+                <dt><code>Selector:</code><span class="pn-hl">✨ Highlight</span></dt>
+                <dd>Scrolls the element into view and flashes it. Nobody hunts for the button.</dd>
+              </div>
+              <div>
+                <dt><code>"quoted"</code><span class="pn-chip">"Buy milk"</span></dt>
+                <dd>A value in quotes types itself into the field you click. Nothing to retype, nothing to mistype.</dd>
+              </div>
+              <div>
+                <dt><code>```js</code><span class="pn-btn pn-run">Run</span></dt>
+                <dd>
+                  A fenced block in place of instructions makes the step automated: it runs in the
+                  page and decides its own result.
+                </dd>
+              </div>
+              <div>
+                <dt>
+                  <code>### Expected</code
+                  ><span class="v-row"><span class="v-pass">Pass</span><span class="v-warn">Warning</span><span class="v-fail">Fail</span></span>
+                </dt>
+                <dd>Pass criteria are observable and binary, so the verdict needs no judgement.</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+      </section>
+
+      <!-- ───────────────────── Manifesto ───────────────────── -->
+      <section class="section manifesto">
+        <div class="wrap">
+          <p class="eyebrow">The principle</p>
+          <p class="quote">Any friction is a defect.</p>
+          <p class="lede-s center">
+            Whoever follows a case may never have seen the app, and is not going to learn it
+            first. So everything was worked out when the case was written, and the person running
+            it is never:
+          </p>
+          <ol class="nevers">
+            <li>
+              <h3>asked to make a decision</h3>
+              <p>Which environment, which account, which record, whether a step applies. The case decided.</p>
+            </li>
+            <li>
+              <h3>asked to provide a value</h3>
+              <p>A URL, an id, something to type. Every value was resolved before the run began.</p>
+            </li>
+            <li>
+              <h3>asked to look anything up</h3>
+              <p>A route from a menu, a fixture from a seed file. If it can be looked up, it already was.</p>
+            </li>
+          </ol>
+          <p class="center"><a class="link" href="https://github.com/enloop-md/enloop/blob/master/MANIFESTO.md">Read the manifesto →</a></p>
+        </div>
+      </section>
+
+      <!-- ───────────────────── Features ───────────────────── -->
+      <section class="section section-alt">
+        <div class="wrap">
+          <p class="eyebrow">Features</p>
+          <h2 class="h2 h2-wide">Everything a run needs is already in the panel.</h2>
+
+          <div class="fgroup">
+            <h3>While you run</h3>
+            <div class="flist">
+              <article class="feat">
+                <span class="tag">Kind: quick</span>
+                <h4>One case, two depths</h4>
+                <p>
+                  Steps marked as the core path make a two-minute Quick run. Full covers the edge
+                  cases, error states and cleanup. Written once, never duplicated.
+                </p>
+              </article>
+              <article class="feat">
+                <span class="tag">feedback.md</span>
+                <h4>Comments with an address</h4>
+                <p>
+                  Tick who a comment is for and each audience gets its own section in the run's
+                  feedback file. The box saves as you type.
+                </p>
+                <p class="chips">
+                  <span class="a-dev">Developer</span><span class="a-prod">Product</span
+                  ><span class="a-test">Test writer</span><span class="a-docs">Docs</span
+                  ><span class="a-ops">Ops</span>
+                </p>
+              </article>
+              <article class="feat">
+                <span class="tag">console.md</span>
+                <h4>The console, beside the step</h4>
+                <p>
+                  Switch capture on and console errors and failed requests land in the report next
+                  to the step where they happened. Off by default; never headers, never bodies.
+                </p>
+              </article>
+              <article class="feat">
+                <span class="tag">▶ Run</span>
+                <h4>Setup commands, one click</h4>
+                <p>
+                  A seed script named in the case gets a Run button. The agent session watching
+                  your folder runs it in the repo and streams the output into the panel. Stop
+                  kills it.
+                </p>
+              </article>
+              <article class="feat">
+                <span class="tag">jumped over</span>
+                <h4>Start further in</h4>
+                <p>
+                  A run got dirty at step four? Start a fresh one and jump straight back to it.
+                  Jumped steps are recorded as jumped, never as steps you chose to skip.
+                </p>
+              </article>
+              <article class="feat">
+                <span class="tag">run.json</span>
+                <h4>Nothing lives only in the panel</h4>
+                <p>
+                  Every mark, note and comment is written to the run's folder as it happens.
+                  Click into the page, close the panel, restart the browser — the run resumes
+                  where you were.
+                </p>
+              </article>
+            </div>
+          </div>
+
+          <div class="fgroup">
+            <h3>After the run</h3>
+            <div class="flist">
+              <article class="feat feat-wide">
+                <span class="tag">/enloop:check</span>
+                <h4>A verdict per failure</h4>
+                <p>
+                  Back in the repo, <b>check</b> reads the run and makes the call the tester
+                  cannot: was the app wrong, or the case? Each verdict comes with its evidence.
+                  Case defects it fixes itself, as the next version.
+                </p>
+                <table class="verdicts">
+                  <thead>
+                    <tr><th>Verdict</th><th>What it means</th><th>Evidence it must give</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><span class="vd vd-bug">App bug</span></td>
+                      <td>Behaviour contradicts the app's own source</td>
+                      <td><code>file.ext:123</code> and the mechanism</td>
+                    </tr>
+                    <tr>
+                      <td><span class="vd vd-case">Case defect</span></td>
+                      <td>The step was stale, wrong or unanswerable</td>
+                      <td>The grep showing the selector or route is gone</td>
+                    </tr>
+                    <tr>
+                      <td><span class="vd vd-env">Environment</span></td>
+                      <td>Wrong build, missing fixture, bad integration state</td>
+                      <td>What must be true for a rerun to mean anything</td>
+                    </tr>
+                    <tr>
+                      <td><span class="vd vd-nr">Not reproducible</span></td>
+                      <td>Could not be located in source from here</td>
+                      <td>What it would take to reproduce</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </article>
+              <article class="feat">
+                <span class="tag">⚒ Prompt to fix this</span>
+                <h4>A finding becomes a prompt</h4>
+                <p>
+                  One click gathers a step's text, your comments, the questions you asked and what
+                  the console printed into a prompt for your coding agent. No agent on this
+                  machine? Copy the whole run's feedback into a ticket instead.
+                </p>
+              </article>
+              <article class="feat">
+                <span class="tag">rules/&lt;project&gt;.md</span>
+                <h4>It gets better at your app</h4>
+                <p>
+                  A comment for the test writer that is really a standing rule is promoted to the
+                  project's rules file, read before every later case. Stars on well-written steps
+                  teach the shape worth repeating.
+                </p>
+              </article>
+              <article class="feat">
+                <span class="tag">Selector:</span>
+                <h4>Stale steps, caught early</h4>
+                <p>
+                  Check sweeps every address and selector against current source — on steps that
+                  passed too. A selector that changed under a passing step is next run's mystery
+                  failure.
+                </p>
+              </article>
+              <article class="feat">
+                <span class="tag">report.md</span>
+                <h4>A report worth sharing</h4>
+                <p>
+                  Every run freezes the exact case it executed and writes a readable report: each
+                  step, its verdict, what was said about it, and the address every domain resolved
+                  to.
+                </p>
+              </article>
+            </div>
+          </div>
+
+          <div class="fgroup">
+            <h3>Around the run</h3>
+            <div class="flist">
+              <article class="feat">
+                <span class="tag">environments.json</span>
+                <h4>Environments</h4>
+                <p>
+                  Local, staging, prod, a preview that lives one afternoon. Pick one and every
+                  address in the case points there; each shows green or red, so a wrong tab is
+                  visible before you click. No environment ever holds a password.
+                </p>
+              </article>
+              <article class="feat">
+                <span class="tag">…/#c=~xdc9TsQw</span>
+                <h4>Share with no install</h4>
+                <p>
+                  Copy a link from the panel and the case opens as a checklist in any browser. The
+                  case travels inside the link, after the #, so it never reaches a server. Or hand
+                  over one self-contained HTML page.
+                </p>
+              </article>
+              <article class="feat">
+                <span class="tag">guides/&lt;slug&gt;/</span>
+                <h4>A user guide nobody screenshots</h4>
+                <p>
+                  Write the case for an end user and its run becomes the guide. The runner takes
+                  each photo at the right moment — cropped, numbered callouts, blur where needed —
+                  and exports Markdown or one HTML page.
+                </p>
+              </article>
+              <article class="feat">
+                <span class="tag">data-testid</span>
+                <h4>Selectors that exist</h4>
+                <p>
+                  The skills never invent a selector. <b>instrument</b> adds the missing handles
+                  in the convention your repo already has, and checks they survive the production
+                  build.
+                </p>
+              </article>
+              <article class="feat">
+                <span class="tag">test-cases/ · runs/</span>
+                <h4>Your folder is the database</h4>
+                <p>
+                  Cases, runs and reports are plain files in a folder you pick, read and written
+                  directly by the browser. Commit them next to the code they test.
+                </p>
+              </article>
+              <article class="feat">
+                <span class="tag">Grant access</span>
+                <h4>Asks for nothing up front</h4>
+                <p>
+                  Installing requests no site permissions. The panel asks for one site, once, the
+                  first time a step needs to act on it.
+                </p>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ───────────────────── Skills ───────────────────── -->
+      <section class="section" id="skills">
+        <div class="wrap">
+          <div class="split-head">
+            <div>
+              <p class="eyebrow">The skills</p>
+              <h2 class="h2">Eight skills, for the agent you already use.</h2>
+            </div>
+            <p class="lede-s">
+              One plugin for Claude Code and Codex. The skills run from inside the repo of the
+              app you are testing, read its source, and validate everything they write with the
+              real parser before it lands.
+            </p>
+          </div>
+
+          <ul class="skills">
+            <li>
+              <b>setup</b>
+              <span>Once per repo: the project name, the deployments cases run against, and the selector convention.</span>
+              <code>/enloop:setup</code>
+            </li>
+            <li>
+              <b>quick</b>
+              <span>The two-minute happy-path case for the branch you are on.</span>
+              <code>/enloop:quick</code>
+            </li>
+            <li>
+              <b>full</b>
+              <span>The whole article — edge cases, error states, cleanup — extending the quick case in place.</span>
+              <code>/enloop:full</code>
+            </li>
+            <li>
+              <b>check</b>
+              <span>Triages a finished run: a verdict per failure, and fixes for what the case got wrong.</span>
+              <code>/enloop:check</code>
+            </li>
+            <li>
+              <b>serve</b>
+              <span>Stays in the loop during a run: answers questions, patches the case, runs its commands.</span>
+              <code>/enloop:serve</code>
+            </li>
+            <li>
+              <b>instrument</b>
+              <span>Adds test handles to the app's source. Attribute-only, so the diff is reviewable.</span>
+              <code>/enloop:instrument</code>
+            </li>
+            <li>
+              <b>guide</b>
+              <span>Writes a case in end-user prose, with photo specs the runner takes.</span>
+              <code>/enloop:guide</code>
+            </li>
+            <li>
+              <b>export-guide</b>
+              <span>Turns a finished run into a Markdown folder or one HTML page.</span>
+              <code>/enloop:export-guide</code>
+            </li>
+          </ul>
+          <p class="note">In Codex the same skills are <code>$setup</code>, <code>$quick</code>, <code>$check</code> and so on.</p>
+        </div>
+      </section>
+
+      <!-- ───────────────────── Get started ───────────────────── -->
+      <section class="section section-alt" id="start">
+        <div class="wrap">
+          <p class="eyebrow">Get started</p>
+          <h2 class="h2 h2-wide">Watch a run work before you write one.</h2>
+
+          <ol class="steps">
+            <li>
+              <span class="num">1</span>
+              <div>
+                <h3>Install the extension</h3>
+                <p>
+                  Connect a folder and let the Library load its example case. It runs against a
+                  public practice site and exercises every control the panel has.
+                </p>
+              </div>
+              <div>
+                <a
+                  class="btn btn-primary"
+                  href="https://chromewebstore.google.com/detail/enloopmd-managing-human-a/fnpjeaabeckcihomnmeoapclokikanod"
+                  >Add to Chrome</a
+                >
+              </div>
+            </li>
+            <li>
+              <span class="num">2</span>
+              <div>
+                <h3>Install the skills</h3>
+                <p>One plugin, installed into the agent you use. This repo is the marketplace for both.</p>
+              </div>
+              <div>
+                <p class="cmd-label">Claude Code</p>
+                <pre class="cmd" data-copy><code>/plugin marketplace add enloop-md/enloop
+/plugin install enloop@enloop</code></pre>
+                <p class="cmd-label">Codex</p>
+                <pre class="cmd" data-copy><code>codex plugin marketplace add enloop-md/enloop</code></pre>
+              </div>
+            </li>
+            <li>
+              <span class="num">3</span>
+              <div>
+                <h3>Write your first case</h3>
+                <p>
+                  From the repo of the app you are testing: setup once, then a case per feature.
+                  Open the panel, find the case in the Library, press Start.
+                </p>
+              </div>
+              <div>
+                <pre class="cmd" data-copy><code>/enloop:setup
+/enloop:quick &lt;ticket, branch or sentence&gt;</code></pre>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <div class="wrap">
+        <svg class="wordmark wordmark-xl" role="img" aria-label="Enloop"><use href="#wordmark" /></svg>
+        <p class="foot-tag">Managing human attention.</p>
+        <nav class="foot-links" aria-label="Elsewhere">
+          <a href="https://chromewebstore.google.com/detail/enloopmd-managing-human-a/fnpjeaabeckcihomnmeoapclokikanod">Chrome Web Store</a>
+          <a href="https://github.com/enloop-md/enloop">GitHub</a>
+          <a href="https://github.com/enloop-md/enloop/blob/master/docs/extension.md">Docs</a>
+          <a href="https://enloop-md.github.io/enloop/">Case viewer</a>
+          <a href="https://github.com/enloop-md/enloop/blob/master/MANIFESTO.md">Manifesto</a>
+          <a href="https://github.com/enloop-md/enloop/blob/master/CHANGELOG.md">Changelog</a>
+          <a href="https://enloop-md.github.io/enloop/privacy.html">Privacy</a>
+        </nav>
+        <p class="foot-fine">Open source under the MIT license. Enloop has no server and no accounts; it collects nothing.</p>
+      </div>
+    </footer>
+
+    <script src="main.js" defer></script>
+  </body>
+</html>
