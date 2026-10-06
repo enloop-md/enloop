@@ -4,11 +4,16 @@ name: Deploy viewer to GitHub Pages
 # is just publishing `viewer/dist`. It ships on every push that could change
 # what the page renders — which includes `shared/`, since the parser and the
 # page renderer both live there.
+#
+# The website (`site/`, plain files, no build) rides along under `about/`.
+# The viewer keeps the root: every shipped extension builds its case links
+# against that address, so it is not the website's to take.
 on:
   push:
     branches: [master]
     paths:
       - "viewer/**"
+      - "site/**"
       - "shared/**"
       - "package.json"
       - "package-lock.json"
@@ -39,6 +44,7 @@ jobs:
       # `shared/` is a broken viewer — worth failing the deploy over.
       - run: npm run typecheck
       - run: npm run build:viewer
+      - run: cp -r site viewer/dist/about
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
