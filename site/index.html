@@ -3,17 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Enloop — fix the bottleneck in human-in-the-loop</title>
+    <title>Enloop — bring the human in the loop up to speed</title>
     <meta
       name="description"
-      content="The human is the slowest step in any AI feedback cycle. Enloop makes that step ruthlessly effective: your agent writes the test case, a Chrome side panel walks you through it, and what you say goes straight back to the agent."
+      content="Humans are the essential bottleneck of product development. Enloop brings them up to speed: the context to verify the product is in the case, and what they say goes back to the agent much faster. Your agent writes the test case, a Chrome side panel walks you through it, and what you say goes straight back."
     />
     <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
     <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
-    <meta property="og:title" content="Enloop — fix the bottleneck in human-in-the-loop" />
+    <meta property="og:title" content="Enloop — humans are the essential bottleneck of product development" />
     <meta
       property="og:description"
-      content="Your agent writes the test case, a Chrome side panel walks you through it, and what you say goes straight back to the agent."
+      content="Enloop brings them up to speed: the context to verify the product, and feedback that reaches the agent much faster. Your agent writes the test case, a Chrome side panel walks you through it, and what you say goes straight back."
     />
     <!-- Absolute, because Open Graph consumers do not resolve relative URLs. -->
     <meta property="og:image" content="https://enloop-md.github.io/enloop/about/assets/og.png" />
@@ -64,11 +64,13 @@
       <section class="hero">
         <div class="wrap">
           <p class="eyebrow">Enloop — managing human attention</p>
-          <h1>Fix the bottleneck in human&#8209;in&#8209;the&#8209;loop.</h1>
+          <h1>Humans are the essential bottleneck of product development.</h1>
           <p class="lede">
-            The human is the slowest step in any AI feedback cycle. Enloop makes that step
-            ruthlessly effective: your agent writes the test case, a Chrome side panel walks you
-            through it, and whatever you say along the way goes straight back to the agent.
+            An agent builds the feature in minutes; a person still has to see it and say whether
+            it is right. Enloop brings that person up to speed: the context to verify the product
+            is in the case, and what they say goes back to the agent much faster. Your agent
+            writes the test case, a Chrome side panel walks you through it, and whatever you say
+            along the way goes straight back.
           </p>
           <div class="cta">
             <a
@@ -111,7 +113,8 @@
                 </figure>
                 <p class="cap">
                   Ask for the feature. <code>/enloop:quick</code> then writes its test case from
-                  the source — every route, label and selector read, none invented.
+                  the source — every route, label and selector read, none invented. The context
+                  is gathered before you arrive.
                 </p>
               </li>
 
@@ -157,7 +160,8 @@
                   </div>
                 </figure>
                 <p class="cap">
-                  The side panel walks you through each step. Something looks off? Say so on the
+                  The side panel walks you through each step: where to go, what to do, what
+                  should happen. You need not know the app. Something looks off? Say so on the
                   step where you saw it, and tick who it is for.
                 </p>
               </li>
@@ -188,7 +192,7 @@
                 </figure>
                 <p class="cap">
                   Back in the repo, <code>/enloop:check</code> finds what you wrote in the run,
-                  addressed and attached to its step, and gets to work.
+                  addressed and attached to its step, and gets to work. No ticket, no retelling.
                 </p>
               </li>
 
@@ -221,8 +225,8 @@
                   </div>
                 </figure>
                 <p class="cap">
-                  The button is green, on the right. Run the case again and the step passes —
-                  nobody wrote a ticket.
+                  The button is green, on the right. Run the case again and the step passes.
+                  From your comment to the fix took one loop, and nobody wrote a ticket.
                 </p>
               </li>
             </ol>
@@ -240,9 +244,9 @@
               <h2 class="h2">The screen moved on. The test catches up while you run it.</h2>
             </div>
             <p class="lede-s">
-              The page in front of you no longer matches the step? Ask from the step itself. Your
-              question reaches the agent session watching the folder with a screenshot and the
-              page's structure attached. It answers from the app's source — and when the step was
+              Context goes stale the moment the app changes. So when the page in front of you no
+              longer matches the step, ask from the step itself. Your question reaches the agent
+              session watching the folder with a screenshot and the page's structure attached. It answers from the app's source — and when the step was
               the problem, a patched version of the test is waiting. One click loads it into the
               run you are in, and every result you already recorded stays.
             </p>
@@ -393,8 +397,9 @@
             </div>
             <p class="lede-s">
               Committed next to the code it tests, diffable in a pull request, readable without
-              any tool at all. An agent writes it; the side panel turns each line into something
-              that does the work for you.
+              any tool at all. An agent writes it, with everything a person who has never seen the
+              app needs in order to verify it; the side panel turns each line into something that
+              does the work for you.
             </p>
           </div>
 
@@ -458,9 +463,10 @@ if (rows.length !== 1) api.fail(`expected 1 row, got ${rows.length}`);
           <p class="eyebrow">The principle</p>
           <p class="quote">Any friction is a defect.</p>
           <p class="lede-s center">
-            Whoever follows a case may never have seen the app, and is not going to learn it
-            first. So everything was worked out when the case was written, and the person running
-            it is never:
+            A person's attention is the scarce thing in the loop, so none of it is spent on
+            anything but the verdict. Whoever follows a case may never have seen the app, and is
+            not going to learn it first. So everything was worked out when the case was written,
+            and the person running it is never:
           </p>
           <ol class="nevers">
             <li>
@@ -485,6 +491,10 @@ if (rows.length !== 1) api.fail(`expected 1 row, got ${rows.length}`);
         <div class="wrap">
           <p class="eyebrow">Features</p>
           <h2 class="h2 h2-wide">Everything a run needs is already in the panel.</h2>
+          <p class="lede-s lede-after">
+            Each one does one of two jobs: it puts the context in front of the person running the
+            case, or it carries what they said back to the agent without a retelling.
+          </p>
 
           <div class="fgroup">
             <h3>While you run</h3>
@@ -695,8 +705,9 @@ if (rows.length !== 1) api.fail(`expected 1 row, got ${rows.length}`);
             </div>
             <p class="lede-s">
               One plugin for Claude Code and Codex. The skills run from inside the repo of the
-              app you are testing, read its source, and validate everything they write with the
-              real parser before it lands.
+              app you are testing and read its source — that is where the context in every case
+              comes from — and validate everything they write with the real parser before it
+              lands.
             </p>
           </div>
 

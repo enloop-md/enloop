@@ -115,8 +115,8 @@ code {
 
 h1 {
   margin: 0 auto;
-  max-width: 13.5em;
-  font: 300 clamp(2.7rem, 7.2vw, 5.4rem) / 1.02 var(--display);
+  max-width: 16em;
+  font: 300 clamp(2.4rem, 6.4vw, 4.9rem) / 1.04 var(--display);
   letter-spacing: -0.022em;
   font-variant-ligatures: no-common-ligatures;
   text-wrap: balance;
@@ -132,6 +132,10 @@ h1 {
 
 .h2-wide {
   max-width: 18em;
+}
+
+.lede-after {
+  margin-top: 18px;
 }
 
 .lede {
