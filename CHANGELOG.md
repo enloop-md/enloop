@@ -4,6 +4,90 @@ Versions are the extension's; the plugin and the case grammar carry their
 own numbers and are listed where they moved. Store uploads are the
 `enloop-extension-v<version>.zip` attached to each GitHub release.
 
+## Unreleased
+
+### Imported cases are marked
+
+- **A case dropped on the panel as a file is marked imported.** Its
+  `meta.json` records `"imported": { "at", "file" }`, and it wears an orange
+  *imported* badge in the Library, in a suite's list, on the case screen
+  (with the file name it came as) and beside each of its runs in All runs.
+  A file brought in to try something no longer looks like one of the
+  project's own cases, and its runs are no longer mistaken for the
+  project's. Archiving keeps the mark. Cases written in the editor or by
+  the skills are unaffected.
+
+### Passwords are banned
+
+- **No case and no environment carries a password.** Not as a typed
+  value, not as a variable or its default, not as an environment value —
+  for any deployment, staging included. A case is committed, linked and
+  downloaded, a run's frozen `case.md` keeps every substituted value, and
+  `environments.json` sits in the repo, so a password in any of them is a
+  password published. A case names the account and where its password
+  lives — a vault item, a seed fixture — and entering it is the tester's
+  own act. The linter now refuses (rule 2e) a variable or placeholder named
+  like one (`QA_PASSWORD`, `ADMIN_TOKEN`, `API_KEY`; the last word of the
+  name decides), a typed value glued to the word *password*, and a typed
+  value in a step whose selector is a password field. It no longer warns
+  on a vault reference — that is the right form. `enloop-case.mjs
+  environments` refuses such a name with `--variable`, `--set` and
+  `--lookup`, `lookup` refuses to find one, and the Environments screen
+  refuses to add one; a name that got in earlier is shown struck through,
+  printed as `BANNED`, and its value is dropped before a run sees it —
+  removing the name from the screen now drops the stored values too. The
+  example case no longer types the demo site's password; it reads it off
+  the page, as the tester would.
+
+### Writing cases
+
+- **Skills no longer produce viewer links.** `enloop-case.mjs write`
+  used to embed a `https://…#c=…` link in the case file and print it,
+  and the authoring skills led their final report with it. A viewer link
+  carries the whole case, so making one is publishing it — a decision
+  that belongs to the person, made from the panel's **Share** menu when
+  they choose to, not to a skill acting on a request to write a case.
+  `write` now strips any such comment and prints only where the case
+  landed; the skills' report ends with how to run it in the extension.
+
+### Running cases
+
+- **The current step keeps its title and its buttons in sight.** While
+  the step being worked on is taller than the panel, its header sticks
+  to the top of the list and its Pass / Warning / Fail bar to the bottom,
+  so a long step is read with its title in view and its verdict under
+  the thumb. A verdict now scrolls the next step's header to the top of
+  the list — after the decided step has finished collapsing, so it no
+  longer slides away with it.
+- **The next step's header at the foot of the current one.** A small
+  "Next: #4 Log out" line, pinned with the verdict buttons at the bottom
+  of the list, so what a Pass leads to is in sight before it is given;
+  on the last step it says so instead.
+- **A progress bar under the list.** One thin segment per step, in run
+  order, coloured by how it ended; the current step is blue, and a dark
+  line above the segments marks the steps scrolled into view right now —
+  where you are looking, as distinct from where the run is. Click a
+  segment to open that step with its header at the top; hover for its
+  number and title.
+- **The foot of the run is one thin row until the last step.** Where a
+  comment box, the case stars, the console question and a full-size
+  Finish button used to sit under every step, there is now a line of
+  links: **Comment / rate case**, which opens the box and the stars
+  when there is something to say, and a small **Finish run…** · **Abort**.
+  Once every step is decided the panel opens by itself — the console
+  question, then Finish and Abort at full size. Finishing early goes
+  through the same panel, so the one question it asks is asked when
+  the tester has said they are done, not on every glance at step 3.
+- **Include console output** is remembered. The tick is the run's own
+  flag, written to `run.json` the moment it changes rather than at
+  finish, so leaving the run for the case list and coming back finds it
+  as it was left — and the tally beside it counts what `console.md`
+  already holds, not only what arrived since the screen was opened.
+  Errors that arrive while the screen is open still tick it by
+  themselves; a box unticked on purpose is no longer re-ticked on
+  return. `console.md` is written either way; the flag only decides
+  what `report.md` hands on.
+
 ## 0.17.0 — 2026-09-14
 
 Extension 0.17.0 · plugin 0.20.1 · grammar 0.0.13 · daemon 0.1.0

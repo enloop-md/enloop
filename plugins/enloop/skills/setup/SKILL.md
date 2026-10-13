@@ -96,9 +96,9 @@ nothing deployed, never prod unless the user says so.
 Write a `README.md` into the data folder if there is none — three
 sentences a teammate who clones the repo can follow with nothing else:
 install the extension (the Chrome Web Store link), open the side panel,
-connect this folder or the repository that holds it; and that any case
-can be opened in a browser without the extension via the viewer link
-inside the file. This is the whole onboarding for a QA engineer who
+connect this folder or the repository that holds it; and that the panel's
+**Share** menu turns any case into a link or an HTML page that opens with
+nothing installed. This is the whole onboarding for a QA engineer who
 arrives after you.
 
 Environments are scoped to the project name, so one folder serving
@@ -107,7 +107,9 @@ deployment and are not addresses — the QA account, a tenant id — belong
 here too (`--variable QA_EMAIL --env staging --set QA_EMAIL=…`); take them
 from seeds and fixtures, or from a lookup through the environment's reach
 as the master's step 5 does, or leave the value empty and say so in the
-report. What is empty shows as a hole in the panel's Environments screen,
+report. Never the account's password: no environment holds one, the
+command refuses a password-named variable, and a case says where the
+password lives instead. What is empty shows as a hole in the panel's Environments screen,
 which is where a teammate fills it.
 
 **The rules file.** Cases also read `rules/<project>.md` in the data

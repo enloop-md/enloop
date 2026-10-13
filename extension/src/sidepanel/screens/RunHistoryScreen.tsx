@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FreeRunFile, RunSummary } from "@tcm/shared";
 import { ErrorNotice } from "../../components/ErrorNotice.js";
+import { ImportedBadge } from "../../components/ImportedBadge.js";
 import { Header } from "../../components/Header.js";
 import { RunStatusBadge } from "../../components/StatusBadge.js";
 import { useReadyStore } from "../store/DataStoreProvider.js";
@@ -25,6 +26,9 @@ export function RunHistoryScreen({
   const store = useReadyStore();
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
   const [freeRuns, setFreeRuns] = useState<FreeRunFile[] | null>(null);
+  // Which cases are imported copies, so their runs are not read as the
+  // project's own. Best-effort: a failed listing just leaves runs unmarked.
+  const [imported, setImported] = useState<Map<string, { at: string; file: string }>>(new Map());
   const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
@@ -36,6 +40,13 @@ export function RunHistoryScreen({
         setFreeRuns(f);
       })
       .catch((e) => !cancelled && setError(e));
+    store
+      .listTestCases()
+      .then((cases) => {
+        if (cancelled) return;
+        setImported(new Map(cases.flatMap((c) => (c.imported ? [[c.id, c.imported] as const] : []))));
+      })
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -72,6 +83,9 @@ export function RunHistoryScreen({
                     <span className="flex-1 truncate text-sm font-medium text-slate-800">
                       {entry.run.testCaseTitle}
                     </span>
+                    {imported.has(entry.run.testCaseId) && (
+                      <ImportedBadge imported={imported.get(entry.run.testCaseId)!} />
+                    )}
                     {entry.run.tier === "quick" && (
                       <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
                         quick

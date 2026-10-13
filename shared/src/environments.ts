@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isSecretName } from "./secrets.js";
 
 /**
  * Environments: the same case run against different deployments.
@@ -142,11 +143,13 @@ export function emptyEnvironments(): EnvironmentsFile {
 /** An environment is complete when every declared domain and variable has
  * a non-empty value. Incomplete ones stay selectable — the missing values
  * just fall through to the case's own defaults/generators — but the editor
- * and the picker flag them, so the hole is seen before it costs a run. */
+ * and the picker flag them, so the hole is seen before it costs a run. A
+ * password-named variable is not a hole: it is banned (`secrets.ts`), and
+ * the editor says so instead of asking for a value. */
 export function missingEnvironmentValues(file: EnvironmentsFile, env: Environment): string[] {
   return [
     ...file.domains.filter((name) => !(env.domains[name] ?? "").trim()),
-    ...file.variables.filter((name) => !(env.values[name] ?? "").trim()),
+    ...file.variables.filter((name) => !isSecretName(name) && !(env.values[name] ?? "").trim()),
   ];
 }
 
@@ -172,14 +175,22 @@ export function defaultEnvironment(file: EnvironmentsFile, project: string): Env
 
 /** What a run resolves against once an environment is picked — its
  * addresses and values, blank entries dropped so they fall through to the
- * case's own `Default:`/generator rather than shadowing them. */
+ * case's own `Default:`/generator rather than shadowing them. A
+ * password-named value is dropped too, whatever a file written before the
+ * ban still holds: the run never sees it, so nothing types it (see
+ * `secrets.ts`). */
 export function environmentValues(env: Environment): {
   domains: Record<string, string>;
   values: Record<string, string>;
 } {
   const nonBlank = (record: Record<string, string>) =>
     Object.fromEntries(Object.entries(record).filter(([, v]) => (v ?? "").trim()));
-  return { domains: nonBlank(env.domains), values: nonBlank(env.values) };
+  return {
+    domains: nonBlank(env.domains),
+    values: Object.fromEntries(
+      Object.entries(nonBlank(env.values)).filter(([name]) => !isSecretName(name)),
+    ),
+  };
 }
 
 export function newEnvironmentId(): string {

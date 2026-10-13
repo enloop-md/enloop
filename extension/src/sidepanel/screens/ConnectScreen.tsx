@@ -68,7 +68,7 @@ export function ConnectScreen() {
         >
           Connect another folder…
         </button>
-        <DropCase onImport={(md) => importCase(md).then(() => undefined)} />
+        <DropCase onImport={(md, file) => importCase(md, file).then(() => undefined)} />
       </Centered>
     );
   }
@@ -94,7 +94,7 @@ export function ConnectScreen() {
         </p>
       </div>
       {state.status === "error" && <p className="text-sm text-red-600">{state.message}</p>}
-      <DropCase onImport={(md) => importCase(md).then(() => undefined)} />
+      <DropCase onImport={(md, file) => importCase(md, file).then(() => undefined)} />
       <button
         onClick={() => void addStorage()}
         className="rounded bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700"

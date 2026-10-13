@@ -269,8 +269,8 @@ single step.
 `# Prerequisites` is where the run begins, who the tester is in the app, and
 which services they must start themselves — the address for the first; the
 account, its role, and where the credential lives (a vault item or a seed
-fixture, never a person to ask) for the second; the command for each of the
-rest. The entry point lives here rather than in a step, because a tester is
+fixture, never a person to ask — and never the password itself) for the
+second; the command for each of the rest. The entry point lives here rather than in a step, because a tester is
 usually already in the app and a step spent on arriving is a Pass/Fail on
 something that was already true. An address here is absolute or
 `%DOMAIN%`-built: unlike a step's `Where:`, this block has no open page to
@@ -411,6 +411,20 @@ Default: qa.bot@staging.example.test
 A fresh suffix so the run's records are telling apart.
 Generator: random-string 6
 ```
+
+**A password is never a variable.** Not a default, not an environment
+value, not a typed literal — for any deployment, staging included. A case
+file is committed, sent as a link and downloaded as a page; an
+`environments.json` sits in the repo; a run's frozen `case.md` keeps every
+substituted value. A password in any of them is a password published. The
+case names the account and **where its password lives** — *password: vault
+item `staging QA bot`* — and entering it is the tester's own act. The
+linter refuses a variable or placeholder named like one (`QA_PASSWORD`,
+`API_TOKEN`, `SECRET` — the last word decides), a typed value glued to the
+word *password*, and a typed value in a step whose selector is a password
+field; the validator's `environments` command and the panel's Environments
+screen refuse to add such a name; a run ignores such a value in a file
+written before the ban. Tokens and API keys count as passwords.
 
 Generators: `timestamp` (epoch ms, or ISO text with arg `iso`),
 `random-number` (arg `min-max`), `random-string` (arg = length), and the page

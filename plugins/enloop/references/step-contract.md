@@ -293,21 +293,45 @@ login, a prerequisite names the account, its role in the app's own words,
 and where the credential lives:
 
     # Prerequisites
-    - Logged in at %DOMAIN%/login as "**%QA_EMAIL%**" (role `Administrator`),
-      password "**%QA_PASSWORD%**"
+    - Logged in at %DOMAIN%/login as "**%QA_EMAIL%**" (role `Administrator`)
+      — password: vault item `staging QA bot`
 
-**The credential is a value, not a place to look.** A test account's
-password is a variable the environment provides
-(`enloop-case.mjs environments <folder> "<project>" --variable QA_PASSWORD
---env staging --set QA_PASSWORD=…`), written as a typeable value so the
-panel puts it in the field. A vault reference ("vault item `staging QA
-bot`") is a lookup, and the linter warns on it; keep one only for a
-deployment whose credentials must not be recorded — production — and say
-so in a `### Note`. A real production credential never goes in a case
-file or an environment; a throwaway test-environment one is the team's
-call, made once in the rules file's *Accounts and data* section — which
-is also where the account facts come from at authoring time, so an author
-copies instead of guessing.
+The account is a value — `QA_EMAIL` differs per deployment, so the
+environment provides it. The password is **a place, never a value**: see
+2e. Both facts come from the rules file's *Accounts and data* section at
+authoring time, so an author copies instead of guessing.
+
+### 2e. A case never carries a password
+
+Not as a typed value, not as a variable, not as a `Default:`, not in an
+environment — for any deployment, staging included. A case file is
+committed, shared as a link, downloaded as an HTML page and pasted into a
+PR; an environments file sits in the repo beside the code; a run's frozen
+`case.md` keeps every substituted value. A password in any of them is a
+password published, and "it was only staging" is how the same one reaches
+prod. So the rule has no exceptions to weigh.
+
+What a case says instead is **where the password lives** — a vault item,
+a seed fixture, a page that prints it — and entering it is the tester's
+own act, outside the script:
+
+    - Logged in as "**%QA_EMAIL%**" — password: vault item `staging QA bot`
+
+    ## Enter the password
+    Selector: input[type="password"]
+    Enter the password from the vault item named in the prerequisites.
+
+The validator refuses, as errors: a variable or a `%PLACEHOLDER%` whose
+name is a password's (`QA_PASSWORD`, `ADMIN_TOKEN`, `API_KEY`, `SECRET`
+— the last word of the name decides; `PASSWORD_HINT` is fine); a
+`"**typed value**"` glued to the word *password* in a prerequisite or a
+step; and a `"**typed value**"` in a step whose `Selector:` is a password
+field. `enloop-case.mjs environments` refuses such a name with `--variable`,
+`--set` and `--lookup`, `lookup` refuses to find one, and the panel's
+Environments screen refuses to add one. A file written before the ban may
+still hold such a name; the panel shows it struck through, `environments`
+prints it as `BANNED`, and a run ignores its value. Tokens and API keys are
+the same secret under a different name and go with it.
 
 When login *is* what is under test, it is steps, as today. When the app
 has no login, the case says nothing and the author answers the linter's
@@ -635,7 +659,9 @@ by hand:
 > `Selector:` · structural selectors ·
 > "then" in instructions · instructions restating the navigation · a step 1
 > spent on arriving · no entry point in `# Prerequisites` · nothing says
-> who the tester is in the app · a bare route in a
+> who the tester is in the app · a password in the case — a variable or
+> placeholder named like one, a typed value glued to the word, a typed
+> value into a password field · a bare route in a
 > prerequisite · `### Expected` missing, prose rather than bullets, carrying
 > rationale, or using an unmeasurable adjective · a variable with no
 > `Default:`, no `Generator:` and no environment providing it · an
@@ -668,7 +694,8 @@ a judgement about the case. Check every step against them:
 - [ ] A service the tester must start is missing from `# Prerequisites`,
       or is listed without the command that starts it
 - [ ] A prerequisite names an account whose credential lives with a person
-      to ask, not in a place to look
+      to ask, not in a place to look — or spells the password out in prose
+      the linter's patterns did not catch
 - [ ] A variable's value was asked of the user, or left for the tester,
       rather than read from the repo, the rules file or the environments
 - [ ] A step lists fallback `Selector:` lines that are near-duplicates of

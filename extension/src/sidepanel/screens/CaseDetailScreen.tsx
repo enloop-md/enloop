@@ -29,6 +29,7 @@ import {
 } from "@tcm/shared";
 import { CaptureToggles } from "../../components/CaptureToggles.js";
 import { ScreenshotToggle } from "../../components/ScreenshotToggle.js";
+import { ImportedBadge } from "../../components/ImportedBadge.js";
 import { ErrorNotice } from "../../components/ErrorNotice.js";
 import { Header } from "../../components/Header.js";
 import { Markdown } from "../../components/Markdown.js";
@@ -39,6 +40,7 @@ import { getActivePageUrl } from "../../lib/automation.js";
 import { useActivePageUrl } from "../../lib/use-active-page.js";
 import { readTypedValues, writeTypedValues } from "../../lib/value-memory.js";
 import { downloadTextFile, fileSlug } from "../../lib/download.js";
+import { relativeTime } from "../../lib/time.js";
 
 export function CaseDetailScreen({
   testCaseId,
@@ -514,6 +516,15 @@ export function CaseDetailScreen({
       <Header title={meta.title} onBack={onBack} onSettings={onSettings} />
       <div className="flex-1 overflow-y-auto p-3">
         <ErrorNotice error={error} className="mb-2" />
+        {meta.imported && (
+          <div className="mb-2 flex items-baseline gap-1.5 rounded border border-orange-200 bg-orange-50 px-2 py-1.5 text-xs text-orange-900">
+            <ImportedBadge imported={meta.imported} />
+            <span>
+              Imported from <span className="font-medium">{meta.imported.file}</span>{" "}
+              {relativeTime(meta.imported.at)} — a dropped file, not one of this project's cases.
+            </span>
+          </div>
+        )}
         {(version?.project || meta.project || version?.kind === "guide") && (
           <div className="mb-2 flex items-baseline gap-1.5 text-xs">
             {(version?.project || meta.project) && (

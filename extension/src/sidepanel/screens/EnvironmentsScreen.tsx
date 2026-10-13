@@ -3,8 +3,10 @@ import {
   describeReach,
   endOfDayIso,
   isLayoutFolderName,
+  isSecretName,
   missingEnvironmentValues,
   newEnvironmentId,
+  SECRET_BAN,
   type Environment,
   type EnvironmentsFile,
 } from "@tcm/shared";
@@ -85,6 +87,12 @@ export function EnvironmentsScreen({
     if (!file) return;
     const name = normalizeVariableName(raw);
     if (!name || file.domains.includes(name) || file.variables.includes(name)) return;
+    // Refused by name, before it is written: no environment holds a
+    // password, and the contract is where one would start.
+    if (isSecretName(name)) {
+      setError(new Error(`${name} is a password by name. ${SECRET_BAN}`));
+      return;
+    }
     (kind === "domains" ? setNewDomain : setNewVariable)("");
     void update({ ...file, [kind]: [...file[kind], name] });
   }
@@ -92,8 +100,15 @@ export function EnvironmentsScreen({
   function removeName(kind: "domains" | "variables", name: string) {
     if (!file) return;
     // The name leaves the contract; stored values stay in each environment
-    // untouched, so re-adding the name later brings them back.
-    void update({ ...file, [kind]: file[kind].filter((v) => v !== name) });
+    // untouched, so re-adding the name later brings them back — except a
+    // password's, which is the one value the file must stop holding.
+    const environments = isSecretName(name)
+      ? file.environments.map((e) => {
+          const { [name]: _dropped, ...values } = e.values;
+          return { ...e, values };
+        })
+      : file.environments;
+    void update({ ...file, environments, [kind]: file[kind].filter((v) => v !== name) });
   }
 
   function addEnvironment() {
@@ -207,6 +222,7 @@ export function EnvironmentsScreen({
                 </>
               }
               names={file.variables}
+              banned={file.variables.filter(isSecretName)}
               value={newVariable}
               placeholder="QA_EMAIL"
               onValue={setNewVariable}
@@ -283,6 +299,7 @@ function NameContract({
   title,
   empty,
   names,
+  banned = [],
   value,
   placeholder,
   canAdd,
@@ -293,6 +310,10 @@ function NameContract({
   title: string;
   empty: React.ReactNode;
   names: string[];
+  /** Names the file holds that the ban covers — written before the ban,
+   * or by hand. Shown red with the one way out: remove them. A run
+   * already ignores their values. */
+  banned?: string[];
   value: string;
   placeholder: string;
   canAdd: boolean;
@@ -304,11 +325,20 @@ function NameContract({
     <section className="space-y-2">
       <h2 className="text-xs font-semibold uppercase text-slate-400">{title}</h2>
       {names.length === 0 && <p className="text-xs text-slate-400">{empty}</p>}
+      {banned.length > 0 && (
+        <p className="text-xs text-red-600">
+          {banned.join(", ")} {banned.length === 1 ? "is" : "are"} a password by name. {SECRET_BAN}{" "}
+          Remove {banned.length === 1 ? "it" : "them"}; a run ignores the value already.
+        </p>
+      )}
       <div className="flex flex-wrap gap-1.5">
         {names.map((name, index) => (
           <span
             key={name}
-            className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-700"
+            className={`inline-flex items-center gap-1 rounded px-2 py-0.5 font-mono text-xs ${
+              banned.includes(name) ? "bg-red-50 text-red-700 line-through" : "bg-slate-100 text-slate-700"
+            }`}
+            title={banned.includes(name) ? SECRET_BAN : undefined}
           >
             %{name}%
             {placeholder === "APP" && index === 0 && (
@@ -491,19 +521,30 @@ function EnvironmentCard({
           />
         </div>
       ))}
-      {variables.map((name) => (
-        <div key={`v-${name}`} className="space-y-0.5">
-          <label className="font-mono text-[11px] text-slate-500">%{name}%</label>
-          <input
-            value={env.values[name] ?? ""}
-            onChange={(e) => onPatch({ values: { ...env.values, [name]: e.target.value } })}
-            placeholder="no value — runs fall back to the case's default"
-            className={`w-full rounded border px-2 py-1 text-sm ${
-              missingSet.has(name) ? "border-amber-300 bg-amber-50/40" : "border-slate-300"
-            }`}
-          />
-        </div>
-      ))}
+      {variables.map((name) =>
+        // A banned name gets no field: nothing to type a password into.
+        isSecretName(name) ? (
+          <div key={`v-${name}`} className="space-y-0.5">
+            <label className="font-mono text-[11px] text-red-600 line-through">%{name}%</label>
+            <p className="text-[11px] text-red-600">
+              Banned — a password by name. Remove it from the list above
+              {(env.values[name] ?? "").trim() ? "; the value stored here is ignored by every run" : ""}.
+            </p>
+          </div>
+        ) : (
+          <div key={`v-${name}`} className="space-y-0.5">
+            <label className="font-mono text-[11px] text-slate-500">%{name}%</label>
+            <input
+              value={env.values[name] ?? ""}
+              onChange={(e) => onPatch({ values: { ...env.values, [name]: e.target.value } })}
+              placeholder="no value — runs fall back to the case's default"
+              className={`w-full rounded border px-2 py-1 text-sm ${
+                missingSet.has(name) ? "border-amber-300 bg-amber-50/40" : "border-slate-300"
+              }`}
+            />
+          </div>
+        ),
+      )}
     </div>
   );
 }

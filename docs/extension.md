@@ -51,7 +51,11 @@ straight away: the dashed **Drop a case file here** block on that screen,
 and at the top of the Library ever after, accepts a dropped or picked `.md`
 and makes it a runnable case. With no folder connected it lands in the
 browser's own storage, listed in Settings as *Inbox (this browser)*; with
-one, in the default folder.
+one, in the default folder. A case that arrives this way is marked
+**imported** — its `meta.json` records `"imported": { "at", "file" }` — and
+carries an orange *imported* badge in the Library, on the case screen and
+next to each of its runs in All runs, so a file brought in to try something
+is never mistaken for one of the project's own cases.
 
  Pick any directory; the
 extension creates its layout inside:
@@ -153,6 +157,19 @@ format](case-format.md#groups)) shows each group's title and goal as a
 heading over its steps, with a running tally of how the steps under it have
 gone. The goal is the sentence to read before the next few verdicts: it
 says what they are for. Numbering runs on through groups.
+
+**Keeping your place.** The step you are on is outlined in blue, and
+while it is taller than the panel its header sticks to the top of the
+list and its verdict bar to the bottom — a long step is read with its
+title in view and Pass / Warning / Fail under the thumb. A verdict closes
+the step and scrolls the next one's header to the top. Under the list
+runs a thin **progress bar**, one segment per step in run order, coloured
+by how each ended, the current one blue: how many steps there are and how
+far along you are, without scrolling to find out. A dark line above the
+segments marks the steps in the scroll box right now — after scrolling
+back to re-read step 2, the blue says where the run is and the line says
+where you are. Click a segment to open that step with its header at the
+top; hover for its number and title.
 
 Every step takes **comments**, and each comment says **who it is for**:
 
@@ -374,8 +391,9 @@ one placed to make it.
 Rules say what a case must do. Stars say what a good one looked like.
 
 Under every step's verdict buttons, across from **Skip this step**, are five
-stars; above **Finish run** are five more for the case as a whole. They rate
-the *writing* — was this step clear, checkable, the right size — not the
+stars; behind **Comment / rate case** at the foot of the run are five more for
+the case as a whole, next to a comment box for anything that is not about one
+step. They rate the *writing* — was this step clear, checkable, the right size — not the
 feature: a step can fail and deserve five stars. Most steps get none, and
 that is the intended state. The stars are for the outliers: the step you
 would show someone as the way to write one, and the one that made you guess.
@@ -454,8 +472,11 @@ What lands in the run's folder:
   anyone opening the log.
 
 Whether any of it is handed to an agent is a second, separate decision, made in
-the finish bar: **Include console output in the report**, ticked by default when
-the run captured at least one error and unticked otherwise. What gets attached
+the finish panel: **Include console output in the report**, ticked by itself
+the moment the run captures its first error and left alone otherwise. The tick
+is written to `run.json` as it changes, not at finish — leave the run for the
+case list and come back, and the box is as you left it, with the tally of
+what `console.md` holds so far beside it. What gets attached
 is a deduplicated digest — errors, warnings and failed requests, with an
 occurrence count and the step each first appeared in — not the raw log, because
 fifty identical framework warnings read as fifty problems. Requests that
@@ -548,6 +569,16 @@ names, service names, user names, ports; a pasted connection URL is
 recorded without its password. A card marked **production** is treated as
 such by the skills: nothing looks anything up there unless asked in so
 many words, and a value found there is never written into the folder.
+
+**No environment holds a password.** Not staging's, not a throwaway
+account's: `environments.json` sits in the repo, and a case that typed the
+value would carry it into every link, download and frozen run. A variable
+named like one — `QA_PASSWORD`, `ADMIN_TOKEN`, `API_KEY` — is refused when
+you try to add it here and by `enloop-case.mjs environments`; a name that
+got in before the ban is shown struck through with no field to type into,
+and a run ignores whatever value it holds. The case names the account
+(`%QA_EMAIL%` is a value an environment does provide) and says where its
+password lives — a vault item, a seed fixture — and the tester enters it.
 
 A case screen opens with the case's **goal**, then **You will** and **You
 will need** — the four things a tester reads before Start — and the run

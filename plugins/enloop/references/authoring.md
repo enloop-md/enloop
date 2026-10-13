@@ -167,7 +167,9 @@ case uses undeclared; an admin console on its own host, a second tenant,
 a marketing site the flow signs in from, each get a name of their own,
 set on the same line. A value that differs per deployment and is not an
 address — a QA account, a tenant id — is recorded the same way
-(`--variable QA_EMAIL --env local --set QA_EMAIL=…`). What you could not
+(`--variable QA_EMAIL --env local --set QA_EMAIL=…`); its password is
+not, ever — the command refuses a password-named variable, and the case
+names where the password lives instead (contract rule 2e). What you could not
 find stays empty in that environment, listed in the report as a hole; it
 is never a question to the user and never a blank in the case — and a
 name the case then leaves to the environment must have a value in at
@@ -399,7 +401,8 @@ not say, and this skill does:
 - **`# Prerequisites`** — the entry point first (contract rule 2a), then
   **who the tester is in the app** (contract rule 2d) — account, role, and
   where the credential lives, copied from the rules file's *Accounts and
-  data* section rather than assumed — then data that must exist, then
+  data* section rather than assumed; never the password itself, in any
+  form (rule 2e) — then data that must exist, then
   **every service the tester has to start themselves**, each with the
   command and the directory to run it in:
 
@@ -574,14 +577,19 @@ Tell the user:
 
 Do not claim the case was executed. It was parsed and linted, not run.
 
-Finish with how to run it — in this order, because the first needs
-nothing installed. The `write` command printed a `viewer` line: give
-that link first ("open this in any browser to read and tick off the
-case"). Then the extension: install it from the Chrome Web Store
+Finish with how to run it: install the extension from the Chrome Web
+Store
 (https://chromewebstore.google.com/detail/enloopmd-managing-human-a/fnpjeaabeckcihomnmeoapclokikanod),
 open the side panel, and connect `<the data folder, or the repo that
 holds it>` — the case is already in the Library. Then the **check**
-skill, back here, to triage what the run found. If any step had to go
+skill, back here, to triage what the run found.
+
+**Never produce a viewer link** (`https://…#c=…`) — not in the report,
+not in the file, not when asked to "share" in passing. The link carries
+the whole case, so making one is publishing it, and whether that happens
+is the user's own decision, made from the panel's **Share** menu (copy
+link, download page) when they choose to. If they ask you for a link,
+point them there. If any step had to go
 without a `Selector:`, offer the **instrument** skill first — Highlight is
 dead weight on those steps until the elements have handles. If you had to
 ask for the project name in step 1, offer the **setup** skill so the next case

@@ -257,6 +257,12 @@ export const testCaseVersionSchema = z.object({
 /** On-disk `meta.json` — pure extension bookkeeping, not test content. */
 export const caseBookkeepingSchema = z.object({
   archived: z.boolean(),
+  /** Set when the case arrived as a file dropped on (or picked in) the
+   * panel rather than being written for this folder: a copy someone handed
+   * over, or a file brought in to try something. Marked so neither the
+   * tester nor an agent later reading the folder mistakes it — or its runs
+   * — for one of the project's own cases. `file` is the name it came as. */
+  imported: z.object({ at: z.string(), file: z.string() }).optional(),
 });
 
 /** Composed view returned to callers: bookkeeping + parsed current-version content. */
@@ -272,6 +278,9 @@ export const testCaseMetaSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   archived: z.boolean(),
+  /** From `meta.json`: when and as what file the case was imported. Absent
+   * for a case written for this folder. */
+  imported: z.object({ at: z.string(), file: z.string() }).optional(),
   /** Set when this case lives inside a suite folder rather than standalone. */
   suiteId: z.string().optional(),
 });
@@ -523,11 +532,13 @@ export const runFileSchema = z.object({
    * ("failed on staging" and "failed on local" are different findings).
    * Defaulted so runs recorded before environments existed still parse. */
   environment: z.string().default(""),
-  /** The tester's decision, at finish, about whether the captured console and
-   * network output may be summarized into `report.md` — which is the file an
-   * agent reads. Recorded on disk rather than acted on and forgotten, so
-   * `/enloop:check` sees the decision instead of re-making it. Defaulted for
-   * runs written before capture existed. */
+  /** The tester's decision about whether the captured console and network
+   * output may be summarized into `report.md` — which is the file an agent
+   * reads. Written the moment the box is ticked, not at finish, so leaving
+   * the run screen and coming back finds it as it was left; and kept on disk
+   * rather than acted on and forgotten, so `/enloop:check` sees the decision
+   * instead of re-making it. `console.md` is written regardless of this
+   * flag. Defaulted for runs written before capture existed. */
   consoleInReport: z.boolean().default(false),
   /** The tester's opinion of the case as a whole, one to five stars, null
    * when they gave none — which is the ordinary run. Feeds the per-project
