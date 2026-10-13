@@ -151,6 +151,14 @@ that first H1 already "used up" the top level:
   differ between staging and prod). A variable with none of the three is
   a linter error, not a question the panel asks.
 
+  A password is never a variable — nor a default, nor an environment
+  value, nor a typed literal, for any deployment. A case file is
+  committed, linked and downloaded; a password in it is published. The
+  case names the account and where its password lives — "password:
+  vault item staging-qa-bot" — and entering it is the tester's own act. A
+  variable or placeholder named like one (`QA_PASSWORD`, `API_TOKEN`) is
+  a linter error, and so is a typed value into a password field.
+
   A value the run itself produces — the id of a user created in step 2,
   the URL of a record that does not exist until the case makes it — is
   not a variable, and **never goes into an address**. An address with a

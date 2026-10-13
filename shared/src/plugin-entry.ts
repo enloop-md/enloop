@@ -30,7 +30,10 @@ export {
   screenshotStem,
 } from "./markdown.js";
 export { runFileSchema } from "./schemas.js";
-export { viewerLink, withViewerComment, stripViewerComment } from "./viewer-link.js";
+// Only the stripper: the plugin must be unable to make a viewer link. A link
+// carries the whole case, so producing one is publishing it, and that is the
+// tester's act from the panel's Share menu, never a skill's. See MANIFESTO.
+export { stripViewerComment } from "./viewer-link.js";
 export { describeRating, isExemplaryRating, isPoorRating, ratingStars } from "./rating.js";
 export {
   compareVersionIds,
@@ -53,3 +56,4 @@ export {
   providersByName,
   describeReach,
 } from "./environments.js";
+export { isSecretName, secretVariableNames, SECRET_BAN } from "./secrets.js";

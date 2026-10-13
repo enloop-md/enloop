@@ -52,7 +52,8 @@ inside a step further down.
 Generator: random-string 6
 
 # You will need
-- Nothing beyond this browser: the demo account is in the case.
+- Nothing beyond this browser: the demo account's name is in the case, and
+  the practice site prints its password on the login page.
 
 # Dependencies
 - Chrome's side panel is open — you are reading this in it.
@@ -113,18 +114,27 @@ Where: %DOMAIN%/login
 Selector: #password
 Selector: form input[type="password"]
 Kind: quick
-Put "**SuperSecretPassword!**" in [the Password field](#password).
+Read the password off the page — the practice site prints it under its
+heading — and type it into [the Password field](#password).
 
 ### Expected
 - The Password field is filled.
 
 ### Note
-This step lists two \`Selector:\` lines. They are tried in order and the first
-one that matches wins, which is how a case survives a \`data-testid\` that has
-not shipped yet or an element that moved into a modal. The run screen says
-which one matched. The link above is the other way to write a Highlight —
-\`[the Password field](#password)\` — for when a bare selector would read badly
-mid-sentence.
+No typed-value control on this step, and that is the rule, not an
+oversight: a case never carries a password. Not as a value, not as a
+variable, not in an environment — a case file is committed, linked and
+downloaded, and a password in it is a password published. A case names the
+account and says where its password lives (a vault item, a seed fixture;
+here, the page itself), and the tester enters it. The validator refuses a
+case that tries otherwise.
+
+This step also lists two \`Selector:\` lines. They are tried in order and the
+first one that matches wins, which is how a case survives a \`data-testid\`
+that has not shipped yet or an element that moved into a modal. The run
+screen says which one matched. The link above is the other way to write a
+Highlight — \`[the Password field](#password)\` — for when a bare selector
+would read badly mid-sentence.
 
 ## Log in
 Where: %DOMAIN%/login

@@ -15,7 +15,10 @@ the steps in order; do not skip a step because it looks done.
 
 Two rules hold throughout. **No secret is ever written**: a `tsh` reach
 holds certificates and needs none; a pasted URL or connection string that
-carries a password is recorded without it, and the report says so. **The
+carries a password is recorded without it, and the report says so; and no
+variable holds a password either — `QA_EMAIL` is a value an environment
+provides, the account's password never is, and `environments` refuses a
+password-named variable outright. **The
 user answers at most two questions per environment**: the paste, and the
 address when the paste did not give one. Everything else — whether it is
 production, whether it is temporary, whether it is reachable — is decided

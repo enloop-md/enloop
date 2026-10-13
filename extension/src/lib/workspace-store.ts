@@ -215,15 +215,20 @@ export class WorkspaceStore implements DataStore {
 
   /** Targets the default storage. Screens that let the user choose call
    * `createTestCaseIn` instead. */
-  async createTestCase(bodyMarkdown: string, suiteId?: string): Promise<TestCaseMeta> {
+  async createTestCase(
+    bodyMarkdown: string,
+    suiteId?: string,
+    importedFrom?: string,
+  ): Promise<TestCaseMeta> {
     const storageId = suiteId ? splitId(suiteId).storageId : undefined;
-    return this.createTestCaseIn(this.target(storageId).storageId, bodyMarkdown, suiteId);
+    return this.createTestCaseIn(this.target(storageId).storageId, bodyMarkdown, suiteId, importedFrom);
   }
 
   async createTestCaseIn(
     storageId: string,
     bodyMarkdown: string,
     suiteId?: string,
+    importedFrom?: string,
   ): Promise<TestCaseMeta> {
     const store = this.child(storageId);
     let localSuiteId: string | undefined;
@@ -237,7 +242,7 @@ export class WorkspaceStore implements DataStore {
       }
       localSuiteId = suite.localId;
     }
-    return this.tagMeta(storageId, await store.createTestCase(bodyMarkdown, localSuiteId));
+    return this.tagMeta(storageId, await store.createTestCase(bodyMarkdown, localSuiteId, importedFrom));
   }
 
   async createVersion(id: string, bodyMarkdown: string): Promise<TestCaseVersion> {

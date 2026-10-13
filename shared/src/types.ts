@@ -177,6 +177,8 @@ export interface TestCaseSummary {
   currentVersion: string;
   updatedAt: string;
   archived: boolean;
+  /** Present when the case came in as a dropped file — see `meta.json`. */
+  imported?: { at: string; file: string };
   /** Set when this case lives inside a suite folder rather than standalone. */
   suiteId?: string;
 }

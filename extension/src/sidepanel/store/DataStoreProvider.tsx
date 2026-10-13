@@ -66,7 +66,8 @@ interface DataStoreContextValue {
   /** A case file dropped on the panel. With a store, it goes to the default
    * storage; with none, the browser's own storage is created for it, so the
    * drop works before anything is connected. Returns the case's id. */
-  importCase: (markdown: string) => Promise<string>;
+  /** Lands a dropped file as a case marked imported, under its file name. */
+  importCase: (markdown: string, fileName: string) => Promise<string>;
 }
 
 const DataStoreContext = createContext<DataStoreContextValue | null>(null);
@@ -159,12 +160,12 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
   }, [refresh, setDefaultStorageId]);
 
   const importCase = useCallback(
-    async (markdown: string): Promise<string> => {
-      if (store) return (await store.createTestCase(markdown)).id;
+    async (markdown: string, fileName: string): Promise<string> => {
+      if (store) return (await store.createTestCase(markdown, undefined, fileName)).id;
       const entry = await ensureInboxStorage();
       const handle = await getHandle(entry.id);
       if (!handle) throw new Error("This browser's own storage is not available here.");
-      const meta = await new FsaDataStore(handle).createTestCase(markdown);
+      const meta = await new FsaDataStore(handle).createTestCase(markdown, undefined, fileName);
       setDefaultStorageId(entry.id);
       await refresh();
       return joinId(entry.id, meta.id);

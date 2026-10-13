@@ -9,6 +9,7 @@ import {
 } from "./markdown.js";
 import { SHOT_COLORS } from "./schemas.js";
 import { MAIN_DOMAIN_NAME, mainDomainName, resolveRunValues } from "./variables.js";
+import { SECRET_BAN, isPasswordFieldSelector, isSecretName } from "./secrets.js";
 import type { TestCaseVersion } from "./types.js";
 
 /**
@@ -134,6 +135,15 @@ const UNMEASURABLE =
  * app. Deliberately loose: this guards the case that never mentions an
  * account at all, not the shape of the mention. */
 const LOGIN_HINT = /\b(log(ged)?[ -]?in|sign(ed)?[ -]?in|account|credentials?|password)\b/i;
+
+/** A typed value — `"**value**"` — with "password" glued to it on either
+ * side: `password "**hunter2**"`, `password is **hunter2**`, `Put
+ * "**hunter2**" in the Password field`. The glue is kept tight so a
+ * password mentioned in the same sentence as some other typed value does
+ * not trip it; the loose case is caught by the field's selector instead. */
+const TYPED_PASSWORD =
+  /\bpass(word|wd|phrase)?\b\s*(is|:|=|of|as|with)?\s*["“]?\*\*[^*\n]+\*\*|\*\*[^*\n]+\*\*["”]?\s+(in|into)\s+(the\s+)?(\[[^\]\n]*)?\bpass(word|wd|phrase)?\b/i;
+const TYPED_VALUE = /"\*\*[^*\n]+\*\*"/;
 
 /** A named place in prose — `Reports page`, `Sync Console screen`. The
  * capitalised word is what keeps "the page reloads" from firing. */
@@ -449,16 +459,49 @@ export function lintCase(raw: string, options: LintOptions = {}): LintResult {
   }
   const mainDomain =
     mainDomainName(declared) ?? (declaredNames.has("BASE_URL") ? "BASE_URL" : MAIN_DOMAIN_NAME);
-  // A credential the tester must go and find is a lookup, and the manifesto
-  // allows none: a test account's password is a value the environment
-  // provides, written as a typeable "**%QA_PASSWORD%**". A vault survives
-  // only for a deployment an environment must not hold — prod.
-  for (const item of doc.prerequisites) {
-    if (/\b(vault|1password|bitwarden|keychain|password manager)\b/i.test(item) && !/\*\*[^*]*\*\*/.test(item)) {
-      warnings.push({
-        rule: "2d",
+  // 2e: no password, anywhere. A password is the one value the case does
+  // not resolve — it names where the password lives and leaves entering it
+  // to the tester. Errors, not warnings: a name or a typed literal is
+  // something a machine is certain about, and a case that carries one is
+  // refused before it reaches the folder (see `secrets.ts`).
+  for (const v of declared.variables) {
+    if (isSecretName(v.name)) {
+      errors.push({
+        rule: "2e",
+        at: v.name,
+        message: `\`${v.name}\` is a password by name. ${SECRET_BAN} Remove the variable; the prerequisite that names the account says where its password lives.`,
+      });
+    }
+  }
+  const secretPlaceholders = new Set(
+    [...raw.matchAll(/%([A-Za-z_][A-Za-z0-9_]*)%/g)]
+      .map((m) => m[1])
+      .filter((name) => isSecretName(name) && !declaredNames.has(name)),
+  );
+  for (const name of secretPlaceholders) {
+    errors.push({
+      rule: "2e",
+      at: name,
+      message: `\`%${name}%\` is a password by name — a value no environment may provide. ${SECRET_BAN}`,
+    });
+  }
+  for (const item of declared.prerequisites) {
+    if (TYPED_PASSWORD.test(item)) {
+      errors.push({
+        rule: "2e",
         at: "Prerequisites",
-        message: `"${item.trim().slice(0, 60)}…" sends the tester to a vault. A test account's password is an environment value — declare \`QA_PASSWORD\` and write it as "**%QA_PASSWORD%**" so the panel types it. Keep a vault reference only for a deployment whose credentials must not be recorded.`,
+        message: `"${item.trim().slice(0, 60)}…" writes a password as a typed value. ${SECRET_BAN} Write "password: vault item \`staging QA bot\`" — a place, never the value.`,
+      });
+    }
+  }
+  for (const step of declared.steps) {
+    const text = step.instructions ?? "";
+    const typesIntoPasswordField = step.selectors.some(isPasswordFieldSelector) && TYPED_VALUE.test(text);
+    if (typesIntoPasswordField || TYPED_PASSWORD.test(text)) {
+      errors.push({
+        rule: "2e",
+        at: step.title,
+        message: `The step types a value into a password field. ${SECRET_BAN} Say "enter the password" and leave the value out; the tester has it from the prerequisite.`,
       });
     }
   }

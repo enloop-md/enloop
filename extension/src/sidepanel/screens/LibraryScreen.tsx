@@ -8,6 +8,7 @@ import {
 } from "@tcm/shared";
 import { DropCase } from "../../components/DropCase.js";
 import { ErrorNotice } from "../../components/ErrorNotice.js";
+import { ImportedBadge } from "../../components/ImportedBadge.js";
 import { Header } from "../../components/Header.js";
 import { useDataStore, useReadyStore, useWorkspace } from "../store/DataStoreProvider.js";
 import { splitId } from "@tcm/shared";
@@ -122,6 +123,7 @@ function CaseRow({
             guide
           </span>
         )}
+        {testCase.imported && <ImportedBadge imported={testCase.imported} />}
         {testCase.archived && (
           <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
             archived
@@ -603,8 +605,8 @@ export function LibraryScreen({
             you as a file is one drop away from a run, with nothing to set up. */}
         <DropCase
           compact={!libraryEmpty}
-          onImport={async (md) => {
-            const id = await importCase(md);
+          onImport={async (md, file) => {
+            const id = await importCase(md, file);
             onOpenCase(id);
           }}
         />

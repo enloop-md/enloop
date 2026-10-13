@@ -27,7 +27,11 @@ says. Concretely, the human is **never**:
   record, whether a step applies. The case decided; an optional check is
   marked `Kind: extra` and starts skipped.
 - **asked to provide information** — a URL, an id, a password's location,
-  a value to type. Every value was resolved before the run began.
+  a value to type. Every value was resolved before the run began. The one
+  value never resolved is a password: a case says where it lives and the
+  tester enters it, because a case is committed, linked and downloaded,
+  and a password in it is a password published. No case, no environment,
+  no deployment — the rule has no exceptions.
 - **asked to look anything up** — a route from a menu, a fixture from a
   seed file, an address from a README. If it can be looked up, it was
   looked up when the case was written, and the case carries the result.
@@ -148,9 +152,12 @@ able to start with nothing to work out:
    sign in to and nothing that expires.
 3. **Someone curious installed a skill and generated a case.** The moment
    the case is written, the same message tells them exactly how to run it
-   — a link they can open right now with nothing installed, and the two
-   steps to run it in the extension when they want the panel — so
-   "I have a file, now what?" never happens.
+   — the two steps to run it in the extension — so "I have a file, now
+   what?" never happens. What the message never carries is a link: a
+   viewer link holds the whole case, so producing one is publishing it,
+   and that is the person's own act, made from the panel's Share menu
+   when they choose to. A skill that hands out a link has decided to
+   share on their behalf.
 
 Creator or consumer, the first minute must need no decision, no
 information and no lookup, just like every step after it.

@@ -22,6 +22,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CAPTURE_MAX_ENTRIES,
   ZERO_CAPTURE_COUNTS,
+  addCounts,
   totalCounts,
   type CaptureCounts,
   type CapturedEntry,
@@ -238,12 +239,7 @@ export function useCaptureRecorder(opts: {
     totalRef.current += batch.length;
     setTotal(totalRef.current);
     const batchCounts = totalCounts(batch);
-    setCounts((previous) => ({
-      consoleErrors: previous.consoleErrors + batchCounts.consoleErrors,
-      consoleWarnings: previous.consoleWarnings + batchCounts.consoleWarnings,
-      networkFailures: previous.networkFailures + batchCounts.networkFailures,
-      requests: previous.requests + batchCounts.requests,
-    }));
+    setCounts((previous) => addCounts(previous, batchCounts));
     await appendRef.current(batch);
   }, [key]);
 

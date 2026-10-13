@@ -493,6 +493,7 @@ export class FsaDataStore implements DataStore {
             currentVersion: meta.currentVersion,
             updatedAt: meta.updatedAt,
             archived: meta.archived,
+            imported: meta.imported,
             suiteId: meta.suiteId,
           });
         } catch {
@@ -528,6 +529,7 @@ export class FsaDataStore implements DataStore {
       createdAt: first.createdAt,
       updatedAt: current.createdAt,
       archived: bookkeeping?.archived ?? false,
+      imported: bookkeeping?.imported,
       suiteId,
     };
   }
@@ -566,7 +568,11 @@ export class FsaDataStore implements DataStore {
     return stripViewerComment(text);
   }
 
-  async createTestCase(bodyMarkdown: string, suiteId?: string): Promise<TestCaseMeta> {
+  async createTestCase(
+    bodyMarkdown: string,
+    suiteId?: string,
+    importedFrom?: string,
+  ): Promise<TestCaseMeta> {
     const parsed = parseCaseDocument(bodyMarkdown, { version: "1", createdAt: nowIso() });
     const id = newTestCaseId(parsed.title);
     const casesDir = await this.testCasesDir(true);
@@ -574,7 +580,9 @@ export class FsaDataStore implements DataStore {
     const caseDir = await getDir(parentDir, id, { create: true });
     const versionsDir = await getDir(caseDir, "versions", { create: true });
     await writeTextFile(versionsDir, versionFileName("1"), await withViewerComment(bodyMarkdown));
-    await writeJson(caseDir, META_FILE, { archived: false } satisfies CaseBookkeeping);
+    const bookkeeping: CaseBookkeeping = { archived: false };
+    if (importedFrom !== undefined) bookkeeping.imported = { at: nowIso(), file: importedFrom };
+    await writeJson(caseDir, META_FILE, bookkeeping);
     return this.getTestCase(id);
   }
 
@@ -600,7 +608,9 @@ export class FsaDataStore implements DataStore {
 
   async archiveTestCase(id: string, archived: boolean): Promise<void> {
     const { dir: caseDir } = await this.findCaseDir(id);
-    await writeJson(caseDir, META_FILE, { archived } satisfies CaseBookkeeping);
+    // Read-modify-write: archiving must not drop the import mark.
+    const current = await tryReadJson(caseDir, META_FILE, caseBookkeepingSchema);
+    await writeJson(caseDir, META_FILE, { ...current, archived } satisfies CaseBookkeeping);
   }
 
   // ---- Suites ----

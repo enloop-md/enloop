@@ -57,7 +57,7 @@ import {
   nextMajorId,
   nextMinorId,
   versionIdFromFileName,
-  withViewerComment,
+  stripViewerComment,
   AGENT_PROTOCOL_VERSION,
   CURRENT_FORMAT_VERSION,
   environmentsFileSchema,
@@ -71,6 +71,9 @@ import {
   discoveryEnvironment,
   providersByName,
   describeReach,
+  isSecretName,
+  secretVariableNames,
+  SECRET_BAN,
   parseCaseDocument,
   runFileSchema,
   freeRunFileSchema,
@@ -701,12 +704,11 @@ switch (command) {
     } catch (e) {
       die(`Cannot read ${file}: ${e.message}`);
     }
-    // The file lands with a viewer link inside it, so the person who asked
-    // for the case can open it in the next ten seconds with nothing
-    // installed. The parser strips the comment on every read, so the link
-    // is never part of the case.
-    raw = await withViewerComment(raw);
-    const viewer = /https:\/\/\S+#c=\S+/.exec(raw)?.[0] ?? "";
+    // No viewer link, in the file or on stdout. A link carries the whole
+    // case, and producing one is publishing it — that is the tester's own
+    // act, made from the panel's Share menu when they choose to, never a
+    // skill's. Stripped in case the model wrote one in from an example.
+    raw = stripViewerComment(raw);
 
     let result;
     try {
@@ -807,7 +809,6 @@ switch (command) {
 
     console.log(`WROTE    ${versionFile}`);
     console.log(`landed   ${landed}`);
-    if (viewer) console.log(`viewer   ${viewer}`);
     console.log(coldLine(result.cold));
     console.log("It appears in the Library on the panel's next refresh (⟳).");
     process.exit(0);
@@ -836,7 +837,7 @@ You will: fill in one form and check the table
 Verifies the widget save path — and the shape of a minimal case.
 
 # You will need
-- Nothing beyond the browser: the account is in the case.
+- The \`staging QA bot\` vault item: the case names the account, never its password.
 
 # Variables
 
@@ -844,13 +845,9 @@ Verifies the widget save path — and the shape of a minimal case.
 The QA account — provided per environment (environments.json).
 Default: qa.bot@example.test
 
-## QA_PASSWORD
-The QA account's password — provided per environment (environments.json).
-Default: qa-bot-staging
-
 # Prerequisites
 - Open %DOMAIN%/admin/widgets
-- Logged in as "**%QA_EMAIL%**", password "**%QA_PASSWORD%**"
+- Logged in as "**%QA_EMAIL%**" (role \`Administrator\`) — password: vault item \`staging QA bot\`
 
 # Steps
 
@@ -1170,6 +1167,11 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
         .toUpperCase();
     const repeated = (name) =>
       rest.flatMap((a, i) => (a === `--${name}` && rest[i + 1] ? [rest[i + 1]] : []));
+    // A password is refused by name before anything is written — the
+    // contract, a value, a lookup that would find one: none of them.
+    const noSecret = (name, how) => {
+      if (isSecretName(name)) refuse(`${how} ${name}: a password by name. ${SECRET_BAN} Nothing was written.`);
+    };
 
     let changed = false;
     for (const raw of repeated("domain")) {
@@ -1181,6 +1183,7 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
     }
     for (const raw of repeated("variable")) {
       const name = normalize(raw);
+      noSecret(name, "--variable");
       if (name && !data.variables.includes(name)) {
         data.variables.push(name);
         changed = true;
@@ -1236,6 +1239,7 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
         const name = normalize(pair.slice(0, eq));
         const value = pair.slice(eq + 1).trim();
         if (!name) continue;
+        noSecret(name, "--set");
         // A name not yet in the contract joins it: a domain when the value
         // is an address, a variable otherwise — the skill said what it is
         // by what it set.
@@ -1263,6 +1267,7 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
         const name = normalize(pair.slice(0, eq));
         const sql = pair.slice(eq + 1).trim();
         if (!name) continue;
+        noSecret(name, "--lookup");
         const why = whyNotReadOnly(sql);
         if (why) refuse(`--lookup ${name}: ${why}. Nothing was written.`);
         if (!data.domains.includes(name) && !data.variables.includes(name)) data.variables.push(name);
@@ -1346,6 +1351,13 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
     const mine = environmentsForProject(data, project);
     console.log(`domains  ${data.domains.length ? data.domains.map((d, i) => (i === 0 ? `${d} (main)` : d)).join(", ") : "(none declared)"}`);
     console.log(`variables ${data.variables.length ? data.variables.join(", ") : "(none declared)"}`);
+    // A file written before the ban may still carry one. It is never
+    // typed — the run drops it — but it is still on disk, and the fix is
+    // the user's: the name goes, and the value with it.
+    const banned = secretVariableNames(data);
+    if (banned.length) {
+      console.log(`BANNED   ${banned.join(", ")} — ${SECRET_BAN} Remove the name from environments.json; a run ignores its value already.`);
+    }
     if (mine.length === 0) {
       console.log(`environments (none for ${project})`);
     }
@@ -1462,6 +1474,8 @@ The procedure:     references/authoring.md — binding, brief or no brief`);
       if (jobs.length === 0) refuse(`${target.name} has no lookups recorded — add one: environments … --env ${target.name} --lookup NAME="select …"`);
     } else {
       const name = normalize(variable);
+      // Looking a password up is writing one down with a query in between.
+      if (isSecretName(name)) refuse(`--variable ${name}: a password by name. ${SECRET_BAN}`);
       let sql = target.lookups?.[name];
       if (!sql) {
         const donor = environmentsForProject(data, project).find((e) => e.lookups?.[name]);

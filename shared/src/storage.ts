@@ -41,7 +41,9 @@ export interface TestCaseStore {
   getVersion(id: string, version: string): Promise<TestCaseVersion>;
   /** Raw Markdown text of a version, exactly as stored — for editing. */
   getVersionSource(id: string, version: string): Promise<string>;
-  createTestCase(bodyMarkdown: string, suiteId?: string): Promise<TestCaseMeta>;
+  /** `importedFrom` is the file name when the case arrives as a dropped
+   * file; it is recorded in `meta.json` so the case reads as imported. */
+  createTestCase(bodyMarkdown: string, suiteId?: string, importedFrom?: string): Promise<TestCaseMeta>;
   createVersion(id: string, bodyMarkdown: string): Promise<TestCaseVersion>;
   archiveTestCase(id: string, archived: boolean): Promise<void>;
 

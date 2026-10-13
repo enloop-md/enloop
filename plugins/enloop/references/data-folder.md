@@ -33,6 +33,11 @@ the extension. It owns this layout:
                     writes from a finished run; the deliverable, committed
 ```
 
+A case whose `meta.json` has an `imported` entry (`{ "at", "file" }`) came in
+as a file dropped on the panel, not one written for this project. When asked
+for "my last run" or "the project's cases", say which runs belong to an
+imported case rather than presenting them as the project's own.
+
 Cases go in `<data folder>/test-cases/<caseId>/`, **never** directly in the
 data folder — `FsaDataStore` reads exactly these paths. A data folder is often
 itself *named* `test-cases`, which yields a correct-but-confusing

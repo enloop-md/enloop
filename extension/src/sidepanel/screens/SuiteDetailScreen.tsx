@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { RunSummary, TestCaseSummary, TestCaseVersion } from "@tcm/shared";
+import { ImportedBadge } from "../../components/ImportedBadge.js";
 import { ErrorNotice } from "../../components/ErrorNotice.js";
 import { Header } from "../../components/Header.js";
 import { Markdown } from "../../components/Markdown.js";
@@ -145,6 +146,7 @@ export function SuiteDetailScreen({
                   <span className="flex-1 truncate text-sm font-medium text-slate-800">
                     {c.title}
                   </span>
+                  {c.imported && <ImportedBadge imported={c.imported} />}
                   {c.archived && (
                     <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
                       archived

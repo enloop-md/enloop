@@ -3858,7 +3858,18 @@ objectType({
 	groups: arrayType(stepGroupSchema),
 	steps: arrayType(stepSchema)
 });
-objectType({ archived: booleanType() });
+objectType({
+	archived: booleanType(),
+	/** Set when the case arrived as a file dropped on (or picked in) the
+	* panel rather than being written for this folder: a copy someone handed
+	* over, or a file brought in to try something. Marked so neither the
+	* tester nor an agent later reading the folder mistakes it — or its runs
+	* — for one of the project's own cases. `file` is the name it came as. */
+	imported: objectType({
+		at: stringType(),
+		file: stringType()
+	}).optional()
+});
 objectType({
 	id: stringType(),
 	title: stringType().min(1),
@@ -3871,6 +3882,12 @@ objectType({
 	createdAt: stringType(),
 	updatedAt: stringType(),
 	archived: booleanType(),
+	/** From `meta.json`: when and as what file the case was imported. Absent
+	* for a case written for this folder. */
+	imported: objectType({
+		at: stringType(),
+		file: stringType()
+	}).optional(),
 	/** Set when this case lives inside a suite folder rather than standalone. */
 	suiteId: stringType().optional()
 });
@@ -4142,11 +4159,13 @@ var runFileSchema = objectType({
 	* ("failed on staging" and "failed on local" are different findings).
 	* Defaulted so runs recorded before environments existed still parse. */
 	environment: stringType().default(""),
-	/** The tester's decision, at finish, about whether the captured console and
-	* network output may be summarized into `report.md` — which is the file an
-	* agent reads. Recorded on disk rather than acted on and forgotten, so
-	* `/enloop:check` sees the decision instead of re-making it. Defaulted for
-	* runs written before capture existed. */
+	/** The tester's decision about whether the captured console and network
+	* output may be summarized into `report.md` — which is the file an agent
+	* reads. Written the moment the box is ticked, not at finish, so leaving
+	* the run screen and coming back finds it as it was left; and kept on disk
+	* rather than acted on and forgotten, so `/enloop:check` sees the decision
+	* instead of re-making it. `console.md` is written regardless of this
+	* flag. Defaulted for runs written before capture existed. */
 	consoleInReport: booleanType().default(false),
 	/** The tester's opinion of the case as a whole, one to five stars, null
 	* when they gave none — which is the ordinary run. Feeds the per-project
@@ -4379,62 +4398,8 @@ objectType({
 	* heartbeat-sweeps it. Absent in statuses from older skill versions. */
 	owner: stringType().optional()
 });
-/**
-* Longest link worth embedding in a file. Chrome itself handles megabytes,
-* but links get pasted into tickets, chat clients and email, and several of
-* those truncate somewhere in the tens of thousands of characters — a
-* silently cut link is worse than an honest one, since it fails at the
-* reader's end with no clue what happened. Past this size the file gets a
-* plain viewer link and an instruction to paste instead.
-*/
-var MAX_EMBEDDED_LINK_LENGTH = 16e3;
-/**
-* Marks a payload as compressed.
-*
-* `~` is unreserved in a URL, so it survives every parser untouched, and it is
-* not in the base64url alphabet, so a payload either starts with it or is one
-* of the uncompressed links written before this existed. That is the whole
-* reason for a marker: those links are already sitting in tickets and in case
-* files nobody has rewritten yet, and they have to keep working.
-*/
-var COMPRESSED_MARKER = "~";
-function toBase64Url(bytes) {
-	let binary = "";
-	for (const byte of bytes) binary += String.fromCharCode(byte);
-	return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-/**
-* Bytes through one of the platform's compression streams.
-*
-* `Response` on both ends is the shortest way to get a one-shot buffer in and a
-* one-shot buffer back out of an API built for streaming: it turns the input
-* into a `ReadableStream` and collects the output without anyone having to
-* hand-manage a writer, a reader and the backpressure between them.
-*/
-async function through(bytes, transform) {
-	const piped = new Response(bytes).body.pipeThrough(transform);
-	return new Uint8Array(await new Response(piped).arrayBuffer());
-}
-/**
-* Raw deflate — the same compression a zip archive stores its entries with,
-* without the archive around it. There is no file list to carry here, only one
-* blob of text, and every header byte saved is a byte of link length back.
-*/
-function deflate(bytes) {
-	return through(bytes, new CompressionStream("deflate-raw"));
-}
-/** UTF-8 text, deflated, as a base64url payload. The text becomes bytes
-* first because `btoa` throws on anything non-Latin-1, and case files are full
-* of arrows, dashes and quotes that qualify. */
-async function encodeCaseParam(markdown) {
-	return COMPRESSED_MARKER + toBase64Url(await deflate(new TextEncoder().encode(markdown)));
-}
-/** A viewer link carrying `markdown`. */
-async function viewerLink(markdown, opts = {}) {
-	const base = (opts.baseUrl ?? "https://enloop-md.github.io/enloop/").replace(/#.*$/, "");
-	const view = opts.simplified ? `&v=simplified` : "";
-	return `${base}#c=${await encodeCaseParam(markdown)}${view}`;
-}
+//#endregion
+//#region shared/src/viewer-link.ts
 /**
 * The generated block, recognised by its `enloop:viewer` marker rather than
 * by position — so a file that has been reordered, or one where an author
@@ -4453,38 +4418,6 @@ var VIEWER_COMMENT_RE = /[ \t]*<!--\s*enloop:viewer\b[\s\S]*?-->[ \t]*\n?/g;
 function stripViewerComment(markdown) {
 	if (!markdown.includes("enloop:viewer")) return markdown;
 	return markdown.replace(VIEWER_COMMENT_RE, "").replace(/\s+$/, "") + "\n";
-}
-/**
-* `markdown` with a fresh viewer link comment at the end, replacing any
-* previous one.
-*
-* The link encodes the document *without* the comment, which is the only
-* self-consistent choice available — a link that encoded the comment
-* containing it could not be computed at all. It also means the reader who
-* follows the link sees exactly what the file says, since the parser strips
-* the comment either way.
-*
-* An HTML comment because that is the one thing Markdown hides everywhere:
-* invisible on GitHub, in an editor preview, and in the viewer itself, while
-* staying plainly readable in the raw file where a person handed the file
-* over is most likely to be looking.
-*/
-async function withViewerComment(markdown, opts = {}) {
-	const body = stripViewerComment(markdown).replace(/\s+$/, "");
-	const link = await viewerLink(body, opts);
-	return `${body}\n\n${link.length <= MAX_EMBEDDED_LINK_LENGTH ? `<!-- enloop:viewer
-Read this case in a browser — tick off steps, copy the values, fill in the
-variables. The link below carries the case itself; nothing is uploaded, and
-the part after the # never reaches a server at all.
-
-${link}
--->` : `<!-- enloop:viewer
-Read this case in a browser — tick off steps, copy the values, fill in the
-variables. This case is too long to travel in a link, so open the viewer and
-paste the file into it:
-
-${opts.baseUrl ?? "https://enloop-md.github.io/enloop/"}
--->`}\n`;
 }
 /** Names that stand for the deployment under test without a declaration. */
 var IMPLICIT_DOMAIN_NAMES = ["DOMAIN", "BASE_URL"];
@@ -4856,6 +4789,14 @@ var CURRENT_FORMAT_VERSION = "0.0.13";
 *   environment supplies variables as well as domains, so `%QA_EMAIL%` can
 *   differ between staging and prod). A variable with none of the three is
 *   a linter error, not a question the panel asks.
+*
+*   A password is never a variable — nor a default, nor an environment
+*   value, nor a typed literal, for any deployment. A case file is
+*   committed, linked and downloaded; a password in it is published. The
+*   case names the account and where its password lives — "password:
+*   vault item staging-qa-bot" — and entering it is the tester's own act. A
+*   variable or placeholder named like one (`QA_PASSWORD`, `API_TOKEN`) is
+*   a linter error, and so is a typed value into a password field.
 *
 *   A value the run itself produces — the id of a user created in step 2,
 *   the URL of a record that does not exist until the case makes it — is
@@ -5865,6 +5806,56 @@ function stepsSections(markdown) {
 	return out;
 }
 //#endregion
+//#region shared/src/secrets.ts
+/**
+* Passwords are banned. Not in a case, not in an environment, not typed
+* by the panel — ever, for any deployment.
+*
+* A test account's password looks like any other value a case resolves
+* before the run: it differs per deployment, the panel could type it, and
+* an author with the seed file open has it right there. That is the
+* trap. A case file is committed, shared as a link, downloaded as an
+* HTML page and pasted into a PR; an environments file sits in the repo
+* beside the code; a run's frozen `case.md` keeps every substituted
+* value. A password written into any of them is a password published,
+* and "it was only staging" is how the same one reaches prod. So the
+* rule has no exceptions to weigh: a case names the account and **where
+* its password lives** — a vault item, a seed fixture — and entering it
+* is the tester's own act, outside the script.
+*
+* The ban is enforced by name, because a name is the one thing every
+* boundary can see: the linter refuses a case that declares or uses a
+* `%…PASSWORD…%`, the validator and the panel refuse to add such a name
+* to an environments contract, and a run drops any such value an old
+* file still carries. Tokens and API keys are the same secret under a
+* different name and go with it.
+*/
+/** A name that promises a secret: its last word (numbers after it
+* allowed — `QA_PASSWORD_2`) is one of the words people use for one.
+* `API_KEY_NAME` and `PASSWORD_HINT` are not secrets, they point at one,
+* so only the final word counts; `BYPASS` is not `PASS`. */
+var SECRET_NAME = /(^|_)(PASS(WORD|WD|PHRASE)?|PWD|SECRET|TOKEN|API_?KEY|PRIVATE_KEY)\d*(_\d+)*$/i;
+function isSecretName(name) {
+	return SECRET_NAME.test(name.trim().replace(/^%|%$/g, ""));
+}
+/** The one sentence every refusal says, so the rule reads the same from
+* the linter, the validator and the panel. */
+var SECRET_BAN = "Enloop never carries a password — not in a case, not in an environment, not as a value the panel types. Name the account and where its password lives (a vault item, a seed fixture); entering it is the tester's own act.";
+/** Names in an environments file's contract, or in any environment's
+* values, that the ban covers — what an editor flags and a run drops. */
+function secretVariableNames(file) {
+	const names = /* @__PURE__ */ new Set();
+	for (const name of file.variables) if (isSecretName(name)) names.add(name);
+	for (const env of file.environments) for (const name of Object.keys(env.values)) if (isSecretName(name)) names.add(name);
+	return [...names];
+}
+/** A selector that targets a password field — `input[type="password"]`,
+* `#password`, `[name=pwd]`. What a case must never type a literal into. */
+function isPasswordFieldSelector(selector) {
+	const spaced = selector.replace(/([a-z])([A-Z])/g, "$1_$2");
+	return /type\s*=\s*["']?password|(^|[^a-z])(pass(word|wd|phrase)?|pwd)\b/i.test(spaced);
+}
+//#endregion
 //#region shared/src/lint.ts
 /** An origin a domain's `Default:` may be: scheme + host, optional port,
 * nothing after. `localhost:3000` is accepted scheme-less because that is
@@ -5887,6 +5878,13 @@ var UNMEASURABLE = /\b(quickly|properly|correctly|appropriately|as expected|succ
 * app. Deliberately loose: this guards the case that never mentions an
 * account at all, not the shape of the mention. */
 var LOGIN_HINT = /\b(log(ged)?[ -]?in|sign(ed)?[ -]?in|account|credentials?|password)\b/i;
+/** A typed value — `"**value**"` — with "password" glued to it on either
+* side: `password "**hunter2**"`, `password is **hunter2**`, `Put
+* "**hunter2**" in the Password field`. The glue is kept tight so a
+* password mentioned in the same sentence as some other typed value does
+* not trip it; the loose case is caught by the field's selector instead. */
+var TYPED_PASSWORD = /\bpass(word|wd|phrase)?\b\s*(is|:|=|of|as|with)?\s*["“]?\*\*[^*\n]+\*\*|\*\*[^*\n]+\*\*["”]?\s+(in|into)\s+(the\s+)?(\[[^\]\n]*)?\bpass(word|wd|phrase)?\b/i;
+var TYPED_VALUE = /"\*\*[^*\n]+\*\*"/;
 /** A named place in prose — `Reports page`, `Sync Console screen`. The
 * capitalised word is what keeps "the page reloads" from firing. */
 var PLACE_NAME = /\b[A-Z][\w-]*\s+(page|screen|tab|dialog|modal|console|dashboard)\b/;
@@ -6090,11 +6088,30 @@ function lintCase(raw, options = {}) {
 		message: "The case names addresses without a domain. Build app addresses as `%DOMAIN%/…` — no declaration needed; it follows the open tab — and add `@locations:` under the title; a literal absolute URL is right only for a page of a system the case does not otherwise name."
 	});
 	const mainDomain = mainDomainName(declared) ?? (declaredNames.has("BASE_URL") ? "BASE_URL" : "DOMAIN");
-	for (const item of doc.prerequisites) if (/\b(vault|1password|bitwarden|keychain|password manager)\b/i.test(item) && !/\*\*[^*]*\*\*/.test(item)) warnings.push({
-		rule: "2d",
-		at: "Prerequisites",
-		message: `"${item.trim().slice(0, 60)}…" sends the tester to a vault. A test account's password is an environment value — declare \`QA_PASSWORD\` and write it as "**%QA_PASSWORD%**" so the panel types it. Keep a vault reference only for a deployment whose credentials must not be recorded.`
+	for (const v of declared.variables) if (isSecretName(v.name)) errors.push({
+		rule: "2e",
+		at: v.name,
+		message: `\`${v.name}\` is a password by name. ${SECRET_BAN} Remove the variable; the prerequisite that names the account says where its password lives.`
 	});
+	const secretPlaceholders = new Set([...raw.matchAll(/%([A-Za-z_][A-Za-z0-9_]*)%/g)].map((m) => m[1]).filter((name) => isSecretName(name) && !declaredNames.has(name)));
+	for (const name of secretPlaceholders) errors.push({
+		rule: "2e",
+		at: name,
+		message: `\`%${name}%\` is a password by name — a value no environment may provide. ${SECRET_BAN}`
+	});
+	for (const item of declared.prerequisites) if (TYPED_PASSWORD.test(item)) errors.push({
+		rule: "2e",
+		at: "Prerequisites",
+		message: `"${item.trim().slice(0, 60)}…" writes a password as a typed value. ${SECRET_BAN} Write "password: vault item \`staging QA bot\`" — a place, never the value.`
+	});
+	for (const step of declared.steps) {
+		const text = step.instructions ?? "";
+		if (step.selectors.some(isPasswordFieldSelector) && TYPED_VALUE.test(text) || TYPED_PASSWORD.test(text)) errors.push({
+			rule: "2e",
+			at: step.title,
+			message: `The step types a value into a password field. ${SECRET_BAN} Say "enter the password" and leave the value out; the tester has it from the prerequisite.`
+		});
+	}
 	if (!(doc.prerequisites.some((p) => LOGIN_HINT.test(p)) || declared.variables.some((v) => LOGIN_HINT.test(`${v.name} ${v.description}`)) || doc.steps.some((s) => LOGIN_HINT.test(`${s.title} ${s.instructions ?? ""}`))) && doc.steps.some((s) => s.type === "manual")) warnings.push({
 		rule: "2d",
 		at: "Prerequisites",
@@ -7053,9 +7070,11 @@ function emptyEnvironments() {
 /** An environment is complete when every declared domain and variable has
 * a non-empty value. Incomplete ones stay selectable — the missing values
 * just fall through to the case's own defaults/generators — but the editor
-* and the picker flag them, so the hole is seen before it costs a run. */
+* and the picker flag them, so the hole is seen before it costs a run. A
+* password-named variable is not a hole: it is banned (`secrets.ts`), and
+* the editor says so instead of asking for a value. */
 function missingEnvironmentValues(file, env) {
-	return [...file.domains.filter((name) => !(env.domains[name] ?? "").trim()), ...file.variables.filter((name) => !(env.values[name] ?? "").trim())];
+	return [...file.domains.filter((name) => !(env.domains[name] ?? "").trim()), ...file.variables.filter((name) => !isSecretName(name) && !(env.values[name] ?? "").trim())];
 }
 /** Whether an environment applies to a case of `project`: unscoped
 * environments apply everywhere; scoped ones to their project only,
@@ -7211,4 +7230,4 @@ function describeReach(reach, now = /* @__PURE__ */ new Date()) {
 	return `${head} · not yet verified`;
 }
 //#endregion
-export { AGENT_PROTOCOL_VERSION, CURRENT_FORMAT_VERSION, compareVersionIds, describeRating, describeReach, discoveryEnvironment, emptyEnvironments, endOfDayIso, environmentsFileSchema, environmentsForProject, fileSlug, freeRunFileSchema, guideSteps, isExemplaryRating, isExpired, isPoorRating, lintCase, mergeEnvironmentFiles, missingEnvironmentValues, newEnvironmentId, newTestCaseId, nextMajorId, nextMinorId, parseCaseDocument, photoPlaceholders, providersByName, ratingStars, renderCaseMarkdown, renderFreeRunGuideHtml, renderFreeRunGuideMarkdown, renderGuideHtml, renderGuideMarkdown, runFileSchema, screenshotStem, splitEnvironmentFiles, stepNumberLabels, stripViewerComment, versionIdFromFileName, viewerLink, withViewerComment };
+export { AGENT_PROTOCOL_VERSION, CURRENT_FORMAT_VERSION, SECRET_BAN, compareVersionIds, describeRating, describeReach, discoveryEnvironment, emptyEnvironments, endOfDayIso, environmentsFileSchema, environmentsForProject, fileSlug, freeRunFileSchema, guideSteps, isExemplaryRating, isExpired, isPoorRating, isSecretName, lintCase, mergeEnvironmentFiles, missingEnvironmentValues, newEnvironmentId, newTestCaseId, nextMajorId, nextMinorId, parseCaseDocument, photoPlaceholders, providersByName, ratingStars, renderCaseMarkdown, renderFreeRunGuideHtml, renderFreeRunGuideMarkdown, renderGuideHtml, renderGuideMarkdown, runFileSchema, screenshotStem, secretVariableNames, splitEnvironmentFiles, stepNumberLabels, stripViewerComment, versionIdFromFileName };

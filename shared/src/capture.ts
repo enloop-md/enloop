@@ -127,6 +127,17 @@ export function totalCounts(entries: CapturedEntry[]): CaptureCounts {
   return counts;
 }
 
+/** Two tallies as one — what was on disk before this visit plus what this
+ * visit has drained, for the screen that shows the sum. */
+export function addCounts(a: CaptureCounts, b: CaptureCounts): CaptureCounts {
+  return {
+    consoleErrors: a.consoleErrors + b.consoleErrors,
+    consoleWarnings: a.consoleWarnings + b.consoleWarnings,
+    networkFailures: a.networkFailures + b.networkFailures,
+    requests: a.requests + b.requests,
+  };
+}
+
 /** Keyed by `stepId`; entries with no step land under `""`. */
 export function countsByStep(entries: CapturedEntry[]): Map<string, CaptureCounts> {
   const byStep = new Map<string, CaptureCounts>();

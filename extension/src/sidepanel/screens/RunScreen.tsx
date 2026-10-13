@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  addCounts,
   AUDIENCE_HINTS,
   AUDIENCE_LABELS,
   COMMENT_AUDIENCES,
@@ -16,7 +17,10 @@ import {
   type AgentQuestion,
   type AgentPresence,
   type RunCommentDraft,
+  type CaptureCounts,
   type CapturedEntry,
+  totalCounts,
+  ZERO_CAPTURE_COUNTS,
   type CommentAudience,
   RATING_MAX,
   RATING_WORDS,
@@ -111,6 +115,42 @@ export function RunScreen({
   // serial photo loop — which spans several awaits and cannot trust the
   // `run` its closure captured at the first one.
   const runRef = useRef<Run | null>(null);
+  // The list's scroll box, and which step rows are inside it right now —
+  // what the progress bar marks as "where you are looking", as distinct
+  // from the current step, which is where the run is.
+  const listRef = useRef<HTMLDivElement>(null);
+  const [visibleStepIds, setVisibleStepIds] = useState<Set<string>>(() => new Set());
+  const stepCount = run?.steps.length ?? 0;
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list || stepCount === 0) return;
+    const rows = Array.from(list.querySelectorAll<HTMLElement>("[data-step-id]"));
+    const observer = new IntersectionObserver(
+      (entries) => {
+        setVisibleStepIds((prev) => {
+          const next = new Set(prev);
+          for (const entry of entries) {
+            const id = (entry.target as HTMLElement).dataset.stepId;
+            if (!id) continue;
+            if (entry.isIntersecting) next.add(id);
+            else next.delete(id);
+          }
+          return next;
+        });
+      },
+      { root: list },
+    );
+    for (const row of rows) observer.observe(row);
+    return () => observer.disconnect();
+  }, [stepCount]);
+
+  /** The bar's click: open the step and bring its header to the top. */
+  function jumpToStep(stepId: string) {
+    setExpandedIds((ids) => new Set(ids).add(stepId));
+    listRef.current
+      ?.querySelector<HTMLElement>(`[data-step-id="${stepId}"]`)
+      ?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
   // Slots the runner has already fired for, as `${stepId}:${slot}`. A
   // discarded or failed photo stays fired: re-opening the step must not
   // take it again (G5); Retake inside the sheet is the one way to a second
@@ -152,6 +192,7 @@ export function RunScreen({
         if (!commentSeeded.current) {
           commentSeeded.current = true;
           setCommentDraft(loaded.comment);
+          if (loaded.comment.trim() || loaded.rating != null) setFeedbackOpen(true);
         }
         if (loaded.status === "in_progress" && !autoStarted.current) {
           autoStarted.current = true;
@@ -187,12 +228,68 @@ export function RunScreen({
     active: run?.status === "in_progress",
     append: appendConsole,
   });
-  // Null until the tester touches the box. Until then it follows the evidence:
-  // a clean log is noise, a log with a stack trace in it is the reason capture
-  // exists — and defaulting off in both cases would mean the box only ever
-  // gets ticked by someone who already knew what they were looking for.
-  const [consoleChoice, setConsoleChoice] = useState<boolean | null>(null);
-  const consoleInReport = consoleChoice ?? capture.counts.consoleErrors > 0;
+  // What console.md already held when this screen opened: the recorder only
+  // tallies what it drains itself, and a tester who left mid-run and came
+  // back should still see "3 errors" beside the box, not "nothing captured".
+  const [priorCounts, setPriorCounts] = useState<CaptureCounts>(ZERO_CAPTURE_COUNTS);
+  const [priorTotal, setPriorTotal] = useState(0);
+  const capturedCounts = addCounts(priorCounts, capture.counts);
+  const capturedTotal = priorTotal + capture.total;
+  useEffect(() => {
+    let cancelled = false;
+    store
+      .readRunConsole(testCaseId, runId)
+      .then((entries) => {
+        if (cancelled) return;
+        setPriorCounts(totalCounts(entries));
+        setPriorTotal(entries.length);
+      })
+      .catch(() => {
+        // No console.md yet is the ordinary case; the tally stays at zero.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [store, testCaseId, runId]);
+
+  // The box is the run's own flag, written the moment it changes: the
+  // entries are on disk whatever it says, and so is the answer, so leaving
+  // the screen and coming back finds both as they were left.
+  const consoleInReport = run?.consoleInReport ?? false;
+  const consoleTouched = useRef(false);
+  async function setConsoleInReport(value: boolean) {
+    consoleTouched.current = true;
+    if (!run || value === run.consoleInReport) return;
+    try {
+      applyRun(await store.updateRun(run.testCaseId, run.id, { consoleInReport: value }));
+    } catch (e) {
+      setError(e);
+    }
+  }
+  // Left alone, the box follows the evidence: a log with a stack trace in it
+  // is the reason capture exists, and a box that defaulted off would only
+  // ever be ticked by someone who already knew what they were looking for.
+  // Only errors that arrive *while this screen is open* tick it, though — a
+  // box unticked on purpose, then found ticked again after a detour through
+  // the case list, would be the same complaint in reverse.
+  const liveErrors = capture.counts.consoleErrors;
+  useEffect(() => {
+    if (liveErrors === 0 || consoleTouched.current) return;
+    if (!runRef.current || runRef.current.consoleInReport) return;
+    consoleTouched.current = true;
+    void setConsoleInReport(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on new errors only
+  }, [liveErrors]);
+  // The footer is a thin row of links until the last step is decided: the
+  // console question and a full-size Finish belong to the end of a run, not
+  // to every glance at step 3. "Finish run" pressed early opens the panel
+  // instead of finishing — the one question it asks is only worth asking
+  // once the tester has said they are done.
+  const [finishOpen, setFinishOpen] = useState(false);
+  // The whole-run comment and the case rating: most runs leave both empty,
+  // so they sit behind a link. Seeded open below when a resumed run already
+  // carries either, so what was written is not hidden from its author.
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   // Questions and commands for this run, re-read from disk while anything is
   // pending — the other side is a Claude Code session looping over the
@@ -551,10 +648,7 @@ export function RunScreen({
         await store.updateStep(run.testCaseId, run.id, stepId, { draft });
       }
       pendingDrafts.current.clear();
-      await store.updateRun(run.testCaseId, run.id, {
-        comment: commentDraft,
-        consoleInReport,
-      });
+      await store.updateRun(run.testCaseId, run.id, { comment: commentDraft });
       const updated = await store.finishRun(run.testCaseId, run.id, status);
       applyRun(updated);
     } catch (e) {
@@ -580,6 +674,10 @@ export function RunScreen({
   const skippedCount = run.steps.filter((s) => s.status === "skipped").length;
   const allExpanded = run.steps.every((s) => expandedIds.has(s.stepId));
   const currentIndex = run.steps.findIndex((s) => s.stepId === currentStepId);
+  // No step left to decide: the run is at its end whether or not the tester
+  // has said so, and the footer opens up to let them.
+  const allDecided = currentStepId === null;
+  const showFinish = allDecided || finishOpen;
   const numberLabels = stepNumberLabels(run.steps);
   const moveTargets = run.steps.map((s, i) => ({ stepId: s.stepId, label: `#${numberLabels[i]} ${s.title}` }));
   const guide = run.kind === "guide";
@@ -726,7 +824,7 @@ export function RunScreen({
         </p>
       )}
 
-      <div className="flex-1 overflow-y-auto">
+      <div ref={listRef} className="flex-1 overflow-y-auto">
         {(run.youWill.trim() || run.youWillNeed.length > 0) && (
           <WhatToExpect youWill={run.youWill} youWillNeed={run.youWillNeed} locations={run.locations} />
         )}
@@ -781,6 +879,11 @@ export function RunScreen({
             <StepRow
               numberLabel={numberLabels[index]}
               step={step}
+              nextStep={
+                run.steps[index + 1]
+                  ? { label: numberLabels[index + 1], title: run.steps[index + 1].title }
+                  : null
+              }
               expanded={expandedIds.has(step.stepId)}
               isCurrent={step.stepId === currentStepId}
               isPast={currentIndex >= 0 && index < currentIndex}
@@ -825,71 +928,128 @@ export function RunScreen({
         ))}
       </div>
 
+      <RunProgressBar
+        steps={run.steps}
+        currentStepId={currentStepId}
+        visibleStepIds={visibleStepIds}
+        labels={numberLabels}
+        onJump={jumpToStep}
+      />
+
       {!readOnly && (
-        <div className="space-y-2 border-t border-slate-200 p-3">
-          <textarea
-            value={commentDraft}
-            onChange={(e) => setCommentDraft(e.target.value)}
-            onBlur={() => void saveComment(commentDraft)}
-            rows={2}
-            placeholder="Comment on the whole run (optional) — anything that isn't about one step"
-            className="w-full resize-y rounded border border-slate-300 px-2 py-1.5 text-xs"
-          />
-          {/* The case as a piece of test writing, not the feature under test:
-              a run can fail on a five-star case. Most runs leave this empty;
-              it is here for the case worth pointing the next author at, and
-              the one that should not be repeated. */}
-          <div className="flex items-center justify-between text-[11px] text-slate-500">
-            <span title="How well written is this case? Feeds the ratings the authoring skills read for this project.">
-              Rate this test case
-            </span>
-            <StarRating
-              value={run.rating}
-              onChange={(rating) => void saveRating(rating)}
-              label="Rate this test case"
-            />
-          </div>
-          {/* Capturing is one decision; handing the log to a model is a second
-              one, made here because this is the moment the tester knows whether
-              the run was interesting and the log exists to be looked at rather
-              than guessed about. */}
-          {/* Shown once anything has been captured even if capture was since
-              switched off — the entries are on disk, and the question of what
-              happens to them is still open. */}
-          {(capture.on || capture.total > 0) && (
-            <label className="flex items-start gap-2 text-[11px] text-slate-600">
-              <input
-                type="checkbox"
-                checked={consoleInReport}
-                onChange={(e) => setConsoleChoice(e.target.checked)}
-                className="mt-0.5"
-              />
-              <span>
-                Include console output in the report
-                {capture.total > 0
-                  ? ` (${describeCounts(capture.counts) || `${capture.total} entries, nothing alarming`})`
-                  : " — nothing captured so far"}
-                <span className="mt-0.5 block text-slate-400">
-                  A digest, not the raw log. <code>console.md</code> is kept in the run's folder
-                  either way; this decides what <code>report.md</code> hands on.
-                </span>
+        <div className="border-t border-slate-200 px-3 py-1.5 text-[11px] text-slate-500">
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setFeedbackOpen((o) => !o)}
+              aria-expanded={feedbackOpen}
+              className="text-sky-600 hover:underline"
+              title="A comment on the whole run, and how well written this case is"
+            >
+              {feedbackOpen ? "▾" : "▸"} Comment / rate case
+            </button>
+            {!showFinish && (
+              <span className="ml-auto flex items-center gap-1.5">
+                <button
+                  onClick={() => setFinishOpen(true)}
+                  className="text-sky-600 hover:underline"
+                  title="Finish before the last step — asks what the report should carry first"
+                >
+                  Finish run…
+                </button>
+                <span className="text-slate-300">·</span>
+                <button
+                  onClick={() => finishRun("aborted")}
+                  className="text-sky-600 hover:underline"
+                >
+                  Abort
+                </button>
               </span>
-            </label>
-          )}
-          <div className="flex gap-2">
-            <button
-              onClick={() => finishRun(failCount > 0 ? "failed" : "passed")}
-              className="flex-1 rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500"
-            >
-              Finish run
-            </button>
-            <button
-              onClick={() => finishRun("aborted")}
-              className="rounded border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-            >
-              Abort
-            </button>
+            )}
           </div>
+          {feedbackOpen && (
+            <div className="mt-1.5 space-y-1.5">
+              <textarea
+                value={commentDraft}
+                onChange={(e) => setCommentDraft(e.target.value)}
+                onBlur={() => void saveComment(commentDraft)}
+                rows={2}
+                autoFocus={!commentDraft && run.rating == null}
+                placeholder="Comment on the whole run (optional) — anything that isn't about one step"
+                className="w-full resize-y rounded border border-slate-300 px-2 py-1.5 text-xs text-slate-700"
+              />
+              {/* The case as a piece of test writing, not the feature under
+                  test: a run can fail on a five-star case. It is here for the
+                  case worth pointing the next author at, and the one that
+                  should not be repeated. */}
+              <div className="flex items-center justify-between">
+                <span title="How well written is this case? Feeds the ratings the authoring skills read for this project.">
+                  Rate this test case
+                </span>
+                <StarRating
+                  value={run.rating}
+                  onChange={(rating) => void saveRating(rating)}
+                  label="Rate this test case"
+                />
+              </div>
+            </div>
+          )}
+          {showFinish && (
+            <div className="mt-1.5 space-y-1.5">
+              {/* Capturing is one decision; handing the log to a model is a
+                  second one, made here because this is the moment the tester
+                  knows whether the run was interesting and the log exists to
+                  be looked at rather than guessed about. */}
+              {/* Shown once anything has been captured even if capture was
+                  since switched off — the entries are on disk, and the
+                  question of what happens to them is still open. */}
+              {(capture.on || capturedTotal > 0) && (
+                <label className="flex items-start gap-2 text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={consoleInReport}
+                    onChange={(e) => void setConsoleInReport(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    Include console output in the report
+                    {capturedTotal > 0
+                      ? ` (${describeCounts(capturedCounts) || `${capturedTotal} entries, nothing alarming`})`
+                      : " — nothing captured so far"}
+                    <span className="mt-0.5 block text-slate-400">
+                      A digest, not the raw log. <code>console.md</code> is kept in the run's folder
+                      either way; this decides what <code>report.md</code> hands on.
+                    </span>
+                  </span>
+                </label>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => finishRun(failCount > 0 ? "failed" : "passed")}
+                  className="flex-1 rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-500"
+                >
+                  Finish run
+                </button>
+                <button
+                  onClick={() => finishRun("aborted")}
+                  className="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  Abort
+                </button>
+                {/* Opened by hand, it can be closed by hand; once every step
+                    is decided there is nothing to go back to. */}
+                {!allDecided && (
+                  <button
+                    onClick={() => setFinishOpen(false)}
+                    className="rounded px-2 py-1.5 text-sm text-slate-500 hover:bg-slate-50"
+                    title="Keep going"
+                    aria-label="Keep going"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1705,9 +1865,87 @@ const WHERE_CLASS = {
   mismatch: "text-red-600",
 } as const;
 
+/** One colour per step's status, for the progress bar — the badge palette,
+ * solid. */
+const PROGRESS_COLOR: Record<RunStepStatus, string> = {
+  pending: "bg-slate-200",
+  running: "bg-sky-400 animate-pulse",
+  success: "bg-emerald-500",
+  failed: "bg-red-500",
+  warning: "bg-amber-400",
+  skipped: "bg-slate-300",
+};
+
+/**
+ * A thin bar along the bottom of the list, one segment per step in run
+ * order, coloured by how the step ended — the player's progress bar. It
+ * answers the two things the list cannot while a long step fills the
+ * panel: how many steps there are, and how far along this one is. The
+ * current step's segment is the list's own blue, so it reads as "here",
+ * not as a verdict. Above the colours, a dark line marks the steps whose
+ * rows are inside the scroll box right now — where you are *looking*,
+ * which after scrolling back is not where the run is. Click a segment to
+ * open that step with its header at the top; hover for its number and
+ * title.
+ */
+function RunProgressBar({
+  steps,
+  currentStepId,
+  visibleStepIds,
+  labels,
+  onJump,
+}: {
+  steps: RunStep[];
+  currentStepId: string | null;
+  visibleStepIds: Set<string>;
+  labels: string[];
+  onJump: (stepId: string) => void;
+}) {
+  if (steps.length === 0) return null;
+  const currentIndex = steps.findIndex((s) => s.stepId === currentStepId);
+  const decided = steps.filter((s) => s.status !== "pending" && s.status !== "running").length;
+  const summary =
+    currentIndex >= 0
+      ? `Step ${labels[currentIndex]} of ${steps.length} · ${decided} decided`
+      : `${decided} of ${steps.length} steps decided`;
+  return (
+    <div
+      className="flex w-full gap-px border-t border-slate-200 bg-slate-100"
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={steps.length}
+      aria-valuenow={decided}
+      aria-label={summary}
+    >
+      {steps.map((step, i) => (
+        <button
+          key={step.stepId}
+          type="button"
+          onClick={() => onJump(step.stepId)}
+          className="group flex min-w-0 flex-1 flex-col"
+          title={`#${labels[i]} ${step.title} — ${step.status}${
+            i === currentIndex ? " · current" : ""
+          }${visibleStepIds.has(step.stepId) ? " · in view" : ""}`}
+          aria-label={`Go to step ${labels[i]}: ${step.title}`}
+        >
+          <span
+            className={`h-1 w-full ${
+              visibleStepIds.has(step.stepId) ? "bg-slate-600" : "bg-transparent group-hover:bg-slate-300"
+            }`}
+          />
+          <span
+            className={`h-1.5 w-full ${i === currentIndex ? "bg-sky-500" : PROGRESS_COLOR[step.status]}`}
+          />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function StepRow({
   numberLabel,
   step,
+  nextStep,
   expanded,
   isCurrent,
   isPast,
@@ -1741,6 +1979,9 @@ function StepRow({
   /** "2" for an ordinary step, "2.1" for an extra one — see stepNumberLabels. */
   numberLabel: string;
   step: RunStep;
+  /** The step after this one in run order, null on the last: named at the
+   * foot of the current step so the tester knows what a verdict leads to. */
+  nextStep: { label: string; title: string } | null;
   expanded: boolean;
   isCurrent: boolean;
   isPast: boolean;
@@ -1857,26 +2098,55 @@ function StepRow({
     })();
   }, [expanded, isCurrent, selectorKey]);
 
-  // Keep the step being worked on in view as the run advances past the fold.
-  // `nearest` so a step that is already visible does not get yanked around.
+  // Bring the step being worked on to the top as the run advances: a
+  // verdict on the step before this one closes it, and the tester's eyes
+  // should land on this header, not wherever the collapse left them. On
+  // first paint `nearest` instead — a fresh run opens on step 1 with the
+  // run's preamble above it, and scrolling that away would hide what the
+  // tester is meant to read first. Twice on advance: the step before
+  // collapses over 200ms *after* the verdict, and this row moves up with
+  // it, so a single scroll fired at the moment of the change lands short.
+  const mounted = useRef(false);
   useEffect(() => {
-    if (isCurrent) rowRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    const first = !mounted.current;
+    mounted.current = true;
+    if (!isCurrent) return;
+    const el = rowRef.current;
+    if (!el) return;
+    if (first) {
+      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      return;
+    }
+    const toTop = () => el.scrollIntoView({ block: "start", behavior: "smooth" });
+    toTop();
+    const settle = setTimeout(toTop, 260);
+    return () => clearTimeout(settle);
   }, [isCurrent]);
 
   return (
     <div
       ref={rowRef}
       // The marker StepQuestions uses to tell "selected text in this step"
-      // from a selection elsewhere in the panel.
+      // from a selection elsewhere in the panel; the id is for the progress
+      // bar, which watches which rows are in the scroll box and scrolls to
+      // one on click.
       data-step-row
+      data-step-id={step.stepId}
       className={`border-b border-slate-100 border-l-2 transition-colors duration-200 ${
-        isCurrent ? "border-l-sky-500 bg-sky-50/60" : "border-l-transparent"
+        isCurrent ? "border-l-sky-500 bg-sky-50" : "border-l-transparent"
       }`}
     >
+      {/* The current step's header sticks to the top of the list while its
+          body is taller than the panel, and its verdict bar (below) to the
+          bottom: a long step is read with its title in sight and its
+          buttons under the thumb, however far down the instructions go.
+          Opaque backgrounds on both, since they float over the body. */}
       <button
         onClick={onToggle}
         aria-expanded={expanded}
-        className={`flex w-full items-center gap-2 px-3 py-2 text-left transition-opacity duration-200 hover:bg-slate-50 ${
+        className={`flex w-full items-center gap-2 px-3 py-2 text-left transition-opacity duration-200 ${
+          isCurrent ? "sticky top-0 z-10 bg-sky-50 hover:bg-sky-100" : "hover:bg-slate-50"
+        } ${
           // Done and behind the tester: dimmed so the eye lands on the
           // current step, but readable again on hover, since going back to
           // re-read a step you just passed is a normal thing to do. Failures
@@ -1943,10 +2213,17 @@ function StepRow({
       >
         {/* The clip has to be on the grid item itself, with every bit of
             padding inside it — padding on the item survives the row going to
-            zero and leaves a visible gap under each collapsed step. `inert`
+            zero and leaves a visible gap under each collapsed step. `clip`
+            rather than `hidden`: both cut the body off during the collapse,
+            but `hidden` makes the item a scroll container, and the sticky
+            header and verdict bar would then stick to it instead of to the
+            list. `min-h-0` is not optional with `clip`: a grid item that is
+            not a scroll container keeps its content height as an automatic
+            minimum, and the 0fr row then never closes — the body stays at
+            full height, inert, and every step reads as frozen. `inert`
             keeps the collapsed body out of the tab order, since it is still
             in the DOM and its fields are still focusable. */}
-        <div className="overflow-hidden" inert={!expanded}>
+        <div className="min-h-0 overflow-clip" inert={!expanded}>
           <div className="space-y-3 px-3 pb-3">
             {step.where && (
               <div className="flex flex-wrap items-baseline gap-1.5 text-xs">
@@ -2172,7 +2449,15 @@ function StepRow({
                 tester is in no position to make, and an accidental tap on it
                 silently skips the work in between. */}
             {!readOnly && (isCurrent || step.status !== "pending") && (
-              <div className="space-y-1 border-t border-slate-100 pt-2.5">
+              <div
+                className={`space-y-1 border-t border-slate-100 pt-2.5 ${
+                  // Pinned to the bottom of the list for the current step —
+                  // see the header above. The negative margins let its
+                  // background span the row and its bottom padding stand in
+                  // for the body's, so nothing peeks out under it.
+                  isCurrent ? "sticky bottom-0 z-10 -mx-3 -mb-3 bg-sky-50 px-3 pb-3" : ""
+                }`}
+              >
                 <label className="text-[10px] font-medium text-slate-400">
                   {step.type === "automated" ? "Override result" : "Result"}
                 </label>
@@ -2227,6 +2512,27 @@ function StepRow({
                     label="Rate how well this step is written"
                   />
                 </div>
+                {/* What the verdict leads to, in sight before it is given:
+                    the next step's header in small type at the foot of the
+                    current one, pinned with the buttons. A tester who can
+                    see "Next: #4 Log out" does not pass step 3 wondering
+                    whether the run is about to do something they should
+                    have prepared for. */}
+                {isCurrent && (
+                  <p
+                    className="truncate border-t border-sky-100 pt-1.5 text-[11px] text-slate-400"
+                    title={nextStep ? `Next: #${nextStep.label} ${nextStep.title}` : undefined}
+                  >
+                    {nextStep ? (
+                      <>
+                        Next: <span className="text-slate-500">#{nextStep.label}</span>{" "}
+                        <span className="text-slate-600">{nextStep.title}</span>
+                      </>
+                    ) : (
+                      "Last step of the run"
+                    )}
+                  </p>
+                )}
               </div>
             )}
             {/* The way to start further in: a run restarted after a dirty
