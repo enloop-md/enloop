@@ -104,7 +104,7 @@ Read first, in this order:
     the new step fields.
 24. `docs/extension.md`, `docs/skills.md`, `docs/case-format.md`,
     `CHANGELOG.md` Unreleased.
-25. `PhotoEditor.vue (an earlier client project, outside this repo)`
+25. a `PhotoEditor.vue` from an earlier client project (outside this repo)
     — the reference editor. Read once for the idea; do not port (G8).
 
 There is no unit-test runner in this repo. Verification is `npm run
