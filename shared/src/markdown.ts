@@ -64,7 +64,7 @@ export const CURRENT_FORMAT_VERSION = "0.0.13";
  *   # Case title
  *   @version 0.0.1
  *   @author Sergey Ryabenko
- *   @project CMS                       (the app under test — which
+ *   @project CMS                               (the app under test — which
  *                                                repo/product this case
  *                                                belongs to, so a reader
  *                                                opening the file cold knows
